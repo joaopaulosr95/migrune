@@ -1,0 +1,18 @@
+{
+  "id": "2026-01-01-013-replace-one",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "replaceOne",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "a": 1
+      }
+    }
+  ]
+}

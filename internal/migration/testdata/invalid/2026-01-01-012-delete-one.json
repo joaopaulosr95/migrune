@@ -1,0 +1,15 @@
+{
+  "id": "2026-01-01-012-delete-one",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteOne",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      }
+    }
+  ]
+}

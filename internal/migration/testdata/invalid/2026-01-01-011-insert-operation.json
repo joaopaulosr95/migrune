@@ -1,0 +1,13 @@
+{
+  "id": "2026-01-01-011-insert-operation",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "insertOne",
+      "document": {
+        "a": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

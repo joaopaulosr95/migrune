@@ -1,0 +1,1 @@
+{"id": "2026-13-01-001-bad-month", "description": "invalid date", "steps": [{"collection": "a", "operation": "deleteMany", "filter": {}}]}

@@ -1,0 +1,2 @@
+# The checksum of a migration covers its bytes: never convert line endings.
+migrations/*.json -text

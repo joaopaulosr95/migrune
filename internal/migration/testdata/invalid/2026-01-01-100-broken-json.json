@@ -1,0 +1,4 @@
+{
+  "id": "2026-01-01-100-broken-json",
+  "description": "missing closing brace",
+  "steps": [

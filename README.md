@@ -3,6 +3,11 @@
 migrune runs MongoDB migrations. Migrations are Extended JSON files kept next
 to your code.
 
+- **Data migrations**: `updateOne`, `updateMany` and `deleteMany` steps in
+  one transaction.
+
+See [design](docs/design.md) for why migrune works the way it does.
+
 ## Requirements
 
 migrune supports MongoDB 7.0 or later, running as a replica set (even of
@@ -51,10 +56,32 @@ Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI.
 
 Every flag can also be set as an environment variable, `MIGRUNE_<FLAG>`.
 
+A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
+
+```json
+{
+  "id": "2026-11-05-001-add-archived-flag",
+  "description": "Default archived to false on existing projects",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "archived": { "$exists": false } },
+      "update": { "$set": { "archived": false } }
+    }
+  ]
+}
+```
+
 ## Documentation
 
+- [Writing migrations](docs/writing-migrations.md): data migrations, and the
+  checks they must pass.
+- [Design](docs/design.md): what migrune doesn't guarantee, and why it works
+  the way it does.
 - Reference: the [CLI](docs/reference/cli/migrune.md),
-  [environment variables and exit codes](docs/reference/env-and-exit-codes.md).
+  [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
+  the [migration file](docs/reference/migration-file.md).
 
 ## Contributing
 

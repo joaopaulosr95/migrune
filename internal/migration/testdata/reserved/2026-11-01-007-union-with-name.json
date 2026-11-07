@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-007-union-with-name",
+  "description": "Read the lock",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$unionWith": "migrations_lock" }
+      ]
+    }
+  ]
+}

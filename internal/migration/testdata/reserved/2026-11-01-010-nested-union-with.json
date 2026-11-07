@@ -1,0 +1,20 @@
+{
+  "id": "2026-11-01-010-nested-union-with",
+  "description": "Read the changelog two levels down",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        {
+          "$lookup": {
+            "from": "owners",
+            "pipeline": [{ "$unionWith": { "coll": "owners", "pipeline": [{ "$unionWith": "migrations_changelog" }] } }],
+            "as": "owners"
+          }
+        }
+      ]
+    }
+  ]
+}

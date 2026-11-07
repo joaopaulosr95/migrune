@@ -1,0 +1,20 @@
+{
+  "id": "2026-01-01-045-extjson-bad-oid",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateOne",
+      "filter": {
+        "_id": {
+          "$oid": "not-an-object-id"
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "2026-01-01-019-data-delete-with-update",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

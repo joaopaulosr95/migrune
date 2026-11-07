@@ -1,0 +1,20 @@
+{
+  "id": "2026-01-01-009-steps-not-array",
+  "description": "test fixture",
+  "steps": {
+    "0": {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "2026-11-01-003-system-collection",
+  "description": "Delete a view's definition",
+  "steps": [
+    {
+      "collection": "system.views",
+      "operation": "deleteMany",
+      "filter": { "viewOn": "items" }
+    }
+  ]
+}

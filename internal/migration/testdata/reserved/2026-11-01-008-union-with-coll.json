@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-008-union-with-coll",
+  "description": "Read stored functions",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$unionWith": { "coll": "system.js", "pipeline": [{ "$project": { "_id": 1 } }] } }
+      ]
+    }
+  ]
+}

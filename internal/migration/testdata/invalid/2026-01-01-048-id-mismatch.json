@@ -1,0 +1,5 @@
+{
+  "id": "2026-01-01-048-another-name",
+  "description": "The id differs from the file name",
+  "steps": [{ "collection": "a", "operation": "deleteMany", "filter": { "x": 1 } }]
+}

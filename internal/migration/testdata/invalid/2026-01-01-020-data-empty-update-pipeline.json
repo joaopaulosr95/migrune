@@ -1,0 +1,16 @@
+{
+  "id": "2026-01-01-020-data-empty-update-pipeline",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": []
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "2026-01-01-054-duplicate-key",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "x": 1 },
+      "update": { "$set": { "x": 2 } },
+      "collection": "migrations_changelog"
+    }
+  ]
+}

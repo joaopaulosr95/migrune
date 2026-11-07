@@ -1,0 +1,22 @@
+{
+  "id": "2026-01-01-022-data-filter-not-object",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": [
+        {
+          "archived": {
+            "$exists": false
+          }
+        }
+      ],
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

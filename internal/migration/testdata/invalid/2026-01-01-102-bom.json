@@ -1,0 +1,13 @@
+﻿{
+  "id": "2026-01-01-102-bom",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": {
+        "x": 1
+      }
+    }
+  ]
+}

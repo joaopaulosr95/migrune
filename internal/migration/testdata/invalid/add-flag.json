@@ -1,0 +1,1 @@
+{"id": "add-flag", "description": "no date", "steps": [{"collection": "a", "operation": "deleteMany", "filter": {}}]}

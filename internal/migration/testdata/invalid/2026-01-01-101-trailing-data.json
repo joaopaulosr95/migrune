@@ -1,0 +1,2 @@
+{"id": "2026-01-01-101-trailing-data", "description": "two documents", "steps": [{"collection": "a", "operation": "deleteMany", "filter": {}}]}
+{}

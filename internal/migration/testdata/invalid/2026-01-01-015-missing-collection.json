@@ -1,0 +1,19 @@
+{
+  "id": "2026-01-01-015-missing-collection",
+  "description": "test fixture",
+  "steps": [
+    {
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

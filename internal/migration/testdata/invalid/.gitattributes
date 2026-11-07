@@ -1,0 +1,2 @@
+# This fixture tests a byte order mark: keep its bytes.
+2026-01-01-102-bom.json -text

@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-014-missing-operation",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      }
+    }
+  ]
+}

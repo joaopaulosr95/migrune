@@ -1,0 +1,5 @@
+{
+  "id": "2999-01-01-001-far-ahead",
+  "description": "dated far after today: the date doesn't affect whether it loads",
+  "steps": [{ "collection": "projects", "operation": "deleteMany", "filter": { "removed": true } }]
+}

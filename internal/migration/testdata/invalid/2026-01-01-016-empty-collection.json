@@ -1,0 +1,20 @@
+{
+  "id": "2026-01-01-016-empty-collection",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

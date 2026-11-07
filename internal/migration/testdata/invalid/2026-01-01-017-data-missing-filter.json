@@ -1,0 +1,15 @@
+{
+  "id": "2026-01-01-017-data-missing-filter",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

@@ -10,8 +10,11 @@ assumptions.
 cmd/migrune/          package main: signal handling, exit codes, the final error (text or a JSON log record)
 internal/cmd/          cobra commands, env binding, slog setup
 internal/cmd/gendocs/  CLI reference generator (not part of the binary)
+internal/migration/    load, validate (embedded schema.json) and parse migration files
 test/replicaset/       3-node replica set for integration tests (image from MONGO_IMAGE), smoke test
-docs/                  reference/ (env and exit codes; cli/ is generated)
+docs/                  writing-migrations, design;
+                       reference/ (migration file, env and exit codes; cli/ is generated)
+examples/              migrations/ (a data migration)
 .github/workflows/     ci.yml (PRs, reusable), release.yml (main)
 ```
 
@@ -41,7 +44,7 @@ Done means `task lint test test:int:all` passes.
 - Tests: table tests, fixtures under `testdata/`, no mocks of the mongo driver.
   Integration tests skip under `-short` or without `MIGRUNE_TEST_URI`, and use a fresh database each.
 - Commits and PR titles: Conventional Commits.
-- A breaking change to a stable interface (commands, flags, exit codes,
+- A breaking change to a stable interface (commands, flags, exit codes, migration schema,
   JSON output, images) is a major release.
 - Docs describe the code as built. When behaviour, a flag or the output changes, update
   `docs/reference/` and the guide that covers it (and `task docs` for the CLI pages) in the

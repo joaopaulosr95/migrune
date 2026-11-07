@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-005-lookup-from",
+  "description": "Copy changelog entries onto items",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$lookup": { "from": "migrations_changelog", "pipeline": [], "as": "entries" } }
+      ]
+    }
+  ]
+}

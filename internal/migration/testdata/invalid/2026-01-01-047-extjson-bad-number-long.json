@@ -1,0 +1,22 @@
+{
+  "id": "2026-01-01-047-extjson-bad-number-long",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "n": {
+            "$numberLong": "twelve"
+          }
+        }
+      }
+    }
+  ]
+}

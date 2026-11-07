@@ -1,0 +1,22 @@
+{
+  "id": "2026-01-01-046-extjson-bad-date",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "createdAt": {
+          "$lt": {
+            "$date": "yesterday"
+          }
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    }
+  ]
+}

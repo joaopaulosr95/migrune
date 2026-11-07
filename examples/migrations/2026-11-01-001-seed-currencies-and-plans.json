@@ -1,0 +1,34 @@
+{
+  "id": "2026-11-01-001-seed-currencies-and-plans",
+  "description": "Seed the reference currencies and the two subscription plans",
+  "steps": [
+    {
+      "collection": "currencies",
+      "operation": "updateOne",
+      "filter": { "_id": "EUR" },
+      "update": { "$setOnInsert": { "symbol": "€" } },
+      "options": { "upsert": true }
+    },
+    {
+      "collection": "currencies",
+      "operation": "updateOne",
+      "filter": { "_id": "USD" },
+      "update": { "$setOnInsert": { "symbol": "$" } },
+      "options": { "upsert": true }
+    },
+    {
+      "collection": "plans",
+      "operation": "updateOne",
+      "filter": { "_id": "basic" },
+      "update": { "$setOnInsert": { "currency": "EUR", "monthlyPrice": { "$numberDecimal": "9.90" } } },
+      "options": { "upsert": true }
+    },
+    {
+      "collection": "plans",
+      "operation": "updateOne",
+      "filter": { "_id": "pro" },
+      "update": { "$setOnInsert": { "currency": "USD", "monthlyPrice": { "$numberDecimal": "29.00" } } },
+      "options": { "upsert": true }
+    }
+  ]
+}

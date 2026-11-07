@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-01-001-changelog-data",
+  "description": "Forge a Finished entry",
+  "steps": [
+    {
+      "collection": "migrations_changelog",
+      "operation": "updateOne",
+      "filter": { "migrationId": "2026-12-01-001-later" },
+      "update": { "$set": { "status": "Finished" } },
+      "options": { "upsert": true }
+    }
+  ]
+}
