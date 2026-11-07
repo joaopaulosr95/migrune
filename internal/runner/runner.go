@@ -1,5 +1,5 @@
 // Package runner runs migrations against a database: plan and apply (pending
-// set, double-run data migrations, report), the
+// set, double-run data migrations, index migrations, report), the
 // global lock with its heartbeat and fence, the changelog and
 // graceful shutdown.
 package runner
@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
+
+	"github.com/joaopaulosr95/migrune/internal/migration"
 )
 
 // CleanupTimeout bounds the cleanup after a run stops: aborting the open
@@ -76,6 +78,13 @@ type Run struct {
 	runnerID   string
 	approvedBy ApprovedBy
 	log        *slog.Logger
+	// planIndexes are, in plan, the indexes of each collection as the
+	// pending index migrations planned so far would leave them, read with
+	// listIndexes on first use.
+	planIndexes map[string][]migration.Index
+	// version is the server's MongoDB version, read on first use (see
+	// serverVersion).
+	version string
 
 	ctx           context.Context
 	cancel        context.CancelCauseFunc
@@ -159,6 +168,23 @@ func (r *Run) lockErr(err error) error {
 		r.cancel(err)
 	}
 	return r.cause(err)
+}
+
+// checkLease cancels the run, as a lost lock, when the local lease deadline
+// has passed: no heartbeat succeeded recently enough to be sure the lock is
+// still this runner's. Call it right before every unfenced write: each index
+// command.
+func (r *Run) checkLease() error {
+	if err := r.Err(); err != nil {
+		return err
+	}
+	if r.lock.leaseExpired() {
+		r.log.Error("migration lock lease expired: no heartbeat succeeded within the lock expiry, less its margin; " +
+			"stopping before the next unfenced write")
+		r.cancel(fmt.Errorf("%w: no heartbeat succeeded within the lock expiry, less a %s margin", ErrLockLost, r.lock.leaseMargin()))
+		return r.Err()
+	}
+	return nil
 }
 
 // cleanupContext returns a context that survives ctx's cancellation, bounded

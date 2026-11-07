@@ -14,6 +14,13 @@
       "update": [{ "$set": { "archived": false } }],
       "options": { "arrayFilters": [{ "x.done": true }], "hint": { "archived": 1 } }
     },
-    { "collection": "projects", "operation": "deleteMany", "filter": { "stale": true } }
+    { "collection": "projects", "operation": "deleteMany", "filter": { "stale": true } },
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": { "name": 1 },
+      "options": { "name": "name_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
+    },
+    { "collection": "accounts", "operation": "dropIndex", "name": "name_1" }
   ]
 }

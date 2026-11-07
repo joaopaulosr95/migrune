@@ -1,0 +1,30 @@
+{
+  "id": "2026-01-01-010-mixed-kinds",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "archived": {
+          "$exists": false
+        }
+      },
+      "update": {
+        "$set": {
+          "archived": false
+        }
+      }
+    },
+    {
+      "collection": "resellers",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "name": "name_1_ci"
+      }
+    }
+  ]
+}

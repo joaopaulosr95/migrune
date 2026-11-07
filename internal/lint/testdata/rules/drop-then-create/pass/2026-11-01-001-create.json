@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Index projects by owner",
+  "steps": [{ "collection": "projects", "operation": "createIndex", "keys": { "ownerId": 1 }, "options": { "name": "owner_1" } }]
+}

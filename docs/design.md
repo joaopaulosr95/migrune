@@ -10,7 +10,10 @@ how, where that stops, and why migrune works the way it does.
 **Data and changelog commit together.** A data migration runs in one
 transaction, and its `Finished` changelog entry is written in that same
 transaction, so the changelog can't claim a migration that didn't happen or
-miss one that did. This is why migrune needs a replica set.
+miss one that did. This is why migrune needs a replica set. Index builds can't
+run in a transaction, so index migrations write their entry right after
+their last step; if a run dies in between, the next run repeats steps that
+are idempotent by construction.
 
 **Idempotency is checked, not trusted.** Every data migration runs twice in
 its transaction and fails if the second run changes anything, which catches
@@ -33,14 +36,17 @@ holder's lock expires after `max(30s, --lock-ttl)`, computed with the
 server's clock, so clock skew between machines doesn't matter. A paused or
 cut-off holder may wake up after its lock was taken over, so every
 transaction also writes to the lock document, matching only while its runner
-owns it (a **fence**): a zombie's transaction aborts. The
+owns it (a **fence**): a zombie's transaction aborts. Index steps can't be
+fenced, so the runner stops before sending one once its last
+successful heartbeat is too old to be sure the lock is still its own. The
 90-second default is above MongoDB's 60-second transaction lifetime, so a
 live runner's transaction never outlives its lock. Details in
 [changelog and lock](reference/changelog-and-lock.md).
 
 **Problems show up before approval.** plan runs everything for real and throws
-the result away (data migrations run twice and abort), so it catches
-non-idempotent data migrations against the actual data.
+the result away (data migrations run twice and abort, indexes are diffed
+against `listIndexes`), so it catches non-idempotent data migrations and
+index conflicts against the actual data.
 
 **Failures stop the run; interruptions are clean.** A transaction that
 fails with a transient error (a write conflict, an election) runs again, up
@@ -58,17 +64,27 @@ and lock expiry already handle.
 - **Compatibility with your code.** Every migration must work with the code
   running before and after the deploy; reviews and expand/contract ensure
   that, not migrune.
+- **Atomicity of index migrations.** A failure leaves earlier steps done;
+  the next run completes them.
 - **Correct values.** The checks prove a data migration is repeatable, not
   that it computes the right values. The plan's report is there for a human
   to read.
-- **Bounded run times.** migrune sets no time limit on the commands it
-  sends; a run on a large collection lasts as long as the server takes.
+- **Unique index builds.** plan can't predict a unique index failing on
+  duplicates; apply finds out.
+- **Bounded run times.** migrune sets no time limit on index builds (and
+  no `commitQuorum`, so the server's default applies) or plan's reads; a
+  run on a large collection lasts as long as the server takes.
   The CI job timeout is the bound: see
   [large collections](running.md#large-collections).
 - **Who approved a run.** `approvedBy` (`--approved-by-name`,
   `--approved-by-email`) is an unverified label: migrune records what the
   apply job passes. Who may start apply is your CI's gate (see
   [running in CI](running.md#in-ci-with-an-approval-gate)).
+- **Work on the server after the runner loses it.** An index build already
+  sent keeps running on the server if the runner loses its network
+  mid-step, possibly after the lock expired and another runner took it. The
+  fence stops the runner's own later writes, not what the server is already
+  doing.
 - **Changes migrune can't express.** Dropping or renaming collections,
   creating collections with options or views, and inserting documents happen
   out of band and aren't in the changelog. Record them in a migration's
@@ -153,18 +169,19 @@ change: check current versions before deciding.
 
 |                                 | golang-migrate (MongoDB driver)                      | migrate-mongo                                    | Flyway (MongoDB, JSON)                                                    | migrune                                                                   |
 | ------------------------------- | ---------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Migration format                | JSON arrays of `runCommand` documents, up/down pairs | JavaScript modules with `up` and `down`          | One command document per file                                             | Declarative Extended JSON data steps, with a JSON Schema                   |
+| Migration format                | JSON arrays of `runCommand` documents, up/down pairs | JavaScript modules with `up` and `down`          | One command document per file                                             | Declarative Extended JSON: data and index kinds, with a JSON Schema        |
 | What counts as pending          | Anything above one stored version number            | Any file missing from the changelog              | Versions missing from its history collection                              | Any id without a `Finished` changelog entry                                |
 | A file merged late, out of order | Silently skipped                                    | Runs                                             | Error by default; runs with `outOfOrder`                                  | Runs, in id order                                                          |
 | Idempotency                     | Not checked                                          | The author's responsibility                      | Not checked                                                               | Data migrations run twice in a transaction                                 |
 | Edits to applied files          | Not detected                                         | Ignored, or re-run with a file hash option       | Rejected (checksum)                                                       | Rejected (checksum); `--mutable` re-runs them locally                      |
-| Transactions                    | Opt-in                                               | Written by the author                            | On by default for JSON, off per file                                      | Always                                                                     |
+| Transactions                    | Opt-in                                               | Written by the author                            | On by default for JSON, off per file                                      | Always for data migrations; index migrations run outside by design         |
 | Record written with the data    | No: a version number and a dirty flag                | No: written after `up` resolves                  | Yes, for transactional files                                              | Yes: the `Finished` entry is in the migration's transaction                |
 | Lock                            | Advisory lock collection                             | Lock collection, optional TTL                    | None; two parallel runs end in a write conflict                           | Global lock with heartbeat, server-time expiry and an in-transaction fence |
 | On failure                      | Version marked dirty; a human forces it              | Stops                                            | Transactional: rolled back. Otherwise a failed row blocks until `repair` | Stops, records `Errored`; the file can be fixed in place                   |
 | Dry run                         | None                                                 | None                                             | None for MongoDB (`info` lists what's pending)                            | `plan` runs everything and aborts                                          |
+| Indexes                         | Any command, unchecked                               | Any code, unchecked                              | `createIndexes` with transactions off                                     | Own kind; lint replays them and checks expected indexes                    |
 | Audit history                   | Current version only                                 | File name, date, optional hash                   | Version, checksum, date, duration, success                                | Outcome, step results, runner, approver and the migration as applied       |
-| Lint without a database         | JSON parsing                                         | None (it's code)                                 | None                                                                      | Schema, Extended JSON, pipeline rules, prefixes                            |
+| Lint without a database         | JSON parsing                                         | None (it's code)                                 | None                                                                      | Schema, Extended JSON, pipeline rules, prefixes, index replay              |
 | Rollbacks                       | Down files                                           | `down`                                           | Undo migrations in paid editions                                          | Forward-only: compensating migrations                                      |
 
 - **golang-migrate** suits teams already using it for SQL. For MongoDB, its
@@ -179,5 +196,8 @@ change: check current versions before deciding.
   at the cost of being a smaller, younger, MongoDB-only tool.
 
 Other approaches: a **workflow engine** adds a service every deploy depends
-on and still needs a database-side fence; **hand-run scripts** record
-nothing, don't prevent concurrent runs and aren't checked for re-runs.
+on and still needs a database-side fence; **letting the ODM create indexes**
+at startup never drops, races between replicas and often logs conflicts
+instead of failing (migrune's `--expected-indexes` compares with what the
+application declares); **hand-run scripts** record nothing, don't prevent
+concurrent runs and aren't checked for re-runs.

@@ -1,0 +1,28 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1,
+        "createdAt": 1
+      },
+      "options": {
+        "name": "owner_1"
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1,
+        "ownerId": 1
+      },
+      "options": {
+        "name": "owner_1"
+      }
+    }
+  ]
+}

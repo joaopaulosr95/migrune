@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Create a text index with the default weights and language",
+  "steps": [
+    { "collection": "articles", "operation": "createIndex", "keys": { "title": "text", "body": "text" }, "options": { "name": "text" } }
+  ]
+}

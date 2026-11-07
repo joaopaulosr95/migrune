@@ -29,8 +29,9 @@ environment:
 
 ## 2. Lint the sample migrations
 
-[`examples/migrations/`](../examples/migrations/) holds a **data** migration
-seeding currencies and plans.
+[`examples/migrations/`](../examples/migrations/) holds one migration of each
+kind: a **data** migration seeding currencies and plans, and an **index**
+migration creating `currency_1`.
 
 ```sh
 docker compose run --rm migrune lint
@@ -57,21 +58,23 @@ below:
 Plan: each status is what apply would do. Nothing was committed.
 Database: example (new: it had no collections)
 
-MIGRATION                                 KIND  STATUS   DURATION  ERROR
-2026-11-01-001-seed-currencies-and-plans  data  applied  85ms
+MIGRATION                                 KIND   STATUS   DURATION  ERROR
+2026-11-01-001-seed-currencies-and-plans  data   applied  85ms
   /steps/0 updateOne on currencies: matched 0, modified 0, upserted 1
   /steps/1 updateOne on currencies: matched 0, modified 0, upserted 1
   /steps/2 updateOne on plans: matched 0, modified 0, upserted 1
   /steps/3 updateOne on plans: matched 0, modified 0, upserted 1
+2026-11-02-001-plans-currency-index       index  applied  13ms
+  index to create: currency_1 on plans, keys {"currency":1}
 
-Total: 1 migration: 1 applied, 0 errored, 0 interrupted, 0 skipped in 148ms
+Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 161ms
 ```
 
-plan ran the data migration twice in a transaction and aborted it. Each data
-step's line shows what its first run did: every seed would insert one
-document. The report names the target database, marked new because it has no
-collections yet: expected here, but against a database that should exist, a
-sign of a mistyped `--db`.
+plan ran the data migration twice in a transaction and aborted it, and read
+the indexes without building any. Each data step's line shows what its first
+run did: every seed would insert one document. The report names the target
+database, marked new because it has no collections yet: expected here, but
+against a database that should exist, a sign of a mistyped `--db`.
 
 ## 4. Apply
 
@@ -82,17 +85,19 @@ docker compose run --rm migrune apply
 ```txt
 Database: example (new: it had no collections)
 
-MIGRATION                                 KIND  STATUS   DURATION  ERROR
-2026-11-01-001-seed-currencies-and-plans  data  applied  35ms
+MIGRATION                                 KIND   STATUS   DURATION  ERROR
+2026-11-01-001-seed-currencies-and-plans  data   applied  35ms
   /steps/0 updateOne on currencies: matched 0, modified 0, upserted 1
   /steps/1 updateOne on currencies: matched 0, modified 0, upserted 1
   /steps/2 updateOne on plans: matched 0, modified 0, upserted 1
   /steps/3 updateOne on plans: matched 0, modified 0, upserted 1
+2026-11-02-001-plans-currency-index       index  applied  141ms
+  index created: currency_1 on plans, keys {"currency":1}
 
-Total: 1 migration: 1 applied, 0 errored, 0 interrupted, 0 skipped in 42ms
+Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 184ms
 ```
 
-The migration now has a `Finished` entry in `migrations_changelog`, so the
+Each migration now has a `Finished` entry in `migrations_changelog`, so the
 next run leaves it alone.
 
 ## 5. Write a migration
@@ -187,6 +192,10 @@ docker compose exec mongo mongosh --quiet example --eval 'db.migrations_changelo
 [
   {
     migrationId: '2026-11-01-001-seed-currencies-and-plans',
+    status: 'Finished'
+  },
+  {
+    migrationId: '2026-11-02-001-plans-currency-index',
     status: 'Finished'
   },
   { migrationId: '2026-11-07-001-activate-plans', status: 'Finished' }

@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-01-001-index-sessions",
+  "description": "Index sessions by last use, without expiring them",
+  "steps": [
+    { "collection": "sessions", "operation": "createIndex", "keys": { "lastUsedAt": 1 }, "options": { "name": "lastUsedAt_1" } }
+  ]
+}

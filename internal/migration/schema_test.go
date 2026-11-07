@@ -7,15 +7,20 @@ import (
 	"testing"
 )
 
-// TestSchemaErrorBranch checks that a step with an unknown operation gets
-// one violation on its operation, not every failure of its fields.
+// TestSchemaErrorBranch checks that schema violations come only from the step
+// definition matching the file's first known operation.
 func TestSchemaErrorBranch(t *testing.T) {
 	cases := []struct {
 		file    string
 		absent  []string // no violation may contain these
 		present []string // some violation must contain each of these
 	}{
-		{file: "2026-01-01-011-insert-operation", absent: []string{"'updateOne'", "'documents'"}, present: []string{"insertOne is not an operation migrune runs"}},
+		{file: "2026-01-01-025-index-create-missing-keys", absent: []string{"'updateOne'"}, present: []string{"missing property 'keys'"}},
+		{file: "2026-01-01-018-data-missing-update", absent: []string{"'createIndex'"}, present: []string{"missing property 'update'"}},
+		// A step of another kind, or with an unknown operation, gets one
+		// violation on its operation, not every failure of its fields.
+		{file: "2026-01-01-010-mixed-kinds", absent: []string{"'createIndex', 'dropIndex'", "'updateOne'", "keys"}, present: []string{"createIndex belongs to index migrations"}},
+		{file: "2026-01-01-011-insert-operation", absent: []string{"'updateOne'", "'createIndex'", "'documents'"}, present: []string{"insertOne is not an operation migrune runs"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {

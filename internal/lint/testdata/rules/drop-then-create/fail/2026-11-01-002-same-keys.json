@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-01-002-same-keys",
+  "description": "Make the owner index unique, under a new name, after dropping the old one",
+  "steps": [
+    { "collection": "projects", "operation": "dropIndex", "name": "owner_1" },
+    { "collection": "projects", "operation": "createIndex", "keys": { "ownerId": 1 }, "options": { "name": "owner_unique", "unique": true } }
+  ]
+}

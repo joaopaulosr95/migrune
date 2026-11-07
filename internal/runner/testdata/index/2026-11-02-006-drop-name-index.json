@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-02-006-drop-name-index",
+  "description": "Drop name_1, to recreate it descending in a later migration",
+  "steps": [{ "collection": "items", "operation": "dropIndex", "name": "name_1" }]
+}

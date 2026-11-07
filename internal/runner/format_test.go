@@ -48,6 +48,8 @@ func TestFormatGolden(t *testing.T) {
 		{Collection: "projects", Operation: "updateOne", MatchedCount: n(0), ModifiedCount: n(0), UpsertedCount: n(1)},
 		{Collection: "projects", Operation: "updateMany", MatchedCount: n(3), ModifiedCount: n(2), UpsertedCount: n(0)},
 		{Collection: "projects", Operation: "deleteMany", DeletedCount: n(4)},
+		{Collection: "accounts", Operation: "createIndex", IndexName: "name_1_ci"},
+		{Collection: "accounts", Operation: "dropIndex", IndexName: "name_1"},
 	}
 	errs := []StepError{
 		{Step: step(1), Message: "/steps/1 (updateMany on projects, second run): not idempotent"},
@@ -78,7 +80,7 @@ func TestFormatGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := "2026-11-01-001-seed-currencies-and-plans"
+	current := "2026-11-02-001-plans-currency-index"
 	lock := lockDoc{
 		ID:            lockID,
 		V:             LockVersion,

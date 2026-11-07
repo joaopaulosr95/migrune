@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
@@ -40,6 +41,15 @@ func checkFile(path, stem string, raw []byte) []Finding {
 			coll, _ := step["collection"].(string)
 			c.warn(RuleEmptyFilter, fmt.Sprintf("%s/filter: {} matches every document in %s: make sure this %s is meant to touch them all, and check the counts plan reports",
 				ptr, coll, op))
+		}
+		if opts, ok := step["options"].(map[string]any); ok && op == "createIndex" {
+			if ttl, ok := opts["expireAfterSeconds"]; ok {
+				keys, _ := step["keys"].(map[string]any)
+				coll, _ := step["collection"].(string)
+				c.warn(RuleTTLIndex, fmt.Sprintf("%s/options/expireAfterSeconds: a TTL index deletes the documents of %s whose %s is more than %s seconds old, "+
+					"from the moment it is built and from then on: check the wouldExpire count plan reports for it",
+					ptr, coll, strings.Join(sortedKeys(keys), ", "), jsonString(ttl)))
+			}
 		}
 		c.serverJS(ptr, step)
 		if p, ok := step["update"].([]any); ok {
@@ -148,4 +158,12 @@ func sortedKeys(m map[string]any) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+func jsonString(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(b)
 }

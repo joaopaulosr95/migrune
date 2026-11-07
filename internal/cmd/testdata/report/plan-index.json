@@ -1,0 +1,145 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-02-002-ci-again",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 4,
+      "indexes": [
+        {
+          "action": "differs",
+          "collection": "items",
+          "name": "name_1_ci",
+          "keys": {
+            "name": 1
+          },
+          "options": {
+            "collation": {
+              "locale": "en",
+              "strength": 2
+            }
+          },
+          "warning": "index name_1_ci exists with the collation {...}, and the step gives {...}: plan can't tell whether MongoDB sees them as the same, so apply may fail (IndexKeySpecsConflict)"
+        },
+        {
+          "action": "create",
+          "collection": "items",
+          "name": "name_1_fr",
+          "keys": {
+            "name": 1
+          },
+          "options": {
+            "collation": {
+              "locale": "fr"
+            }
+          },
+          "warning": "index name_1_fr has the same keys and options as the existing index name_1_ci, but for a collation plan can't compare (...): if MongoDB sees them as the same, apply fails (IndexOptionsConflict)"
+        },
+        {
+          "action": "create",
+          "collection": "sessions",
+          "name": "lastUsedAt_ttl",
+          "keys": {
+            "lastUsedAt": 1
+          },
+          "options": {
+            "expireAfterSeconds": 3600
+          },
+          "wouldExpire": 2
+        }
+      ]
+    },
+    {
+      "id": "2026-11-02-003-name-ci",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 8,
+      "indexes": [
+        {
+          "action": "present",
+          "collection": "items",
+          "name": "name_1",
+          "keys": {
+            "name": 1
+          }
+        },
+        {
+          "action": "create",
+          "collection": "items",
+          "name": "name_1_ci",
+          "keys": {
+            "name": 1
+          },
+          "options": {
+            "unique": true,
+            "collation": {
+              "locale": "en",
+              "strength": 2
+            }
+          }
+        },
+        {
+          "action": "drop",
+          "collection": "items",
+          "name": "name_1",
+          "keys": {
+            "name": 1
+          }
+        },
+        {
+          "action": "absent",
+          "collection": "items",
+          "name": "stale_1"
+        }
+      ]
+    },
+    {
+      "id": "2026-11-02-004-conflict",
+      "kind": "index",
+      "status": "errored",
+      "durationMs": 3,
+      "error": "/steps/1 (createIndex on items): index name_1 already exists with a different definition",
+      "indexes": [
+        {
+          "action": "create",
+          "collection": "items",
+          "name": "createdAt_-1",
+          "keys": {
+            "createdAt": -1
+          }
+        },
+        {
+          "action": "create",
+          "collection": "items",
+          "name": "name_1",
+          "keys": {
+            "name": -1
+          },
+          "conflict": "index name_1 already exists with a different definition"
+        }
+      ]
+    },
+    {
+      "id": "2026-11-02-005-email-index",
+      "kind": "index",
+      "status": "skipped",
+      "durationMs": 0
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 4,
+    "applied": 2,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 1,
+    "durationMs": 19
+  },
+  "error": "migration 2026-11-02-004-conflict failed: index name_1 already exists with a different definition"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-002-again",
+  "description": "Create it again with its weights and language spelled out",
+  "steps": [
+    {
+      "collection": "articles",
+      "operation": "createIndex",
+      "keys": { "title": "text", "body": "text" },
+      "options": { "name": "text", "weights": { "body": 1, "title": 1 }, "default_language": "english" }
+    }
+  ]
+}

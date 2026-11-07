@@ -1,0 +1,134 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "name": "name_1"
+      }
+    },
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "name": "name_1_ci",
+        "collation": {
+          "locale": "en",
+          "strength": 2
+        }
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1"
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1_active",
+        "partialFilterExpression": {
+          "archived": false
+        }
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1_unique",
+        "unique": true
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1_sparse",
+        "sparse": true
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1_unique_sparse",
+        "unique": true,
+        "sparse": true
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1,
+        "ownerId": 1
+      },
+      "options": {
+        "name": "status_1_ownerId_1"
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "$**": 1
+      },
+      "options": {
+        "name": "all"
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "$**": 1
+      },
+      "options": {
+        "name": "all_a",
+        "wildcardProjection": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "$**": 1
+      },
+      "options": {
+        "name": "all_b",
+        "wildcardProjection": {
+          "b": 1
+        }
+      }
+    }
+  ]
+}

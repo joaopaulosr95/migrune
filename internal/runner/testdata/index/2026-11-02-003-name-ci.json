@@ -1,0 +1,28 @@
+{
+  "id": "2026-11-02-003-name-ci",
+  "description": "Replace name_1 with the case-insensitive name_1_ci",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "name": 1 },
+      "options": { "name": "name_1" }
+    },
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "name": 1 },
+      "options": { "name": "name_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
+    },
+    {
+      "collection": "items",
+      "operation": "dropIndex",
+      "name": "name_1"
+    },
+    {
+      "collection": "items",
+      "operation": "dropIndex",
+      "name": "stale_1"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-02-002-drop-missing",
+  "description": "Drop indexes that don't exist, on a collection that does and on one that doesn't",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "dropIndex",
+      "name": "missing_1"
+    },
+    {
+      "collection": "no_such_collection",
+      "operation": "dropIndex",
+      "name": "missing_1"
+    }
+  ]
+}

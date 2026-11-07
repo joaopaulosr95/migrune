@@ -60,22 +60,39 @@ func (e *SchemaError) Error() string {
 	return sb.String()
 }
 
+// stepKinds are the step definitions of the schema's top-level oneOf, in
+// order: oneOf/0 is the data step, oneOf/1 the index step.
+var stepKinds = []Kind{KindData, KindIndex}
+
 // violations flattens a validation error into its leaf causes, deduplicated,
 // sorted by pointer, and with clearer messages where the validator's
 // would be cryptic, so each problem in the file is reported once.
 //
-// A step whose operation is missing or unknown gets one violation on its
-// operation instead of every failure of its fields.
+// The schema's top-level oneOf makes the validator report the failures of
+// every step kind. The file's kind is the kind of its first step with an
+// allowed operation; only that branch's failures are kept. A step whose
+// operation is missing, unknown, or of another kind gets one violation on
+// its operation instead of every failure of its fields.
 func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 	doc, _ := inst.(map[string]any)
 	steps, _ := doc["steps"].([]any)
 	var (
 		out       []Violation
+		fileKind  Kind
+		firstOp   string
 		collapsed = map[int]bool{}
 	)
 	add := func(v Violation) {
 		if !slices.Contains(out, v) {
 			out = append(out, v)
+		}
+	}
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		op, _ := step["operation"].(string)
+		if k, ok := kinds[op]; ok {
+			fileKind, firstOp = k, op
+			break
 		}
 	}
 	var stepViolations []Violation
@@ -87,12 +104,16 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 		ptr := "/steps/" + strconv.Itoa(i)
 		raw, present := step["operation"]
 		op, _ := raw.(string)
-		_, known := kinds[op]
+		k, known := kinds[op]
 		switch {
 		case !present:
 			stepViolations = append(stepViolations, Violation{ptr, "missing property 'operation'"})
 		case !known:
 			stepViolations = append(stepViolations, Violation{ptr + "/operation", unknownOperation(raw)})
+		case k != fileKind:
+			stepViolations = append(stepViolations, Violation{ptr + "/operation", fmt.Sprintf(
+				"%s belongs to %s migrations, but the file's first operation, %s, belongs to %s migrations; a file holds one kind of migration",
+				op, k, firstOp, fileKind)})
 		default:
 			continue
 		}
@@ -104,6 +125,23 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 			return
 		}
 		ptr := jsonPointer(e.InstanceLocation)
+		switch e.ErrorKind.(type) {
+		case *kind.OneOf:
+			if len(e.InstanceLocation) == 0 && fileKind != "" {
+				branch := "#/oneOf/" + strconv.Itoa(slices.Index(stepKinds, fileKind)) + "/"
+				for _, c := range e.Causes {
+					if strings.Contains(c.SchemaURL, branch) {
+						walk(c)
+					}
+				}
+				return
+			}
+			if len(e.Causes) == 0 {
+				// More than one branch matched: steps is missing or
+				// not an array of steps, which is reported on its own.
+				return
+			}
+		}
 		if len(e.Causes) > 0 {
 			for _, c := range e.Causes {
 				walk(c)
@@ -113,7 +151,8 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 		add(Violation{ptr, leafMessage(e, ptr)})
 	}
 	walk(ve)
-	// Then one per step whose operation is missing or unknown.
+	// Then one per step whose operation is missing, unknown or of another
+	// kind.
 	for _, v := range stepViolations {
 		add(v)
 	}
@@ -144,10 +183,12 @@ func comparePointers(a, b string) int {
 // notMessages explain the schema's "not" keywords, by the location of the
 // schema holding them.
 var notMessages = map[string]string{
-	"#/$defs/collection":    "the collection is reserved: " + reservedMessage,
-	"#/$defs/noOut":         "$out is not allowed: it replaces the whole target collection",
-	"#/$defs/noMerge":       "$merge is not allowed: it writes the pipeline's output into a collection",
-	"#/$defs/dataStep/else": "update is not allowed: deleteMany takes no update",
+	"#/$defs/collection":     "the collection is reserved: " + reservedMessage,
+	"#/$defs/noOut":          "$out is not allowed: it replaces the whole target collection",
+	"#/$defs/noMerge":        "$merge is not allowed: it writes the pipeline's output into a collection",
+	"#/$defs/dataStep/else":  "update is not allowed: deleteMany takes no update",
+	"#/$defs/indexStep/then": "name is not allowed in createIndex: name the index in options.name",
+	"#/$defs/indexStep/else": "keys and options are not allowed in dropIndex: it takes only the name of the index",
 }
 
 // leafMessage renders a leaf violation at ptr.
@@ -172,7 +213,8 @@ func unknownOperation(op any) string {
 	if !isString {
 		name = jsonValue(op)
 	}
-	msg := name + " is not an operation migrune runs: use updateOne, updateMany or deleteMany"
+	msg := name + " is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), " +
+		"or createIndex or dropIndex (index)"
 	if strings.HasPrefix(name, "insert") {
 		msg += "; seed documents with updateOne, upsert: true and $setOnInsert"
 	}

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-02-005-email-index",
+  "description": "Index items by email",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "email": 1 },
+      "options": { "name": "email_1", "unique": true, "sparse": true }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-002-weights",
+  "description": "Weigh titles higher under the same name",
+  "steps": [
+    {
+      "collection": "articles",
+      "operation": "createIndex",
+      "keys": { "title": "text", "body": "text" },
+      "options": { "name": "text", "weights": { "title": 10 } }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "2026-11-01-004-only-indexes",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1
+      },
+      "options": {
+        "name": "owner_1"
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "dropIndex",
+      "name": "old_1"
+    }
+  ]
+}

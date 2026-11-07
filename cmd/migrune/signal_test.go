@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -177,9 +178,114 @@ func TestSIGTERMDuringCommit(t *testing.T) {
 	}
 }
 
-// incCounter isn't idempotent: its second run changes the data again, so
-// it fails.
-const incCounter = "2026-11-01-002-inc-counter"
+// nameIndex creates the index name_1 on items.
+const nameIndex = "2026-11-02-001-name-index"
+
+// TestSIGTERMDuringIndexBuild sends SIGTERM to a migrune apply while the
+// server builds an index. The run exits without waiting for the
+// build, reports the migration interrupted, writes no changelog entry and
+// releases the lock; the next run succeeds.
+func TestSIGTERMDuringIndexBuild(t *testing.T) {
+	bin, uri, client := sigtermSetup(t)
+	ctx := testCtx(t)
+	db := testDB(t, client)
+
+	// The primary's build of an index on items hangs on this document
+	// until the fail point is turned off; builds elsewhere aren't affected.
+	marker := rand.Text()
+	if _, err := db.Collection("items").InsertOne(ctx, bson.D{{Key: "name", Value: "a"}, {Key: "marker", Value: marker}}); err != nil {
+		t.Fatal(err)
+	}
+	const fp = "hangIndexBuildDuringCollectionScanPhaseBeforeInsertion"
+	configure := func(mode string, data bson.D) {
+		cmd := bson.D{{Key: "configureFailPoint", Value: fp}, {Key: "mode", Value: mode}}
+		if data != nil {
+			cmd = append(cmd, bson.E{Key: "data", Value: data})
+		}
+		if err := client.Database("admin").RunCommand(context.Background(), cmd).Err(); err != nil {
+			t.Fatalf("configure fail point: %v", err)
+		}
+	}
+	configure("alwaysOn", bson.D{{Key: "fieldsToMatch", Value: bson.D{{Key: "marker", Value: marker}}}})
+	t.Cleanup(func() { configure("off", nil) })
+
+	dir := fixtureDir(t, "index", nameIndex)
+	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command(bin, "apply", "--dir", dir, "-o", "json")
+		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
+		return cmd, &stdout, &stderr
+	}
+
+	cmd, stdout, stderr := apply()
+	deadline := time.Now().Add(30 * time.Second)
+	for !indexBuildRunning(t, ctx, client, db.Name(), "items") {
+		if time.Now().After(deadline) {
+			t.Fatalf("index build never started\nstderr:\n%s", stderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	start := time.Now()
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.Wait()
+	t.Logf("stderr:\n%s", stderr.String())
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 143 {
+		t.Fatalf("exit: %v, want status 143", err)
+	}
+	if d := time.Since(start); d > runner.CleanupTimeout {
+		t.Errorf("shutdown took %s: it waited for the build", d)
+	}
+	if !indexBuildRunning(t, ctx, client, db.Name(), "items") {
+		t.Error("the index build is gone: the runner must leave it to the server")
+	}
+
+	var rep runner.Report
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+		t.Fatalf("report: %v\n%s", err, stdout.String())
+	}
+	if len(rep.Migrations) != 1 || rep.Migrations[0].Kind != "index" || rep.Migrations[0].Status != runner.RowInterrupted {
+		t.Errorf("report %+v, want the index migration interrupted", rep)
+	}
+	if !strings.Contains(stderr.String(), "migration interrupted") {
+		t.Error("no interruption in the logs")
+	}
+	if n := count(t, ctx, db.Collection(runner.ChangelogCollection), bson.D{}); n != 0 {
+		t.Errorf("%d changelog entries, want none: the migration must stay pending", n)
+	}
+	if n := count(t, ctx, db.Collection(runner.LockCollection), bson.D{}); n != 0 {
+		t.Errorf("lock not released")
+	}
+
+	// The server finishes the build; the next run's identical createIndex
+	// waits for it or does nothing, and records the migration.
+	configure("off", nil)
+	cmd, stdout, stderr = apply()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("next apply: %v\nstderr:\n%s", err, stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil || len(rep.Migrations) != 1 || rep.Migrations[0].Status != runner.RowApplied {
+		t.Errorf("next apply report %+v, %v", rep, err)
+	}
+	if n := count(t, ctx, db.Collection(runner.ChangelogCollection), bson.D{{Key: "migrationId", Value: nameIndex}, {Key: "status", Value: "Finished"}}); n != 1 {
+		t.Errorf("%d Finished entries, want 1", n)
+	}
+	n, err := db.Collection("items").Indexes().ListSpecifications(ctx)
+	if err != nil || !slices.ContainsFunc(n, func(s mongo.IndexSpecification) bool { return s.Name == "name_1" }) {
+		t.Errorf("indexes %+v, %v: want name_1", n, err)
+	}
+}
+
+// conflict creates createdAt_-1, then name_1 on other keys than an
+// existing name_1: its second step fails.
+const conflict = "2026-11-02-004-conflict"
 
 // TestSignalAfterRun sends SIGTERM to migrune once its run is over, while
 // it is blocked writing the report to a full stdout pipe. The signal doesn't
@@ -189,14 +295,15 @@ func TestSignalAfterRun(t *testing.T) {
 	bin, uri, client := sigtermSetup(t)
 	cases := []struct {
 		name, command string
-		id            string // the runner fixture testdata/data/<id>.json
+		sub, id       string // the runner fixture testdata/<sub>/<id>.json
+		conflict      bool   // create name_1 on {name: 1} first: the migration fails
 		want          int
 		status        runner.RowStatus
 	}{
-		{name: "plan succeeded", command: "plan", id: dropStale, status: runner.RowApplied},
-		{name: "apply succeeded", command: "apply", id: dropStale, status: runner.RowApplied},
-		{name: "plan failed", command: "plan", id: incCounter, want: 1, status: runner.RowErrored},
-		{name: "apply failed", command: "apply", id: incCounter, want: 1, status: runner.RowErrored},
+		{name: "plan succeeded", command: "plan", sub: "data", id: dropStale, status: runner.RowApplied},
+		{name: "apply succeeded", command: "apply", sub: "data", id: dropStale, status: runner.RowApplied},
+		{name: "plan failed", command: "plan", sub: "index", id: conflict, conflict: true, want: 1, status: runner.RowErrored},
+		{name: "apply failed", command: "apply", sub: "index", id: conflict, conflict: true, want: 1, status: runner.RowErrored},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -206,7 +313,14 @@ func TestSignalAfterRun(t *testing.T) {
 			if _, err := items.InsertOne(ctx, bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: "a"}, {Key: "stale", Value: true}}); err != nil {
 				t.Fatal(err)
 			}
-			dir := fixtureDir(t, "data", tc.id)
+			if tc.conflict {
+				if _, err := items.Indexes().CreateOne(ctx, mongo.IndexModel{
+					Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetName("name_1"),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dir := fixtureDir(t, tc.sub, tc.id)
 
 			stdout, w := fullPipe(t)
 			var stderr syncBuffer
@@ -403,6 +517,21 @@ func fixtureDir(t *testing.T, sub string, ids ...string) string {
 		}
 	}
 	return dir
+}
+
+// indexBuildRunning reports whether a createIndexes on db.coll is in
+// progress.
+func indexBuildRunning(t *testing.T, ctx context.Context, client *mongo.Client, db, coll string) bool {
+	t.Helper()
+	cur, err := client.Database("admin").Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$currentOp", Value: bson.D{}}},
+		{{Key: "$match", Value: bson.D{{Key: "command.createIndexes", Value: coll}, {Key: "command.$db", Value: db}}}},
+	})
+	if err != nil {
+		t.Fatalf("currentOp: %v", err)
+	}
+	defer func() { _ = cur.Close(ctx) }()
+	return cur.Next(ctx)
 }
 
 // failPoint configures the failCommand fail point on the primary, and returns

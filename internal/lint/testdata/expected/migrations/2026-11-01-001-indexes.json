@@ -1,0 +1,59 @@
+{
+  "id": "2026-11-01-001-indexes",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "name": "name_1_ci",
+        "unique": true,
+        "collation": {
+          "locale": "en",
+          "strength": 2
+        }
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1,
+        "createdAt": -1
+      },
+      "options": {
+        "name": "owner_1"
+      }
+    },
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expires_1",
+        "expireAfterSeconds": 3600
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_1",
+        "unique": true,
+        "partialFilterExpression": {
+          "email": {
+            "$exists": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "2026-01-01-033-index-extra-property",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "dropIndex",
+      "name": "name_1",
+      "background": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-001-indexes",
+  "description": "test fixture: one index of each type",
+  "steps": [
+    { "collection": "events", "operation": "createIndex", "keys": { "$**": 1 }, "options": { "name": "all", "wildcardProjection": { "payload": { "id": 1, "kind": 1 } } } },
+    { "collection": "articles", "operation": "createIndex", "keys": { "title": "text", "body": "text" }, "options": { "name": "text", "weights": { "title": 10 }, "language_override": "lang" } },
+    { "collection": "places", "operation": "createIndex", "keys": { "loc": "2d" }, "options": { "name": "loc_2d", "bits": 20, "min": -1000, "max": 1000 } },
+    { "collection": "places", "operation": "createIndex", "keys": { "area": "2dsphere" }, "options": { "name": "area_2dsphere" } },
+    { "collection": "users", "operation": "createIndex", "keys": { "tenant": "hashed" }, "options": { "name": "tenant_hashed" } },
+    { "collection": "sessions", "operation": "createIndex", "keys": { "expiresAt": 1 }, "options": { "name": "expires_1", "expireAfterSeconds": 3600 } },
+    { "collection": "users", "operation": "createIndex", "keys": { "email": 1 }, "options": { "name": "email_1", "unique": true, "partialFilterExpression": { "email": { "$exists": true } } } },
+    { "collection": "accounts", "operation": "createIndex", "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "en", "strength": 2 } } },
+    { "collection": "logs", "operation": "createIndex", "keys": { "at": 1 }, "options": { "name": "at_1", "storageEngine": { "wiredTiger": { "configString": "block_compressor=zlib" } } } }
+  ]
+}

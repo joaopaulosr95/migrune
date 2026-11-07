@@ -1,0 +1,63 @@
+[
+  {
+    "collection": "accounts",
+    "keys": {
+      "name": 1
+    },
+    "options": {
+      "collation": {
+        "strength": 2,
+        "locale": "en"
+      },
+      "unique": true,
+      "background": true
+    }
+  },
+  {
+    "collection": "projects",
+    "keys": {
+      "ownerId": 1,
+      "createdAt": -1
+    }
+  },
+  {
+    "collection": "projects",
+    "keys": {
+      "tmp": 1.0
+    },
+    "options": {
+      "sparse": false
+    }
+  },
+  {
+    "collection": "sessions",
+    "keys": {
+      "expiresAt": 1
+    },
+    "options": {
+      "expireAfterSeconds": {
+        "$numberLong": "7200"
+      }
+    }
+  },
+  {
+    "collection": "users",
+    "keys": {
+      "email": 1
+    },
+    "options": {
+      "unique": true,
+      "partialFilterExpression": {
+        "email": {
+          "$exists": true
+        }
+      }
+    }
+  },
+  {
+    "collection": "users",
+    "keys": {
+      "_id": 1
+    }
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "id": "2026-11-01-002-replace",
+  "description": "Create the unique replacement first, then drop the old index in the same migration, and an unrelated index after a drop",
+  "steps": [
+    { "collection": "projects", "operation": "createIndex", "keys": { "ownerId": 1 }, "options": { "name": "owner_unique", "unique": true } },
+    { "collection": "projects", "operation": "dropIndex", "name": "owner_1" },
+    { "collection": "projects", "operation": "createIndex", "keys": { "status": 1 }, "options": { "name": "status_1" } },
+    { "collection": "users", "operation": "createIndex", "keys": { "ownerId": 1 }, "options": { "name": "owner_1" } }
+  ]
+}

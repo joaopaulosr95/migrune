@@ -1,0 +1,23 @@
+{
+  "id": "2026-11-01-007-data-then-index",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": {
+        "tmp": true
+      }
+    },
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1
+      },
+      "options": {
+        "name": "owner_1"
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -55,6 +56,7 @@ type StepResult struct {
 	ModifiedCount *int64 `bson:"modifiedCount,omitempty"`
 	UpsertedCount *int64 `bson:"upsertedCount,omitempty"`
 	DeletedCount  *int64 `bson:"deletedCount,omitempty"`
+	IndexName     string `bson:"indexName,omitempty"`
 }
 
 // StepError is one error of an Errored entry. Step is the index of the failed
@@ -91,12 +93,40 @@ const EntryVersion = 1
 
 // WriteFinished records m as Finished, with the results of its steps, as the
 // changelog entry with _id id. Call it inside the fenced transaction the
-// entry commits with: the data migration's.
+// entry commits with: a data migration's, or one of its own for index
+// migrations.
 func (r *Run) WriteFinished(ctx context.Context, id bson.ObjectID, m migration.Migration, results []StepResult) error {
 	if results == nil {
 		results = []StepResult{}
 	}
 	return r.writeEntry(ctx, id, m, StatusFinished, bson.E{Key: "results", Value: results})
+}
+
+// writeFinishedAlone records m as Finished, with the results of its steps, as
+// a new changelog entry, in a fenced transaction of its own: for index
+// migrations, whose steps run outside one.
+func (r *Run) writeFinishedAlone(m migration.Migration, results []StepResult) error {
+	entry := bson.NewObjectID()
+	return r.transaction(func(ctx context.Context) error {
+		return r.WriteFinished(ctx, entry, m, results)
+	}, true, &entry)
+}
+
+// stepFailed returns the error for step i, s, of an index migration m, which
+// failed with err. When the run was interrupted or lost its lock,
+// it returns that, and records nothing. Otherwise it returns a StepFailure
+// and, with apply, records m as Errored with it.
+func (r *Run) stepFailed(m migration.Migration, i int, s migration.Step, err error, apply bool) error {
+	if rerr := r.Err(); rerr != nil {
+		return rerr
+	}
+	sf := &StepFailure{Step: i, Operation: s.Operation, Collection: s.Collection, Err: err}
+	if apply {
+		if werr := r.WriteErrored(m, stepErrors(sf)); werr != nil {
+			return errors.Join(sf, werr)
+		}
+	}
+	return sf
 }
 
 // WriteErrored records m as Errored with errs, after it failed, in a fenced

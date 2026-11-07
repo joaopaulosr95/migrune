@@ -1,0 +1,21 @@
+Plan: each status is what apply would do. Nothing was committed.
+Database: app
+
+MIGRATION                   KIND   STATUS   DURATION  ERROR
+2026-11-02-002-ci-again     index  applied  4ms
+  index already present, collation not comparable: name_1_ci on items, keys {"name":1}, options {"collation":{"locale":"en","strength":2}}: warning: index name_1_ci exists with the collation {...}, and the step gives {...}: plan can't tell whether MongoDB sees them as the same, so apply may fail (IndexKeySpecsConflict)
+  index to create: name_1_fr on items, keys {"name":1}, options {"collation":{"locale":"fr"}}: warning: index name_1_fr has the same keys and options as the existing index name_1_ci, but for a collation plan can't compare (...): if MongoDB sees them as the same, apply fails (IndexOptionsConflict)
+  index to create: lastUsedAt_ttl on sessions, keys {"lastUsedAt":1}, options {"expireAfterSeconds":3600}, wouldExpire 2
+2026-11-02-003-name-ci      index  applied  8ms
+  index already present: name_1 on items, keys {"name":1}
+  index to create: name_1_ci on items, keys {"name":1}, options {"unique":true,"collation":{"locale":"en","strength":2}}
+  index to drop: name_1 on items, keys {"name":1}
+  index already absent: stale_1 on items
+2026-11-02-004-conflict     index  errored  3ms       /steps/1 (createIndex on items): index name_1 already exists with a different definition
+  index to create: createdAt_-1 on items, keys {"createdAt":-1}
+  index to create, would fail: name_1 on items, keys {"name":-1}: index name_1 already exists with a different definition
+2026-11-02-005-email-index  index  skipped  0s
+
+Total: 4 migrations: 2 applied, 1 errored, 0 interrupted, 1 skipped in 19ms
+
+Error: migration 2026-11-02-004-conflict failed: index name_1 already exists with a different definition

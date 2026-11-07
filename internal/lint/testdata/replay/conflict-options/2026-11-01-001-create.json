@@ -1,0 +1,124 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_1"
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_simple",
+        "collation": {
+          "locale": "simple"
+        }
+      }
+    },
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expiresAt_1",
+        "expireAfterSeconds": 3600
+      }
+    },
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expiresAt_ttl",
+        "expireAfterSeconds": 60
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_unique",
+        "unique": true
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_unique_again",
+        "unique": true,
+        "sparse": false
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "$**": 1
+      },
+      "options": {
+        "name": "all_a",
+        "wildcardProjection": {
+          "a": {
+            "b": 1
+          }
+        }
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "$**": 1
+      },
+      "options": {
+        "name": "all_a_again",
+        "wildcardProjection": {
+          "a.b": true,
+          "_id": 0
+        }
+      }
+    },
+    {
+      "collection": "places",
+      "operation": "createIndex",
+      "keys": {
+        "loc": "2d"
+      },
+      "options": {
+        "name": "loc_2d"
+      }
+    },
+    {
+      "collection": "places",
+      "operation": "createIndex",
+      "keys": {
+        "loc": "2d"
+      },
+      "options": {
+        "name": "loc_2d_bits",
+        "bits": 20
+      }
+    }
+  ]
+}

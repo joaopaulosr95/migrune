@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-02-008-sessions-ttl",
+  "description": "Expire sessions an hour after their last use, and guest carts after an hour too",
+  "steps": [
+    { "collection": "sessions", "operation": "createIndex", "keys": { "lastUsedAt": 1 }, "options": { "name": "lastUsedAt_ttl", "expireAfterSeconds": 3600 } },
+    {
+      "collection": "carts",
+      "operation": "createIndex",
+      "keys": { "updatedAt": 1 },
+      "options": { "name": "guest_updatedAt_ttl", "expireAfterSeconds": 3600, "partialFilterExpression": { "guest": true } }
+    },
+    { "collection": "carts", "operation": "createIndex", "keys": { "updatedAt": -1 }, "options": { "name": "updatedAt_-1" } }
+  ]
+}

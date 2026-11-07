@@ -2,7 +2,8 @@
 //
 // Every file in the migrations directory is checked on its own (file name,
 // schema, Extended JSON, pipeline rules), then the files are checked together:
-// prefix uniqueness.
+// prefix uniqueness and the index replay, optionally compared with a list of
+// expected indexes.
 package lint
 
 import (
@@ -43,6 +44,14 @@ const (
 	RuleNested          = "nested-out-merge"
 	RuleServerJS        = "server-js"
 	RuleReserved        = "reserved-collection"
+	RuleIndexNameReused = "index-name-reused"
+	RuleIndexConflict   = "index-conflict"
+	RuleDropThenCreate  = "drop-then-create"
+	RuleTTLIndex        = "ttl-index"
+	RuleIndexMissing    = "index-missing"
+	RuleIndexOptions    = "index-options"
+	RuleIndexExtra      = "index-extra"
+	RuleIndexRenamed    = "index-renamed"
 	RuleChecksum        = "checksum"
 	RuleAppliedMissing  = "applied-missing"
 )
@@ -63,12 +72,13 @@ func (f Finding) String() string {
 // Run lints every *.json file in dir (subdirectories are not read), and warns
 // on the entries plan and apply would ignore although they may be meant as
 // migrations (migration.IgnoredEntry).
-// When applied is not nil, it maps the id of every migration Finished
+// When expected is not nil, the indexes the migrations create are compared
+// with it. When applied is not nil, it maps the id of every migration Finished
 // in the target database to what its latest Finished entry recorded, and a
 // file whose checksum differs is an error, as is an applied id with no
 // file in dir. Findings are sorted by
 // file. Run returns an error only when dir or a file in it can't be read.
-func Run(dir string, applied map[string]migration.Applied) ([]Finding, error) {
+func Run(dir string, expected *ExpectedIndexes, applied map[string]migration.Applied) ([]Finding, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read migrations directory: %w", err)
@@ -124,6 +134,13 @@ func Run(dir string, applied map[string]migration.Applied) ([]Finding, error) {
 		migrations = append(migrations, m)
 	}
 	findings = append(findings, duplicatePrefixes(prefixes)...)
+
+	slices.SortFunc(migrations, func(a, b migration.Migration) int { return strings.Compare(a.ID, b.ID) })
+	indexes, fs := replayIndexes(migrations)
+	findings = append(findings, fs...)
+	if expected != nil {
+		findings = append(findings, compareIndexes(indexes, expected)...)
+	}
 	findings = append(findings, compareChecksums(migrations, applied)...)
 	findings = append(findings, appliedMissing(dir, stems, applied)...)
 	slices.SortStableFunc(findings, func(a, b Finding) int { return strings.Compare(a.File, b.File) })

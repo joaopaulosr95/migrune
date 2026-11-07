@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-028-index-create-empty-keys",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "createIndex",
+      "keys": {},
+      "options": {
+        "name": "name_1_ci"
+      }
+    }
+  ]
+}

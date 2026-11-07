@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-01-003-same-name",
+  "description": "Make an index created outside migrations unique, under its name",
+  "steps": [
+    { "collection": "users", "operation": "dropIndex", "name": "email_1" },
+    { "collection": "users", "operation": "createIndex", "keys": { "email": 1 }, "options": { "name": "email_1", "unique": true } }
+  ]
+}

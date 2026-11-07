@@ -45,6 +45,7 @@ func TestLoadValid(t *testing.T) {
 	}{
 		{id: "2026-11-05-001-add-archived-flag", kind: KindData, operations: []string{"updateMany", "updateMany", "deleteMany"}},
 		{id: "2026-11-05-002-seed-price-table-v1", kind: KindData, operations: []string{"updateOne"}},
+		{id: "2026-11-05-003-account-name-ci-index", kind: KindIndex, operations: []string{"createIndex", "dropIndex"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -110,6 +111,22 @@ func TestLoadExtendedJSON(t *testing.T) {
 	if upsert, ok := seed.Steps[0].Options.Lookup("upsert").BooleanOK(); !ok || !upsert {
 		t.Errorf("options.upsert = %v, want true", upsert)
 	}
+
+	index := byID["2026-11-05-003-account-name-ci-index"]
+	keys, err := index.Steps[0].Keys.Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, k := range keys {
+		names = append(names, k.Key())
+	}
+	if !slices.Equal(names, []string{"name", "createdAt"}) {
+		t.Errorf("index keys = %v, want [name createdAt] in file order", names)
+	}
+	if got := index.Steps[1].Name; got != "name_1" {
+		t.Errorf("dropIndex name = %q, want name_1", got)
+	}
 }
 
 func TestLoadDirectory(t *testing.T) {
@@ -125,6 +142,7 @@ func TestLoadDirectory(t *testing.T) {
 	want := []string{
 		"2026-11-05-001-add-archived-flag",
 		"2026-11-05-002-seed-price-table-v1",
+		"2026-11-05-003-account-name-ci-index",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -191,8 +209,9 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-007-empty-description", pointer: "/description", want: "minLength"},
 		{file: "2026-01-01-008-empty-steps", pointer: "/steps", want: "minItems"},
 		{file: "2026-01-01-009-steps-not-array", pointer: "/steps", want: "got object, want array"},
-		// Unknown operation.
-		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany; seed documents with updateOne, upsert: true and $setOnInsert"},
+		// Unknown or undetectable kind.
+		{file: "2026-01-01-010-mixed-kinds", pointer: "/steps/1/operation", want: "createIndex belongs to index migrations, but the file's first operation, updateMany, belongs to data migrations"},
+		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), or createIndex or dropIndex (index); seed documents with updateOne, upsert: true and $setOnInsert"},
 		{file: "2026-01-01-012-delete-one", pointer: "/steps/0/operation", want: "deleteOne is not an operation migrune runs"},
 		{file: "2026-01-01-013-replace-one", pointer: "/steps/0/operation", want: "replaceOne is not an operation migrune runs"},
 		{file: "2026-01-01-014-missing-operation", pointer: "/steps/0", want: "missing property 'operation'"},
@@ -207,6 +226,16 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-022-data-filter-not-object", pointer: "/steps/0/filter", want: "got array, want object"},
 		{file: "2026-01-01-023-data-options-not-object", pointer: "/steps/0/options", want: "got boolean, want object"},
 		{file: "2026-01-01-024-data-extra-property", pointer: "/steps/0", want: "additional properties 'upsert' not allowed"},
+		// Index steps.
+		{file: "2026-01-01-025-index-create-missing-keys", pointer: "/steps/0", want: "missing property 'keys'"},
+		{file: "2026-01-01-026-index-create-missing-options", pointer: "/steps/0", want: "missing property 'options'"},
+		{file: "2026-01-01-027-index-create-unnamed", pointer: "/steps/0/options", want: "missing property 'name'"},
+		{file: "2026-01-01-028-index-create-empty-keys", pointer: "/steps/0/keys", want: "minProperties"},
+		{file: "2026-01-01-029-index-create-with-name", pointer: "/steps/0", want: "name is not allowed in createIndex: name the index in options.name"},
+		{file: "2026-01-01-030-index-drop-missing-name", pointer: "/steps/0", want: "missing property 'name'"},
+		{file: "2026-01-01-031-index-drop-with-keys", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
+		{file: "2026-01-01-032-index-drop-with-options", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
+		{file: "2026-01-01-033-index-extra-property", pointer: "/steps/0", want: "additional properties 'background' not allowed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -354,6 +383,7 @@ func TestLoadReserved(t *testing.T) {
 		want    string
 	}{
 		{file: "2026-11-01-001-changelog-data", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
+		{file: "2026-11-01-002-lock-index", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
 		{file: "2026-11-01-003-system-collection", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
 		{file: "2026-11-01-005-lookup-from", pointer: "/steps/0/update/0/$lookup/from", want: `"migrations_changelog" is reserved`},
 		{file: "2026-11-01-006-graph-lookup-from", pointer: "/steps/0/update/0/$graphLookup/from", want: `"system.users" is reserved`},

@@ -2,7 +2,7 @@
 
 A migration is one JSON file in the migrations directory (`--dir`). This page
 describes the format; [writing migrations](../writing-migrations.md) explains
-how to write one, and [lint rules](lint-rules.md) lists every check.
+how to write each kind, and [lint rules](lint-rules.md) lists every check.
 
 ## Which files are read
 
@@ -45,11 +45,15 @@ canonical or relaxed: `{"$oid": "..."}`, `{"$date": "..."}`,
 `{"$numberLong": "..."}`, `{"$numberDecimal": "..."}` and so on. A malformed
 value, such as an `$oid` that isn't 24 hex digits, is an error.
 
-## Kind
+## Kinds
 
-Every step's `operation` is `updateOne`, `updateMany` or `deleteMany`, which
-makes the migration's **kind** `data`: all its steps run in one transaction,
-twice, and the second run must change nothing.
+Every step's `operation` decides the migration's **kind**, and a file never
+mixes kinds:
+
+| Kind    | Operations                             | Runs                                                                |
+| ------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. |
+| `index` | `createIndex`, `dropIndex`             | Step by step, outside a transaction.                                |
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: inserts and
 `deleteOne` aren't idempotent.
@@ -87,6 +91,16 @@ when it runs:
 
 The schema rejects `$merge` and `$out` as stages of an update pipeline, as MongoDB does.
 
+## Index steps
+
+| Field        | Type   | Required             | Description                                                                     |
+| ------------ | ------ | -------------------- | ------------------------------------------------------------------------------- |
+| `collection` | string | yes                  | The collection, not empty.                                                      |
+| `operation`  | string | yes                  | `createIndex` or `dropIndex`.                                                   |
+| `keys`       | object | `createIndex` only   | The index keys, in order, at least one.                                         |
+| `options`    | object | `createIndex` only   | The index options. `name` is required; every other option is passed to MongoDB as given. |
+| `name`       | string | `dropIndex` only     | The name of the index to drop.                                                  |
+
 ## JSON Schema
 
 migrune validates every file against a [JSON Schema](https://json-schema.org/draft/2020-12/schema)
@@ -94,11 +108,12 @@ migrune validates every file against a [JSON Schema](https://json-schema.org/dra
 [`internal/migration/schema.json`](../../internal/migration/schema.json).
 Point your editor at it for completion and inline errors. It owns
 everything it can express: the fields of each step, the allowed operations,
-and no `$out` or `$merge` stage in an update
+one kind of migration per file, and no `$out` or `$merge` stage in an update
 pipeline, so each problem is reported once, as a `schema` finding in lint.
 The checks a schema can't express, such as nested pipelines, Extended JSON
 values, the file name and the prefix, are [lint](lint-rules.md) code;
 the reserved collections a pipeline reads or writes are also checked when
 plan and apply load the files.
 
-[`examples/migrations/`](../../examples/migrations/) has an example migration.
+[`examples/migrations/`](../../examples/migrations/) has one migration of each
+kind.

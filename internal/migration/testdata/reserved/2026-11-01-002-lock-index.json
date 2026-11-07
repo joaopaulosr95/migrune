@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-01-002-lock-index",
+  "description": "Index the lock",
+  "steps": [
+    { "collection": "migrations_lock", "operation": "createIndex", "keys": { "expiresAt": 1 }, "options": { "name": "expiresAt_1", "expireAfterSeconds": 0 } }
+  ]
+}

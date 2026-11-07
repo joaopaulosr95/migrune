@@ -22,11 +22,12 @@ migrune lint [flags]
 ### Options
 
 ```
-      --db string           target database name
-      --dir string          directory holding the migration files
-  -h, --help[=true|false]   help for lint
-  -o, --output string       findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command (default "text")
-      --uri string          MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
+      --db string                 target database name
+      --dir string                directory holding the migration files
+      --expected-indexes string   JSON file listing the indexes the migrations must produce
+  -h, --help[=true|false]         help for lint
+  -o, --output string             findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command (default "text")
+      --uri string                MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
 ```
 
 ### Options inherited from parent commands

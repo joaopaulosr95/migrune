@@ -213,3 +213,41 @@ func TestLockStolenBetweenMigrations(t *testing.T) {
 		})
 	}
 }
+
+// TestLeaseExpiredStopsIndexStep checks a runner whose heartbeats are held by
+// the server for longer than the lease margin doesn't send its next index
+// command: the lock may expire on the server before the command lands (T12).
+func TestLeaseExpiredStopsIndexStep(t *testing.T) {
+	ctx := testCtx(t)
+	app := "migrune-lease-" + rand.Text()[:8]
+	client := appClient(t, app)
+	db := freshDB(t, client)
+	seedItems(t, ctx, db)
+	// The lock expires 4s after each write, and the lease 2s after its send
+	// time. Every write of this runner to the lock takes 3s.
+	o := Options{RunnerID: "slow", HeartbeatInterval: time.Second, LockTTL: 4 * time.Second, Logger: testLogger(t)}
+	fired := failCommand(t, ctx, client, "alwaysOn", bson.D{
+		{Key: "failCommands", Value: bson.A{"update"}},
+		{Key: "namespace", Value: db.Name() + "." + LockCollection},
+		{Key: "appName", Value: app},
+		{Key: "blockConnection", Value: true},
+		{Key: "blockTimeMS", Value: 3000},
+	})
+
+	rep, err := Execute(ctx, db, load(t, fixtureDir(t, "index", createName)), o, Config{Mode: ModeApply})
+	if n := failCommandOff(t, client) - fired; n < 1 {
+		t.Errorf("fail point fired %d times, want at least once", n)
+	}
+	if !errors.Is(err, ErrLockLost) {
+		t.Fatalf("apply: %v, want ErrLockLost", err)
+	}
+	if got := statuses(rep); !slices.Equal(got, []string{createName + ":errored"}) {
+		t.Errorf("rows %v", got)
+	}
+	if got := indexNames(t, ctx, db.Collection("items")); !slices.Equal(got, []string{"_id_"}) {
+		t.Errorf("indexes %v: the index command was sent after the lease expired", got)
+	}
+	if n := countDocs(t, ctx, db.Collection(ChangelogCollection), bson.D{}); n != 0 {
+		t.Errorf("%d changelog entries, want none", n)
+	}
+}

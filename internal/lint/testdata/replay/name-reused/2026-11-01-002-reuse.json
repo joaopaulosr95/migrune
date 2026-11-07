@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-01-002-reuse",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1
+      },
+      "options": {
+        "name": "owner_1",
+        "unique": true
+      }
+    }
+  ]
+}

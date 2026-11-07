@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-02-007-name-index-descending",
+  "description": "Recreate name_1 descending, after the migration that dropped it",
+  "steps": [
+    { "collection": "items", "operation": "createIndex", "keys": { "name": -1 }, "options": { "name": "name_1" } },
+    { "collection": "items", "operation": "createIndex", "keys": { "label": 1 }, "options": { "name": "label_1" } }
+  ]
+}

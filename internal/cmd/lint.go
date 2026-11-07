@@ -14,8 +14,9 @@ import (
 )
 
 type lintOptions struct {
-	conn   connFlags
-	output string
+	conn            connFlags
+	expectedIndexes string
+	output          string
 }
 
 func (a *app) newLintCmd() *cobra.Command {
@@ -38,6 +39,7 @@ alone exit 0.`,
 	}
 	fs := c.Flags()
 	o.conn.register(fs)
+	fs.StringVar(&o.expectedIndexes, "expected-indexes", "", "JSON file listing the indexes the migrations must produce")
 	findingsOutputFlag(fs, &o.output)
 	return c
 }
@@ -52,6 +54,13 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 	if err := checkFindingsOutput(o.output); err != nil {
 		return err
 	}
+	var expected *lint.ExpectedIndexes
+	if o.expectedIndexes != "" {
+		var err error
+		if expected, err = lint.ReadExpectedIndexes(o.expectedIndexes); err != nil {
+			return &UsageError{Err: fmt.Errorf("--expected-indexes: %w", err)}
+		}
+	}
 	// The online check runs only with both --uri and --db.
 	var applied map[string]migration.Applied
 	if o.conn.uri != "" {
@@ -64,7 +73,7 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 			return err
 		}
 	}
-	findings, err := lint.Run(o.conn.dir, applied)
+	findings, err := lint.Run(o.conn.dir, expected, applied)
 	if err != nil {
 		return err
 	}

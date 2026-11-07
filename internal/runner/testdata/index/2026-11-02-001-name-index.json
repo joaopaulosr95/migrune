@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-02-001-name-index",
+  "description": "Index items by name",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "name": 1 },
+      "options": { "name": "name_1" }
+    }
+  ]
+}

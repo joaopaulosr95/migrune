@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-031-index-drop-with-keys",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "dropIndex",
+      "name": "name_1",
+      "keys": {
+        "name": 1
+      }
+    }
+  ]
+}

@@ -50,7 +50,7 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 		for line := range strings.Lines(table.String()) {
 			fmt.Fprintln(ew, strings.TrimRight(line, " \n"))
 			if i >= 0 {
-				writeRowDetails(ew, rep.Migrations[i])
+				writeRowDetails(ew, rep.Command, rep.Migrations[i])
 			}
 			i++
 		}
@@ -79,11 +79,53 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 }
 
 // writeRowDetails writes the lines under a row: for a data migration, one
-// per step with its counts.
-func writeRowDetails(w io.Writer, row runner.Row) {
+// per step with its counts; for an index migration, one per index step.
+func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	for _, s := range row.Steps {
 		fmt.Fprintf(w, "  /steps/%d %s on %s: %s\n", s.Index, s.Operation, s.Collection, s.Counts())
 	}
+	for _, c := range row.Indexes {
+		line := fmt.Sprintf("  index %s: %s on %s", indexLabel(command, c), c.Name, c.Collection)
+		if c.Keys != nil {
+			line += ", keys " + string(c.Keys)
+		}
+		if c.Options != nil {
+			line += ", options " + string(c.Options)
+		}
+		if c.WouldExpire != nil {
+			line += fmt.Sprintf(", wouldExpire %d", *c.WouldExpire)
+		}
+		if c.Conflict != "" {
+			line += ": " + c.Conflict
+		}
+		if c.Warning != "" {
+			line += ": warning: " + c.Warning
+		}
+		fmt.Fprintln(w, line)
+	}
+}
+
+// indexLabel says what an index step would do (plan) or did (apply), in the
+// words of the logs.
+func indexLabel(command string, c runner.IndexChange) string {
+	plan := command == string(runner.ModePlan)
+	switch {
+	case c.Conflict != "":
+		return "to " + string(c.Action) + ", would fail"
+	case c.Action == runner.IndexPresent:
+		return "already present"
+	case c.Action == runner.IndexAbsent:
+		return "already absent"
+	case c.Action == runner.IndexDiffers:
+		return "already present, collation not comparable"
+	case plan:
+		return "to " + string(c.Action)
+	case c.Action == runner.IndexCreate:
+		return "created"
+	case c.Action == runner.IndexDrop:
+		return "dropped"
+	}
+	return string(c.Action)
 }
 
 func duration(ms int64) string { return (time.Duration(ms) * time.Millisecond).String() }

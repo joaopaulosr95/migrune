@@ -1,0 +1,17 @@
+{
+  "id": "2026-01-01-029-index-create-with-name",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "name": "name_1_ci"
+      },
+      "name": "name_1_ci"
+    }
+  ]
+}

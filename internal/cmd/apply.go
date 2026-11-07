@@ -24,8 +24,9 @@ func (a *app) newApplyCmd() *cobra.Command {
 		Long: `Apply the pending migrations in id order, under the migration lock.
 
 Each data migration runs twice in one transaction, which commits with its
-Finished changelog entry only if the second run changed nothing. apply stops
-at the first migration that fails.
+Finished changelog entry only if the second run changed nothing. Index
+migrations run outside a transaction. apply stops at the first migration that
+fails.
 
 What apply checks and reports: docs/reference/report.md, in
 https://github.com/joaopaulosr95/migrune.`,

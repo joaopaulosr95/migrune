@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-02-001-plans-currency-index",
+  "description": "Index plans by currency",
+  "steps": [
+    {
+      "collection": "plans",
+      "operation": "createIndex",
+      "keys": { "currency": 1 },
+      "options": { "name": "currency_1" }
+    }
+  ]
+}

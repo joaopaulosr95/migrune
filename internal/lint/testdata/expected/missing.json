@@ -1,0 +1,76 @@
+[
+  {
+    "collection": "accounts",
+    "name": "name_1_ci",
+    "keys": {
+      "name": 1
+    },
+    "options": {
+      "collation": {
+        "strength": 2,
+        "locale": "en"
+      },
+      "unique": true,
+      "background": true
+    }
+  },
+  {
+    "collection": "projects",
+    "name": "owner_1",
+    "keys": {
+      "ownerId": 1,
+      "createdAt": -1
+    }
+  },
+  {
+    "collection": "projects",
+    "name": "tmp_1",
+    "keys": {
+      "tmp": 1.0
+    },
+    "options": {
+      "sparse": false
+    }
+  },
+  {
+    "collection": "sessions",
+    "name": "expires_1",
+    "keys": {
+      "expiresAt": 1
+    },
+    "options": {
+      "expireAfterSeconds": {
+        "$numberLong": "7200"
+      }
+    }
+  },
+  {
+    "collection": "users",
+    "name": "email_1",
+    "keys": {
+      "email": 1
+    },
+    "options": {
+      "unique": true,
+      "partialFilterExpression": {
+        "email": {
+          "$exists": true
+        }
+      }
+    }
+  },
+  {
+    "collection": "users",
+    "name": "_id_",
+    "keys": {
+      "_id": 1
+    }
+  },
+  {
+    "collection": "projects",
+    "name": "status_1",
+    "keys": {
+      "status": 1
+    }
+  }
+]

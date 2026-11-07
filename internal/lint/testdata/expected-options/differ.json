@@ -1,0 +1,11 @@
+[
+  { "collection": "events", "name": "all", "keys": { "$**": 1 } },
+  { "collection": "articles", "name": "text", "keys": { "title": "text", "body": "text" }, "options": { "weights": { "title": 10 } } },
+  { "collection": "places", "name": "loc_2d", "keys": { "loc": "2d" } },
+  { "collection": "places", "name": "area_2dsphere", "keys": { "area": "2dsphere" }, "options": { "sparse": true } },
+  { "collection": "users", "name": "tenant_hashed", "keys": { "tenant": "hashed" } },
+  { "collection": "sessions", "name": "expires_1", "keys": { "expiresAt": 1 }, "options": { "expireAfterSeconds": 60 } },
+  { "collection": "users", "name": "email_1", "keys": { "email": 1 }, "options": { "unique": true, "partialFilterExpression": { "email": { "$type": "string" } } } },
+  { "collection": "accounts", "name": "name_ci", "keys": { "name": 1 }, "options": { "collation": { "locale": "en", "strength": 1 } } },
+  { "collection": "logs", "name": "at_1", "keys": { "at": 1 } }
+]

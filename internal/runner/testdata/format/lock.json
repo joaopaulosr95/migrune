@@ -5,7 +5,7 @@
   },
   "token": "9f86d081884c7d659a2feaa0c55ad015",
   "owner": "ci-42-1-AB12CD34",
-  "current": "2026-11-01-001-seed-currencies-and-plans",
+  "current": "2026-11-02-001-plans-currency-index",
   "acquiredAt": {
     "$date": {
       "$numberLong": "1794096602010"

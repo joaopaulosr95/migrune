@@ -10,10 +10,14 @@
       "description": "YYYY-MM-DD-NNN-slug, must match the file name stem"
     },
     "description": { "type": "string", "minLength": 1 },
-    "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dataStep" } }
+    "steps": { "type": "array", "minItems": 1 }
   },
   "additionalProperties": false,
   "required": ["id", "description", "steps"],
+  "oneOf": [
+    { "properties": { "steps": { "items": { "$ref": "#/$defs/dataStep" } } } },
+    { "properties": { "steps": { "items": { "$ref": "#/$defs/indexStep" } } } }
+  ],
   "$defs": {
     "collection": {
       "type": "string",
@@ -54,6 +58,25 @@
       "if": { "properties": { "operation": { "enum": ["updateOne", "updateMany"] } } },
       "then": { "required": ["update"] },
       "else": { "not": { "required": ["update"] } }
+    },
+    "indexStep": {
+      "type": "object",
+      "properties": {
+        "collection": { "$ref": "#/$defs/collection" },
+        "operation": { "enum": ["createIndex", "dropIndex"] },
+        "keys": { "type": "object", "minProperties": 1 },
+        "options": {
+          "type": "object",
+          "properties": { "name": { "type": "string", "minLength": 1 } },
+          "required": ["name"]
+        },
+        "name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false,
+      "required": ["collection", "operation"],
+      "if": { "properties": { "operation": { "const": "createIndex" } } },
+      "then": { "required": ["keys", "options"], "not": { "required": ["name"] } },
+      "else": { "required": ["name"], "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] } }
     }
   }
 }

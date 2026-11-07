@@ -1,0 +1,299 @@
+[
+  {
+    "name": "a new index",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "age": 1 }, "options": { "name": "age_1" } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "the same definition, spelled differently",
+    "existing": [{ "key": { "email": { "$numberLong": "1" } }, "name": "email_1", "unique": true, "sparse": false }],
+    "step": { "keys": { "email": 1.0 }, "options": { "name": "email_1", "unique": true } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "a name taken by other keys",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": -1 }, "options": { "name": "name_1" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a name taken by other options",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_1", "unique": true } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a name taken by another TTL",
+    "existing": [{ "key": { "at": 1 }, "name": "at_ttl", "expireAfterSeconds": 3600 }],
+    "step": { "keys": { "at": 1 }, "options": { "name": "at_ttl", "expireAfterSeconds": 60 } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same keys and options under another name",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "by_name" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same keys under another name, unique",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_unique", "unique": true } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "the same keys under another name, partial",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_active", "partialFilterExpression": { "active": true } } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "the same keys under another name, another TTL",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1" }],
+    "step": { "keys": { "at": 1 }, "options": { "name": "at_ttl", "expireAfterSeconds": 60 } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same collation, as the file gives it",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "en", "strength": 2 } } },
+    "plan": "differs",
+    "apply": true
+  },
+  {
+    "name": "the same collation, with a default spelled out",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "en", "strength": 2, "caseLevel": false } } },
+    "plan": "differs",
+    "apply": true
+  },
+  {
+    "name": "a collation that leaves out a field the existing one sets",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "en" } } },
+    "plan": "differs",
+    "apply": false
+  },
+  {
+    "name": "another strength",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "en", "strength": 1 } } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "another locale",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci", "collation": { "locale": "fr" } } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "no collation for a collated index",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same collation under another name",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_ci_2", "collation": { "locale": "en", "strength": 2 } } },
+    "plan": "create",
+    "warning": true,
+    "apply": false
+  },
+  {
+    "name": "another collation under another name",
+    "existing": [{ "key": { "name": 1 }, "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_fr", "collation": { "locale": "fr" } } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "the same text index with the default weights and language",
+    "existing": [{ "key": { "body": "text" }, "name": "body_text" }],
+    "step": { "keys": { "body": "text" }, "options": { "name": "body_text" } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "the same text index with its weights spelled out",
+    "existing": [{ "key": { "title": "text", "body": "text" }, "name": "text", "weights": { "title": 10 } }],
+    "step": { "keys": { "title": "text", "body": "text" }, "options": { "name": "text", "weights": { "title": 10, "body": 1 }, "default_language": "english" } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "a text index with other weights",
+    "existing": [{ "key": { "body": "text" }, "name": "body_text" }],
+    "step": { "keys": { "body": "text" }, "options": { "name": "body_text", "weights": { "body": 5 } } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a text index with another default language",
+    "existing": [{ "key": { "body": "text" }, "name": "body_text" }],
+    "step": { "keys": { "body": "text" }, "options": { "name": "body_text", "default_language": "french" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a name taken by a hidden index",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1", "hidden": true }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_1" } },
+    "plan": "error",
+    "apply": false,
+    "before8": { "plan": "present", "apply": true }
+  },
+  {
+    "name": "a hidden index on a visible one's name",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_1", "hidden": true } },
+    "plan": "error",
+    "apply": false,
+    "before8": { "plan": "present", "apply": true }
+  },
+  {
+    "name": "the same hidden index",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1", "hidden": true }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_1", "hidden": true } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "the same keys, hidden, under another name",
+    "existing": [{ "key": { "name": 1 }, "name": "name_1" }],
+    "step": { "keys": { "name": 1 }, "options": { "name": "name_hidden", "hidden": true } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a wildcard index with another projection (the audit's case)",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": 1, "b": 1 } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all", "wildcardProjection": { "a": 1 } } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a wildcard index without its projection",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": 1 } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same wildcard projection, spelled differently",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": { "b": 1 }, "c": true } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all", "wildcardProjection": { "c": 2, "a.b": 1, "_id": 0 } } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "a wildcard index under another name, another projection",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": 1 } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all_b", "wildcardProjection": { "b": 1 } } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "a wildcard index under another name, without a projection",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": 1 } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all_fields" } },
+    "plan": "create",
+    "apply": true
+  },
+  {
+    "name": "a wildcard index under another name, the same projection",
+    "existing": [{ "key": { "$**": 1 }, "name": "all", "wildcardProjection": { "a": 1 } }],
+    "step": { "keys": { "$**": 1 }, "options": { "name": "all_again", "wildcardProjection": { "a": true } } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a text index with another language_override",
+    "existing": [{ "key": { "body": "text" }, "name": "body_text", "language_override": "lang" }],
+    "step": { "keys": { "body": "text" }, "options": { "name": "body_text" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same text index with its defaults and textIndexVersion spelled out",
+    "existing": [{ "key": { "body": "text" }, "name": "body_text" }],
+    "step": { "keys": { "body": "text" }, "options": { "name": "body_text", "weights": { "body": 1 }, "default_language": "english", "language_override": "language", "textIndexVersion": 2 } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "a 2d index without its bits, min and max",
+    "existing": [{ "key": { "loc": "2d" }, "name": "loc_2d", "bits": 20, "min": -1000, "max": 1000 }],
+    "step": { "keys": { "loc": "2d" }, "options": { "name": "loc_2d" } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a 2d index with its default bits spelled out",
+    "existing": [{ "key": { "loc": "2d" }, "name": "loc_2d" }],
+    "step": { "keys": { "loc": "2d" }, "options": { "name": "loc_2d", "bits": 26 } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "the same 2d index, numbers of other types",
+    "existing": [{ "key": { "loc": "2d" }, "name": "loc_2d", "bits": 20, "min": -1000, "max": 1000 }],
+    "step": { "keys": { "loc": "2d" }, "options": { "name": "loc_2d", "bits": { "$numberLong": "20" }, "min": -1000.0, "max": 1000 } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "a 2d index under another name, other bits",
+    "existing": [{ "key": { "loc": "2d" }, "name": "loc_2d" }],
+    "step": { "keys": { "loc": "2d" }, "options": { "name": "loc_2d_fine", "bits": 30 } },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a 2dsphere index of another version",
+    "existing": [{ "key": { "area": "2dsphere" }, "name": "area_2dsphere" }],
+    "step": { "keys": { "area": "2dsphere" }, "options": { "name": "area_2dsphere", "2dsphereIndexVersion": 2 } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "the same hashed index",
+    "existing": [{ "key": { "tenant": "hashed" }, "name": "tenant_hashed" }],
+    "step": { "keys": { "tenant": "hashed" }, "options": { "name": "tenant_hashed", "background": true } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "the same TTL as another number type",
+    "existing": [{ "key": { "at": 1 }, "name": "at_ttl", "expireAfterSeconds": 3600 }],
+    "step": { "keys": { "at": 1 }, "options": { "name": "at_ttl", "expireAfterSeconds": { "$numberLong": "3600" } } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "the same partial index, its filter reordered",
+    "existing": [{ "key": { "a": 1 }, "name": "a_partial", "partialFilterExpression": { "a": { "$gt": 1 }, "b": { "$exists": true } } }],
+    "step": { "keys": { "a": 1 }, "options": { "name": "a_partial", "partialFilterExpression": { "b": { "$exists": true }, "a": { "$gt": 1 } } } },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "an index without its storageEngine",
+    "existing": [{ "key": { "a": 1 }, "name": "a_1", "storageEngine": { "wiredTiger": { "configString": "block_compressor=zlib" } } }],
+    "step": { "keys": { "a": 1 }, "options": { "name": "a_1" } },
+    "plan": "error",
+    "apply": false
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "id": "2026-11-02-004-conflict",
+  "description": "Index items by creation date, then reuse name_1 for other keys, which MongoDB rejects",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "createdAt": -1 },
+      "options": { "name": "createdAt_-1" }
+    },
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "name": -1 },
+      "options": { "name": "name_1" }
+    }
+  ]
+}

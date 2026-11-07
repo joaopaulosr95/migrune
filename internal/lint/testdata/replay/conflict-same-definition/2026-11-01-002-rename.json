@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-01-002-rename",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "ownerId": 1
+      },
+      "options": {
+        "name": "ownerId_1",
+        "background": true
+      }
+    }
+  ]
+}

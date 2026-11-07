@@ -3,6 +3,7 @@ package lint
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,7 +94,8 @@ func TestRules(t *testing.T) {
 		{rule: RuleSchema, want: []string{
 			"2026-11-01-001-no-description.json: error: schema: (root): missing property 'description'",
 			"2026-11-01-003-out-in-update.json: error: schema: /steps/0/update/1: $out is not allowed: it replaces the whole target collection",
-			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany; seed documents with updateOne, upsert: true and $setOnInsert",
+			"2026-11-01-007-data-then-index.json: error: schema: /steps/1/operation: createIndex belongs to index migrations, but the file's first operation, deleteMany, belongs to data migrations; a file holds one kind of migration",
+			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), or createIndex or dropIndex (index); seed documents with updateOne, upsert: true and $setOnInsert",
 			"2026-11-01-009-merge-in-update.json: error: schema: /steps/0/update/1: $merge is not allowed: it writes the pipeline's output into a collection",
 		}},
 		{rule: RuleID, want: []string{
@@ -117,6 +119,13 @@ func TestRules(t *testing.T) {
 			"2026-11-01-003-accumulator-and-where.json: error: server-js: /steps/0/filter/$and/0/$where: $where runs JavaScript on the server",
 			"2026-11-01-003-accumulator-and-where.json: error: server-js: /steps/0/update/0/$set/n/$accumulator: $accumulator runs JavaScript on the server",
 		}},
+		{rule: RuleTTLIndex, want: []string{
+			"2026-11-01-001-expire-sessions.json: warning: ttl-index: /steps/0/options/expireAfterSeconds: a TTL index deletes the documents of sessions whose lastUsedAt is more than 3600 seconds old, from the moment it is built and from then on: check the wouldExpire count plan reports for it",
+		}},
+		{rule: RuleDropThenCreate, want: []string{
+			`2026-11-01-002-same-keys.json: error: drop-then-create: /steps/1: index owner_unique on projects is created after /steps/0 drops index owner_1, with the same keys {"ownerId": 1}: if the createIndex fails, such as a unique index on duplicates, the collection is left without either. Create the new index under a new name, and drop the old one in a later migration`,
+			"2026-11-01-003-same-name.json: error: drop-then-create: /steps/1: index email_1 on users is created after /steps/0 drops index email_1, with the same name",
+		}},
 		{rule: RuleEmptyFilter, want: []string{
 			"2026-11-01-001-delete-all.json: warning: empty-filter: /steps/0/filter: {} matches every document in sessions: make sure this deleteMany is meant to touch them all",
 			"2026-11-01-002-update-all.json: warning: empty-filter: /steps/1/filter: {} matches every document in items: make sure this updateMany is meant to touch them all",
@@ -135,14 +144,14 @@ func TestRules(t *testing.T) {
 	for _, tc := range cases {
 		dir := filepath.Join("testdata", "rules", tc.rule)
 		t.Run(tc.rule+"/pass", func(t *testing.T) {
-			got, err := Run(filepath.Join(dir, "pass"), nil)
+			got, err := Run(filepath.Join(dir, "pass"), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			match(t, render(got), nil)
 		})
 		t.Run(tc.rule+"/fail", func(t *testing.T) {
-			got, err := Run(filepath.Join(dir, "fail"), nil)
+			got, err := Run(filepath.Join(dir, "fail"), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,7 +162,7 @@ func TestRules(t *testing.T) {
 
 // TestValidMigrations lints the valid fixtures of the migration package.
 func TestValidMigrations(t *testing.T) {
-	got, err := Run(filepath.Join("..", "migration", "testdata", "valid"), nil)
+	got, err := Run(filepath.Join("..", "migration", "testdata", "valid"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +171,7 @@ func TestValidMigrations(t *testing.T) {
 
 // TestExampleMigrations keeps the sample migrations in examples/ lint-clean.
 func TestExampleMigrations(t *testing.T) {
-	got, err := Run(filepath.Join("..", "..", "examples", "migrations"), nil)
+	got, err := Run(filepath.Join("..", "..", "examples", "migrations"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +193,7 @@ func TestFileType(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "2026-11-01-002-big.json"), big, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Run(dir, nil)
+	got, err := Run(dir, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,8 +204,235 @@ func TestFileType(t *testing.T) {
 }
 
 func TestRunMissingDirectory(t *testing.T) {
-	if _, err := Run(filepath.Join("testdata", "does-not-exist"), nil); err == nil {
+	if _, err := Run(filepath.Join("testdata", "does-not-exist"), nil, nil); err == nil {
 		t.Fatal("Run returned no error")
+	}
+}
+
+func TestReplay(t *testing.T) {
+	cases := []struct {
+		dir  string
+		want []string
+	}{
+		// Dropping a name frees it for a new definition.
+		{dir: "drop-recreate"},
+		// Creating the same definition again is a no-op: numbers compare
+		// by value, false booleans equal absent ones, and options that
+		// don't change behaviour are ignored.
+		{dir: "same-definition"},
+		// Names are scoped to a collection.
+		{dir: "other-collection"},
+		{dir: "name-reused", want: []string{
+			`2026-11-01-002-reuse.json: error: index-name-reused: /steps/0: index owner_1 on projects already exists with a different definition, created by 2026-11-01-001-create.json: keys {"ownerId": 1} options {"unique": true} here, keys {"ownerId": 1} options {} there`,
+		}},
+		// Key order is part of the definition.
+		{dir: "name-reused-keys", want: []string{
+			`2026-11-01-001-create.json: error: index-name-reused: /steps/1: index owner_1 on projects already exists with a different definition`,
+		}},
+		// The same definition under another name is rejected by MongoDB.
+		{dir: "conflict-same-definition", want: []string{
+			`2026-11-01-002-rename.json: error: index-conflict: /steps/0: index ownerId_1 on projects has the same definition as index owner_1, created by 2026-11-01-001-create.json: keys {"ownerId": 1}`,
+		}},
+		// So are the same keys with other options, unless collation,
+		// partialFilterExpression, unique, sparse or wildcardProjection
+		// differ. The simple collation is no collation, a false sparse is no
+		// sparse, and a wildcardProjection compares as MongoDB normalizes it.
+		{dir: "conflict-options", want: []string{
+			`2026-11-01-001-create.json: error: index-conflict: /steps/1: index email_simple on users has the same definition as index email_1`,
+			`2026-11-01-001-create.json: error: index-conflict: /steps/3: index expiresAt_ttl on sessions has the same keys and different options ({"expireAfterSeconds": 60} here, {"expireAfterSeconds": 3600} there) as index expiresAt_1`,
+			`2026-11-01-001-create.json: error: index-conflict: /steps/5: index email_unique_again on users has the same definition as index email_unique`,
+			`2026-11-01-001-create.json: error: index-conflict: /steps/7: index all_a_again on events has the same definition as index all_a`,
+			`2026-11-01-001-create.json: error: index-conflict: /steps/9: index loc_2d_bits on places has the same keys and different options ({"bits": 20} here, {} there) as index loc_2d`,
+		}},
+		// A different collation, partialFilterExpression, unique, sparse or
+		// wildcardProjection, or a different key pattern, lets indexes
+		// coexist.
+		{dir: "conflict-distinct"},
+		// A dropped index doesn't conflict.
+		{dir: "conflict-drop-rename"},
+		// A text index's weights and default_language take their defaults
+		// when left out, as listIndexes shows them.
+		{dir: "text-same-definition"},
+		{dir: "text-name-reused", want: []string{
+			`2026-11-01-002-weights.json: error: index-name-reused: /steps/0: index text on articles already exists with a different definition, created by 2026-11-01-001-create.json: keys {"_fts": "text", "_ftsx": 1} options {"weights": {"body": 1, "title": 10}, "default_language": "english", "language_override": "language"} here, keys {"_fts": "text", "_ftsx": 1} options {"weights": {"body": 1, "title": 1}, "default_language": "english", "language_override": "language"} there`,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.dir, func(t *testing.T) {
+			got, err := Run(filepath.Join("testdata", "replay", tc.dir), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			match(t, render(got, RuleTTLIndex), tc.want)
+		})
+	}
+}
+
+func TestReplayResult(t *testing.T) {
+	cases := []struct {
+		dir  string
+		want []string // collection.name keys options
+	}{
+		{dir: "drop-recreate", want: []string{`projects.owner_1 {"ownerId": 1, "createdAt": -1} {"unique": true}`}},
+		{dir: "same-definition", want: []string{`projects.owner_1 {"ownerId": 1} {}`}},
+		{dir: "other-collection", want: []string{`projects.owner_1 {"ownerId": 1} {}`, `owners.owner_1 {"name": 1} {}`}},
+		{dir: "name-reused", want: []string{`projects.owner_1 {"ownerId": 1} {}`}},
+		{dir: "conflict-same-definition", want: []string{`projects.owner_1 {"ownerId": 1} {}`}},
+		{dir: "conflict-options", want: []string{`users.email_1 {"email": 1} {}`, `sessions.expiresAt_1 {"expiresAt": 1} {"expireAfterSeconds": 3600}`, `users.email_unique {"email": 1} {"unique": true}`,
+			`events.all_a {"$**": 1} {"wildcardProjection": {"a.b": 1}}`, `places.loc_2d {"loc": "2d"} {}`}},
+		{dir: "conflict-distinct", want: []string{
+			`accounts.name_1 {"name": 1} {}`,
+			`accounts.name_1_ci {"name": 1} {"collation": {"locale": "en", "strength": 2}}`,
+			`projects.status_1 {"status": 1} {}`,
+			`projects.status_1_active {"status": 1} {"partialFilterExpression": {"archived": false}}`,
+			`projects.status_1_unique {"status": 1} {"unique": true}`,
+			`projects.status_1_sparse {"status": 1} {"sparse": true}`,
+			`projects.status_1_unique_sparse {"status": 1} {"unique": true, "sparse": true}`,
+			`projects.status_1_ownerId_1 {"status": 1, "ownerId": 1} {}`,
+			`events.all {"$**": 1} {}`,
+			`events.all_a {"$**": 1} {"wildcardProjection": {"a": 1}}`,
+			`events.all_b {"$**": 1} {"wildcardProjection": {"b": 1}}`,
+		}},
+		{dir: "conflict-drop-rename", want: []string{`projects.ownerId_1 {"ownerId": 1} {"unique": true}`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.dir, func(t *testing.T) {
+			ms, err := loadAll(filepath.Join("testdata", "replay", tc.dir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			indexes, _ := replayIndexes(ms)
+			var got []string
+			for _, ix := range indexes {
+				got = append(got, fmt.Sprintf("%s.%s %s %s", ix.Collection, ix.Name, ix.KeysString(), ix.OptionsString()))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("indexes:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tc.want, "\n  "))
+			}
+		})
+	}
+}
+
+func loadAll(dir string) ([]migration.Migration, error) {
+	d, err := migration.LoadDir(dir, slog.New(slog.DiscardHandler))
+	return d.Migrations, err
+}
+
+func TestExpectedIndexes(t *testing.T) {
+	const migrations = "2026-11-01-001-indexes.json"
+	cases := []struct {
+		file string
+		want []string
+	}{
+		// Matches although the expected file orders options differently,
+		// writes 1.0 for 1, NumberLong for an int, sparse: false, adds
+		// background and lists _id_.
+		{file: "match"},
+		// Without names, nothing can be reported as renamed.
+		{file: "unnamed"},
+		{file: "missing", want: []string{
+			`missing.json: error: index-missing: /6: no migration creates the expected index status_1 on projects: keys {"status": 1} options {}`,
+		}},
+		// Same fields in a different order is a different index.
+		{file: "missing-key-order", want: []string{
+			migrations + `: warning: index-extra: /steps/1: index owner_1 on projects is not in missing-key-order.json`,
+			`missing-key-order.json: error: index-missing: /1: no migration creates the expected index owner_1 on projects: keys {"createdAt": -1, "ownerId": 1}`,
+		}},
+		{file: "options", want: []string{
+			migrations + `: error: index-options: /steps/3: index email_1 on users has keys {"email": 1} with options {"unique": true, "partialFilterExpression": {"email": {"$exists": true}}}, but the expected index email_1 has options {"unique": true}`,
+		}},
+		{file: "extra", want: []string{
+			"2026-11-02-001-drop-and-tmp.json: warning: index-extra: /steps/0: index tmp_1 on projects is not in extra.json",
+		}},
+		{file: "renamed", want: []string{
+			migrations + ": warning: index-renamed: /steps/1: index owner_1 on projects matches the expected index ownerId_1_createdAt_-1 by definition, under a different name",
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			expected, err := ReadExpectedIndexes(filepath.Join("testdata", "expected", tc.file+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Run(filepath.Join("testdata", "expected", "migrations"), expected, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			match(t, render(got, RuleTTLIndex), tc.want)
+		})
+	}
+}
+
+// TestExpectedIndexesOptions checks every option counts, for one index of
+// each type: those the expected file spells differently, or gives as
+// listIndexes shows them, match; those it leaves out or changes don't.
+func TestExpectedIndexesOptions(t *testing.T) {
+	const migrations = "2026-11-01-001-indexes.json"
+	cases := []struct {
+		file string
+		want []string
+	}{
+		// A wildcardProjection nested or dotted, with true for 1 and _id: 0;
+		// a text index with its keys, default_language and textIndexVersion
+		// as listIndexes shows them; numbers of other types; and the ignored
+		// options 2dsphereIndexVersion, background and prepareUnique.
+		{file: "match"},
+		// The collation as listIndexes shows it, with every default and its
+		// version: every field the migration gives must match, the others
+		// count as defaults, so caseLevel set on the server alone goes
+		// unnoticed.
+		{file: "collation-listindexes"},
+		{file: "collation-listindexes-blind-spot"},
+		{file: "collation-listindexes-differ", want: []string{
+			migrations + `: error: index-options: /steps/7: index name_ci on accounts has keys {"name": 1} with options {"collation": {"locale": "en", "strength": 2}}, but the expected index name_ci has options {"collation": {"alternate": "non-ignorable", "backwards": false, "caseFirst": "off", "caseLevel": false, "locale": "en", "maxVariable": "punct", "normalization": false, "numericOrdering": false, "strength": 1, "version": "57.1"}}`,
+		}},
+		{file: "differ", want: []string{
+			migrations + `: error: index-options: /steps/0: index all on events has keys {"$**": 1} with options {"wildcardProjection": {"payload.id": 1, "payload.kind": 1}}, but the expected index all has options {}`,
+			migrations + `: error: index-options: /steps/1: index text on articles has keys {"_fts": "text", "_ftsx": 1} with options {"weights": {"body": 1, "title": 10}, "default_language": "english", "language_override": "lang"}, but the expected index text has options {"weights": {"body": 1, "title": 10}, "default_language": "english", "language_override": "language"}`,
+			migrations + `: error: index-options: /steps/2: index loc_2d on places has keys {"loc": "2d"} with options {"bits": 20, "max": 1000, "min": -1000}, but the expected index loc_2d has options {}`,
+			migrations + `: error: index-options: /steps/3: index area_2dsphere on places has keys {"area": "2dsphere"} with options {}, but the expected index area_2dsphere has options {"sparse": true}`,
+			migrations + `: error: index-options: /steps/5: index expires_1 on sessions has keys {"expiresAt": 1} with options {"expireAfterSeconds": 3600}, but the expected index expires_1 has options {"expireAfterSeconds": 60}`,
+			migrations + `: error: index-options: /steps/6: index email_1 on users has keys {"email": 1} with options {"unique": true, "partialFilterExpression": {"email": {"$exists": true}}}, but the expected index email_1 has options {"unique": true, "partialFilterExpression": {"email": {"$type": "string"}}}`,
+			migrations + `: error: index-options: /steps/7: index name_ci on accounts has keys {"name": 1} with options {"collation": {"locale": "en", "strength": 2}}, but the expected index name_ci has options {"collation": {"locale": "en", "strength": 1}}`,
+			migrations + `: error: index-options: /steps/8: index at_1 on logs has keys {"at": 1} with options {"storageEngine": {"wiredTiger": {"configString": "block_compressor=zlib"}}}, but the expected index at_1 has options {}`,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			expected, err := ReadExpectedIndexes(filepath.Join("testdata", "expected-options", tc.file+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Run(filepath.Join("testdata", "expected-options", "migrations"), expected, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			match(t, render(got, RuleTTLIndex), tc.want)
+		})
+	}
+}
+
+func TestReadExpectedIndexesInvalid(t *testing.T) {
+	cases := []struct {
+		file string
+		want string
+	}{
+		{file: "not-json", want: "invalid JSON"},
+		{file: "not-array", want: "want a JSON array of indexes"},
+		{file: "entry-not-object", want: "invalid Extended JSON"},
+		{file: "bad-extended-json", want: "invalid Extended JSON"},
+		{file: "unknown-field", want: `/0: unknown field "version"`},
+		{file: "missing-collection", want: "/0: missing collection"},
+		{file: "empty-keys", want: "/0: invalid keys"},
+		{file: "keys-not-object", want: "/0: invalid keys"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			_, err := ReadExpectedIndexes(filepath.Join("testdata", "expected-invalid", tc.file+".json"))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -251,7 +487,7 @@ func TestChecksums(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := Run(dir, tc.applied)
+			got, err := Run(dir, nil, tc.applied)
 			if err != nil {
 				t.Fatal(err)
 			}

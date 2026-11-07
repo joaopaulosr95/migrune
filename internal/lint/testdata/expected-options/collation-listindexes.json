@@ -1,0 +1,16 @@
+[
+  { "collection": "events", "name": "all", "keys": { "$**": 1 }, "options": { "wildcardProjection": { "payload.kind": true, "payload.id": 1, "_id": 0 } } },
+  {
+    "collection": "articles",
+    "name": "text",
+    "keys": { "_fts": "text", "_ftsx": 1 },
+    "options": { "weights": { "body": 1, "title": 10 }, "default_language": "english", "language_override": "lang", "textIndexVersion": 3 }
+  },
+  { "collection": "places", "name": "loc_2d", "keys": { "loc": "2d" }, "options": { "bits": { "$numberLong": "20" }, "min": -1000.0, "max": 1000 } },
+  { "collection": "places", "name": "area_2dsphere", "keys": { "area": "2dsphere" }, "options": { "2dsphereIndexVersion": 3 } },
+  { "collection": "users", "name": "tenant_hashed", "keys": { "tenant": "hashed" }, "options": { "background": true } },
+  { "collection": "sessions", "name": "expires_1", "keys": { "expiresAt": 1 }, "options": { "expireAfterSeconds": 3600.0 } },
+  { "collection": "users", "name": "email_1", "keys": { "email": 1 }, "options": { "partialFilterExpression": { "email": { "$exists": true } }, "unique": true, "sparse": false, "hidden": false } },
+  { "collection": "accounts", "name": "name_ci", "keys": { "name": 1 }, "options": { "collation": { "locale": "en", "caseLevel": false, "caseFirst": "off", "strength": 2, "numericOrdering": false, "alternate": "non-ignorable", "maxVariable": "punct", "normalization": false, "backwards": false, "version": "57.1" } } },
+  { "collection": "logs", "name": "at_1", "keys": { "at": 1 }, "options": { "storageEngine": { "wiredTiger": { "configString": "block_compressor=zlib" } }, "prepareUnique": true } }
+]

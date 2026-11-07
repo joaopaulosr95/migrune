@@ -1,0 +1,13 @@
+{
+  "id": "2026-01-01-025-index-create-missing-keys",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "createIndex",
+      "options": {
+        "name": "name_1_ci"
+      }
+    }
+  ]
+}

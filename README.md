@@ -5,8 +5,8 @@ to your code; migrune checks them (`lint`), shows what would change (`plan`)
 and applies them (`apply`) under a lock, recording each one in a changelog
 collection.
 
-- **Data migrations**: `updateOne`, `updateMany` and `deleteMany` steps in
-  one transaction.
+- **Two kinds of migration**: data (`updateOne`, `updateMany`,
+  `deleteMany` in one transaction) and index (`createIndex`, `dropIndex`).
 - **Checked before they run**: lint works offline; plan runs every data
   migration twice in a transaction and aborts it, so non-idempotent
   migrations fail before anyone approves them.
@@ -63,7 +63,7 @@ Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI.
 ## Try it
 
 [`examples/`](examples/) has a Docker Compose file with a single-node replica
-set and a sample migration:
+set and sample migrations of each kind:
 
 ```sh
 cd examples
@@ -109,8 +109,8 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 
 - [Getting started](docs/getting-started.md): a ten-minute walkthrough with
   Docker.
-- [Writing migrations](docs/writing-migrations.md): data migrations, and the
-  checks they must pass.
+- [Writing migrations](docs/writing-migrations.md): data and index
+  migrations, and the checks they must pass.
 - [Running migrations](docs/running.md): plan and apply in CI with an
   approval gate, large collections, credentials and AWS IAM, `--mutable`
   locally.
@@ -122,7 +122,7 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
   the [migration file](docs/reference/migration-file.md),
-  [lint rules](docs/reference/lint-rules.md), the
+  [lint rules and expected indexes](docs/reference/lint-rules.md), the
   [report](docs/reference/report.md), the
   [changelog and lock](docs/reference/changelog-and-lock.md).
 

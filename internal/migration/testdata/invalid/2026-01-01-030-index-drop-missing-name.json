@@ -1,0 +1,10 @@
+{
+  "id": "2026-01-01-030-index-drop-missing-name",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "dropIndex"
+    }
+  ]
+}

@@ -41,8 +41,8 @@ const (
 	// heartbeat can be taken over, unless its TTL is longer.
 	expiryFactor = 3
 	// maxLeaseMargin is how long before the lock's expiry, counted from the
-	// send time of the last heartbeat that succeeded, the runner counts a
-	// failed heartbeat as a lost lock. For an
+	// send time of the last heartbeat that succeeded, the runner stops
+	// sending unfenced writes (index commands). For an
 	// expiry under twice the margin, which only tests use, the margin is
 	// half the expiry.
 	maxLeaseMargin = 10 * time.Second
@@ -182,8 +182,8 @@ func (l *Lock) renewed(sent time.Time) {
 }
 
 // leaseExpired reports whether the local lease deadline has passed: the lock
-// may expire on the server soon. Both times carry monotonic clock readings,
-// so the comparison ignores the wall clock.
+// may expire on the server soon, so no unfenced write may start. Both times
+// carry monotonic clock readings, so the comparison ignores the wall clock.
 func (l *Lock) leaseExpired() bool {
 	l.leaseMu.Lock()
 	defer l.leaseMu.Unlock()

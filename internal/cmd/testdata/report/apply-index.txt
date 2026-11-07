@@ -1,0 +1,10 @@
+Database: app
+
+MIGRATION               KIND   STATUS   DURATION  ERROR
+2026-11-02-003-name-ci  index  applied  120ms
+  index already present: name_1 on items, keys {"name":1}
+  index created: name_1_ci on items, keys {"name":1}, options {"unique":true,"collation":{"locale":"en","strength":2}}
+  index dropped: name_1 on items, keys {"name":1}
+  index already absent: stale_1 on items
+
+Total: 1 migration: 1 applied, 0 errored, 0 interrupted, 0 skipped in 130ms

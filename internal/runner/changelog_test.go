@@ -266,6 +266,13 @@ func TestSnapshot(t *testing.T) {
 				{"collection", "operation", "filter"},
 			},
 		},
+		{
+			id: "2026-11-05-003-account-name-ci-index",
+			fields: [][]string{
+				{"collection", "operation", "options", "keys"},
+				{"collection", "operation", "name"},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {

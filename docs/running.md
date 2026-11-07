@@ -49,7 +49,9 @@ the release or tag pipeline too, as the first step of the plan job, as both
 examples do. plan and apply don't run lint's rules, such as `server-js`, and
 a tag can point at a commit no pull request checked.
 lint needs no database; add `MIGRUNE_URI` and `--db`, with a read-only user
-in pull requests, to also catch edited or deleted applied migrations.
+in pull requests, to also catch edited or deleted applied migrations, and
+`--expected-indexes <file>` if your application declares indexes (see
+[lint rules](reference/lint-rules.md#expected-indexes)).
 
 ### Record who approved
 
@@ -97,16 +99,24 @@ Pin an exact version and upgrade on purpose. After a failure, see
 plan isn't a cheap preview: it runs the migrations against the target
 database, the production one included, as apply would, without committing.
 On large collections, both put the load of the migrations themselves on the
-primary, while holding the migration lock. Data migrations run twice in
-their transaction, in plan and in apply, and plan then aborts it. They are
-bounded by the server's transaction lifetime, 60 seconds by default, which is
-why they [stay small](writing-migrations.md#data-migrations).
+primary, while holding the migration lock:
 
-migrune sets no `maxTimeMS` and no overall deadline. Bound the job instead,
-with your CI system's job timeout (`timeout-minutes` in GitHub Actions,
-`timeout` in GitLab CI), set above the longest run you expect. A timed-out
-job is cancelled like any other: see
-[a run was interrupted](troubleshooting.md#a-run-was-interrupted).
+- **Data migrations** run twice in their transaction, in plan and in apply,
+  and plan then aborts it. They are bounded by the server's transaction
+  lifetime, 60 seconds by default, which is why they
+  [stay small](writing-migrations.md#data-migrations).
+- **Index migrations**: plan reads the indexes and counts the documents a
+  new TTL index would delete. apply builds each index with
+  `createIndexes` and waits for it: migrune sets no `commitQuorum`, so the
+  server's default applies (every data-bearing voting member), and no time
+  limit.
+
+migrune sets no `maxTimeMS` on any of these, and no overall deadline: an
+index build runs as long as the server takes. Bound the job instead, with
+your CI system's job timeout (`timeout-minutes` in GitHub Actions, `timeout`
+in GitLab CI), set above the longest run you expect. A timed-out job is cancelled like any other: see
+[a run was interrupted](troubleshooting.md#a-run-was-interrupted). An index
+build in progress is left to finish on the server.
 
 ## Credentials
 
@@ -116,7 +126,8 @@ logs. migrune never logs or prints the URI, not even in error messages: it
 logs the database it connects to.
 
 The database user needs `readWrite` on the target database: it covers data
-changes and the `migrations_changelog` and `migrations_lock` collections. For lint in pull
+changes, `createIndex` and `dropIndex`, and the
+`migrations_changelog` and `migrations_lock` collections. For lint in pull
 requests, use another user with `read`.
 
 ### AWS IAM

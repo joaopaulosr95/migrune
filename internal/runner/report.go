@@ -1,11 +1,13 @@
 package runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // RowStatus is the outcome of one migration in a report. For plan it
@@ -61,8 +63,14 @@ type Row struct {
 	// Steps has one item per step of a data migration whose first run
 	// completed, with what MongoDB reported for it: in plan, what apply
 	// would do to the data as it is now; in apply, what it did. Absent for
-	// skipped rows and when the first run failed.
+	// other kinds, for skipped rows, and when the first run failed.
 	Steps []DataStep `json:"steps,omitempty"`
+	// Indexes has one item per step of an index migration that ran: in
+	// plan, what the step would do to the indexes as they are now, changed
+	// by the pending index migrations planned before it; in
+	// apply, what it did. A plan step predicted to fail is the last item,
+	// with its Conflict. Absent for other kinds and for skipped rows.
+	Indexes []IndexChange `json:"indexes,omitempty"`
 }
 
 // DataStep is what one step of a data migration matched and changed, in the
@@ -116,6 +124,46 @@ func (s DataStep) logAttrs() []any {
 	return attrs
 }
 
+// IndexAction is what an index step does, or would do, to its index.
+type IndexAction string
+
+const (
+	IndexCreate IndexAction = "create"
+	IndexDrop   IndexAction = "drop"
+	// IndexPresent is a createIndex whose index already exists with the
+	// same definition: a no-op.
+	IndexPresent IndexAction = "present"
+	// IndexAbsent is a dropIndex whose index doesn't exist: a no-op.
+	IndexAbsent IndexAction = "absent"
+	// IndexDiffers is a createIndex, in plan, whose index exists with a
+	// collation plan can't compare with the step's: apply may do nothing
+	// or fail.
+	IndexDiffers IndexAction = "differs"
+)
+
+// IndexChange is one index step in a report.
+type IndexChange struct {
+	Action     IndexAction `json:"action"`
+	Collection string      `json:"collection"`
+	Name       string      `json:"name"`
+	// Keys is the key pattern, as relaxed Extended JSON: the step's for a
+	// createIndex, the existing index's for a drop. Absent when the index
+	// is already absent.
+	Keys json.RawMessage `json:"keys,omitempty"`
+	// Options are the index options but its name, as relaxed Extended
+	// JSON, in the same way as Keys. Absent when there are none.
+	Options json.RawMessage `json:"options,omitempty"`
+	// Conflict is why MongoDB would reject the step. plan only.
+	Conflict string `json:"conflict,omitempty"`
+	// Warning is why apply may fail although plan found no conflict. plan
+	// only.
+	Warning string `json:"warning,omitempty"`
+	// WouldExpire is, for a TTL index plan would create, how many documents
+	// it would delete as soon as it is built: those whose indexed date is
+	// older than now less expireAfterSeconds. plan only.
+	WouldExpire *int64 `json:"wouldExpire,omitempty"`
+}
+
 // Totals counts the rows of a report by status.
 type Totals struct {
 	Migrations  int `json:"migrations"`
@@ -156,4 +204,26 @@ func (r *Report) finish(d time.Duration, err error) {
 	if err != nil {
 		r.Error = err.Error()
 	}
+}
+
+// rawExtJSON renders a document as relaxed Extended JSON, to embed in the
+// JSON report.
+func rawExtJSON(d bson.D) json.RawMessage {
+	b, err := bson.MarshalExtJSON(d, false, false)
+	if err != nil {
+		b, _ = json.Marshal(err.Error())
+	}
+	return b
+}
+
+// extJSON renders a value as relaxed Extended JSON for logs and messages.
+func extJSON(v any) string {
+	if v == nil {
+		return "none"
+	}
+	s, err := migration.ExtJSON(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return s
 }

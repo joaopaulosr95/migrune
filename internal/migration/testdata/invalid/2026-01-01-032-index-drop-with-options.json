@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-032-index-drop-with-options",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "dropIndex",
+      "name": "name_1",
+      "options": {
+        "name": "name_1"
+      }
+    }
+  ]
+}

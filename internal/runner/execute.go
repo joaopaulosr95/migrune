@@ -185,6 +185,8 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 	switch m.Kind {
 	case migration.KindData:
 		err = r.runData(m, apply, log, row)
+	case migration.KindIndex:
+		err = r.runIndex(m, apply, log, row)
 	default:
 		err = fmt.Errorf("unknown migration kind %q", m.Kind)
 	}
@@ -203,7 +205,13 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 	case errors.As(err, &ie):
 		row.Status = RowInterrupted
 		row.Error = err.Error()
-		log.Warn("migration interrupted: its transaction was aborted and it stays pending")
+		switch m.Kind {
+		case migration.KindIndex:
+			log.Warn("migration interrupted: it stays pending; an index command in progress is left to the server, " +
+				"and the next run's identical step waits for it or does nothing")
+		default:
+			log.Warn("migration interrupted: its transaction was aborted and it stays pending")
+		}
 		return err
 	default:
 		row.Status = RowErrored

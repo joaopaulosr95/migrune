@@ -174,6 +174,62 @@ func TestWriteReport(t *testing.T) {
 		Totals:            runner.Totals{Migrations: 1, Skipped: 1, DurationMs: 40},
 		Error:             (&runner.AppliedMissingError{Migrations: []migration.Applied{byHand}}).Error(),
 	}
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	const (
+		emailIndex = "2026-11-02-005-email-index"
+		nameCI     = "2026-11-02-003-name-ci"
+		conflict   = "2026-11-02-004-conflict"
+		ciAgain    = "2026-11-02-002-ci-again"
+	)
+	nameCIChanges := func(created, dropped runner.IndexAction) []runner.IndexChange {
+		return []runner.IndexChange{
+			{Action: runner.IndexPresent, Collection: "items", Name: "name_1", Keys: raw(`{"name":1}`)},
+			{Action: created, Collection: "items", Name: "name_1_ci", Keys: raw(`{"name":1}`),
+				Options: raw(`{"unique":true,"collation":{"locale":"en","strength":2}}`)},
+			{Action: dropped, Collection: "items", Name: "name_1", Keys: raw(`{"name":1}`)},
+			{Action: runner.IndexAbsent, Collection: "items", Name: "stale_1"},
+		}
+	}
+	indexPlan := &runner.Report{
+		Command: "plan",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: ciAgain, Kind: "index", Status: runner.RowApplied, DurationMs: 4,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexDiffers, Collection: "items", Name: "name_1_ci", Keys: raw(`{"name":1}`),
+						Options: raw(`{"collation":{"locale":"en","strength":2}}`),
+						Warning: "index name_1_ci exists with the collation {...}, and the step gives {...}: plan can't tell whether MongoDB sees them as the same, so apply may fail (IndexKeySpecsConflict)"},
+					{Action: runner.IndexCreate, Collection: "items", Name: "name_1_fr", Keys: raw(`{"name":1}`),
+						Options: raw(`{"collation":{"locale":"fr"}}`),
+						Warning: "index name_1_fr has the same keys and options as the existing index name_1_ci, but for a collation plan can't compare (...): if MongoDB sees them as the same, apply fails (IndexOptionsConflict)"},
+					{Action: runner.IndexCreate, Collection: "sessions", Name: "lastUsedAt_ttl", Keys: raw(`{"lastUsedAt":1}`),
+						Options: raw(`{"expireAfterSeconds":3600}`), WouldExpire: n(2)},
+				}},
+			{ID: nameCI, Kind: "index", Status: runner.RowApplied, DurationMs: 8,
+				Indexes: nameCIChanges(runner.IndexCreate, runner.IndexDrop)},
+			{ID: conflict, Kind: "index", Status: runner.RowErrored, DurationMs: 3,
+				Error: "/steps/1 (createIndex on items): index name_1 already exists with a different definition",
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexCreate, Collection: "items", Name: "createdAt_-1", Keys: raw(`{"createdAt":-1}`)},
+					{Action: runner.IndexCreate, Collection: "items", Name: "name_1", Keys: raw(`{"name":-1}`),
+						Conflict: "index name_1 already exists with a different definition"},
+				}},
+			{ID: emailIndex, Kind: "index", Status: runner.RowSkipped},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 4, Applied: 2, Errored: 1, Skipped: 1, DurationMs: 19},
+		Error:             "migration " + conflict + " failed: index name_1 already exists with a different definition",
+	}
+	indexApply := &runner.Report{
+		Command: "apply",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: nameCI, Kind: "index", Status: runner.RowApplied, DurationMs: 120,
+				Indexes: nameCIChanges(runner.IndexCreate, runner.IndexDrop)},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 130},
+	}
 	// A plan against a new database.
 	newDB := &runner.Report{
 		Command:           "plan",
@@ -203,6 +259,9 @@ func TestWriteReport(t *testing.T) {
 		{name: "two failed checks table", rep: checks, output: "table", golden: "apply-checks.txt"},
 		{name: "unknown runner and date table", rep: unknown, output: "table", golden: "apply-unknown.txt"},
 		{name: "unknown runner and date json", rep: unknown, output: "json", golden: "apply-unknown.json"},
+		{name: "index plan table", rep: indexPlan, output: "table", golden: "plan-index.txt"},
+		{name: "index plan json", rep: indexPlan, output: "json", golden: "plan-index.json"},
+		{name: "index apply table", rep: indexApply, output: "table", golden: "apply-index.txt"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

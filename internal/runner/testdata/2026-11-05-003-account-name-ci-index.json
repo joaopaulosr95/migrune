@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-05-003-account-name-ci-index",
+  "description": "Replace name_1 with the case-insensitive name_1_ci",
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": { "name": 1, "createdAt": -1 },
+      "options": { "name": "name_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
+    },
+    {
+      "collection": "accounts",
+      "operation": "dropIndex",
+      "name": "name_1"
+    }
+  ]
+}

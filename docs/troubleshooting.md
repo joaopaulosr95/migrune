@@ -96,7 +96,10 @@ under the same id**, and run again.
    db.migrations_changelog.find({migrationId: "<id>", status: "Errored"}).sort({createdAt: -1}).limit(1)
    ```
 
-2. **Check what was left behind.** Nothing: the transaction aborted.
+2. **Check what was left behind.**
+   - Data: nothing; the transaction aborted.
+   - Index: the steps before the failed one stay done. Running them again
+     does nothing.
 
 3. **Fix the file and run again**, keeping its name and `id`. For example,
    make a step idempotent by filtering on the target state:
@@ -122,7 +125,8 @@ migrune stops gracefully and exits 130 or 143:
 
 - no new migration starts;
 - the migration in progress is reported as `interrupted` and the rest as
-  `skipped`. Its transaction is aborted;
+  `skipped`. A data migration's transaction is aborted; an index build is
+  left to finish on the server;
 - no changelog entry is written, so the migration stays pending; but a
   data migration whose commit was already sent lets it finish, for up to 30
   seconds, and is reported as `applied` if it committed;
@@ -133,7 +137,8 @@ A second signal exits at once with the first signal's code; every step above is 
 cut short. SIGKILL can't be caught: the server aborts the open transaction on
 its own, and the lock expires.
 
-Nothing needs fixing: run plan and apply again.
+Nothing needs fixing: run plan and apply again. The next run's identical
+`createIndex` waits for a build still in progress or does nothing.
 
 ## The lock is held
 
@@ -155,8 +160,9 @@ with the same `--runner-id`. See
 [the lock](reference/changelog-and-lock.md#lock-migrations_lock).
 
 Don't delete the lock document by hand unless you are sure its holder is
-gone. A runner that lost its lock can't commit a data migration: the fence
-aborts its transaction.
+gone. Even then, a runner that lost its lock can't commit a data migration
+(the fence aborts its transaction), but it could still be running index
+steps.
 
 ## The lock was lost
 
@@ -173,8 +179,8 @@ The lock passes to another runner only once it has expired, so this runner
 went without a successful heartbeat for longer than the expiry: the
 connection to the primary was cut, the server was overloaded, or the process
 was paused. When the runner notices it first, before another one takes over,
-the run stops the same way, after a failed heartbeat, with
-`migration lock lost:` followed by the heartbeat's error,
+the run stops the same way, after a failed heartbeat or before its next index
+step, with `migration lock lost:` followed by the heartbeat's error,
 or by `no heartbeat succeeded within the lock expiry, less a 10s margin` (see
 [heartbeat](reference/changelog-and-lock.md#heartbeat)). Deleting the lock
 document by hand has the same effect.
@@ -182,6 +188,9 @@ document by hand has the same effect.
 No transaction commits without the lock (the
 [fence](reference/changelog-and-lock.md#fence)): a data migration's changes
 are aborted, no changelog entry is written, and the migration stays pending.
+An index migration's steps done before the loss stay done, and one already
+sent may still finish on the server; the next run handles them as it does
+after an [interrupted run](#a-run-was-interrupted).
 
 Find the runner that holds the lock now, if any, and let it finish:
 
@@ -234,9 +243,9 @@ ones. With a connection, lint reports `applied-missing` too.
 
 ```txt
 Applied but missing (Finished in the changelog, no file):
-  2026-11-01-001-seed-currencies-and-plans: Finished 2026-11-08T00:11:27Z by ci-42-1-AB12CD34: "Seed the reference currencies and the two subscription plans"; the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "2026-11-01-001-seed-currencies-and-plans")
+  2026-11-02-001-plans-currency-index: Finished 2026-11-08T00:11:27Z by ci-42-1-AB12CD34: "Index plans by currency"; the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "2026-11-02-001-plans-currency-index")
 
-Error: applied migrations must keep their file, but the file of 2026-11-01-001-seed-currencies-and-plans is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand
+Error: applied migrations must keep their file, but the file of 2026-11-02-001-plans-currency-index is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand
 ```
 
 Removing a file never undoes a migration; migrune stops so nobody believes

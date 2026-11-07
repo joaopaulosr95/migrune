@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-03-001-expires-ttl",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expires_1",
+        "expireAfterSeconds": 7200
+      }
+    }
+  ]
+}

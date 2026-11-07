@@ -1,7 +1,8 @@
 // Package migration loads migration files from a directory.
 //
 // Each *.json file is validated against the embedded migration file schema,
-// parsed as MongoDB Extended JSON, and classified as a data migration.
+// parsed as MongoDB Extended JSON, and classified as a data or index
+// migration.
 package migration
 
 import (
@@ -22,18 +23,21 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Kind is the kind of a migration.
+// Kind is the kind of a migration. A file never mixes kinds.
 type Kind string
 
 const (
-	KindData Kind = "data"
+	KindData  Kind = "data"
+	KindIndex Kind = "index"
 )
 
 // kinds maps each allowed operation to the kind of migration it belongs to.
 var kinds = map[string]Kind{
-	"updateOne":  KindData,
-	"updateMany": KindData,
-	"deleteMany": KindData,
+	"updateOne":   KindData,
+	"updateMany":  KindData,
+	"deleteMany":  KindData,
+	"createIndex": KindIndex,
+	"dropIndex":   KindIndex,
 }
 
 // Errors wrapped by LoadFile and LoadDir when a file can't be read or parsed.
@@ -69,6 +73,9 @@ type Step struct {
 	// Update is an update document or an update pipeline.
 	Update  bson.RawValue `bson:"update,omitempty"`
 	Options bson.Raw      `bson:"options,omitempty"`
+	// Index steps: createIndex uses Keys and Options, dropIndex uses Name.
+	Keys bson.Raw `bson:"keys,omitempty"`
+	Name string   `bson:"name,omitempty"`
 }
 
 type file struct {
@@ -229,7 +236,7 @@ func loadFile(path string) (Migration, string, error) {
 }
 
 // detectKind returns the kind of a migration's steps: the schema allows
-// only known operations and at least one step.
+// only known operations, at least one step, and one kind per file.
 func detectKind(steps []Step) Kind {
 	return kinds[steps[0].Operation]
 }

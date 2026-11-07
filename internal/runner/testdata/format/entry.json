@@ -73,6 +73,30 @@
         "filter": {
           "stale": true
         }
+      },
+      {
+        "collection": "accounts",
+        "operation": "createIndex",
+        "options": {
+          "name": "name_1_ci",
+          "unique": true,
+          "collation": {
+            "locale": "en",
+            "strength": {
+              "$numberInt": "2"
+            }
+          }
+        },
+        "keys": {
+          "name": {
+            "$numberInt": "1"
+          }
+        }
+      },
+      {
+        "collection": "accounts",
+        "operation": "dropIndex",
+        "name": "name_1"
       }
     ]
   },
@@ -109,6 +133,16 @@
       "deletedCount": {
         "$numberLong": "4"
       }
+    },
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "indexName": "name_1_ci"
+    },
+    {
+      "collection": "accounts",
+      "operation": "dropIndex",
+      "indexName": "name_1"
     }
   ],
   "errors": [

@@ -7,8 +7,9 @@ Show what apply would do
 Show which migrations are pending and what applying them would do, without
 changing the database.
 
-Data migrations run twice in a transaction that is then aborted. plan stops at
-the first migration that fails.
+Data migrations run twice in a transaction that is then aborted. Index steps
+are compared with the indexes listIndexes returns. plan stops at the first
+migration that fails.
 
 What plan checks and reports: docs/reference/report.md, in
 https://github.com/joaopaulosr95/migrune.

@@ -1,0 +1,21 @@
+{
+  "id": "2026-11-02-001-drop-and-tmp",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "createIndex",
+      "keys": {
+        "tmp": 1
+      },
+      "options": {
+        "name": "tmp_1"
+      }
+    },
+    {
+      "collection": "sessions",
+      "operation": "dropIndex",
+      "name": "expires_1"
+    }
+  ]
+}

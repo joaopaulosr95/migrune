@@ -79,6 +79,30 @@
           "filter": {
             "stale": true
           }
+        },
+        {
+          "collection": "accounts",
+          "operation": "createIndex",
+          "options": {
+            "name": "name_1_ci",
+            "unique": true,
+            "collation": {
+              "locale": "en",
+              "strength": {
+                "$numberInt": "2"
+              }
+            }
+          },
+          "keys": {
+            "name": {
+              "$numberInt": "1"
+            }
+          }
+        },
+        {
+          "collection": "accounts",
+          "operation": "dropIndex",
+          "name": "name_1"
         }
       ]
     }

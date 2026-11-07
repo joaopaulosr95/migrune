@@ -1,0 +1,16 @@
+{
+  "id": "2026-01-01-027-index-create-unnamed",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "resellers",
+      "operation": "createIndex",
+      "keys": {
+        "name": 1
+      },
+      "options": {
+        "unique": true
+      }
+    }
+  ]
+}

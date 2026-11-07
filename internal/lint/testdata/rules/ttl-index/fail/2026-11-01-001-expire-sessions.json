@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-01-001-expire-sessions",
+  "description": "Expire sessions an hour after their last use",
+  "steps": [
+    { "collection": "sessions", "operation": "createIndex", "keys": { "lastUsedAt": 1 }, "options": { "name": "lastUsedAt_ttl", "expireAfterSeconds": 3600 } }
+  ]
+}
