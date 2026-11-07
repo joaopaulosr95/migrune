@@ -1,0 +1,101 @@
+version: "3"
+
+vars:
+  REPLICASET_COMPOSE: test/replicaset/docker-compose.yaml
+  # The MongoDB image for the test replica set, e.g.
+  # MONGO_IMAGE=mongo:7.0 task test:int. Keep the default in step with
+  # test/replicaset/docker-compose.yaml and the CI matrix.
+  DEFAULT_MONGO_IMAGE: mongo:9
+  MONGO_IMAGE: '{{.MONGO_IMAGE | default .DEFAULT_MONGO_IMAGE}}'
+  # The images test:int:all runs on, the default last. See "Requirements" in
+  # README.md.
+  TESTED_MONGO_IMAGES: mongo:7.0 mongo:8.0 mongo:8 mongo:9
+  TEST_URI: mongodb://127.0.0.1:27017,127.0.0.1:27018,127.0.0.1:27019/?replicaSet=rs0
+  CLI_DOCS_DIR: docs/reference/cli
+
+tasks:
+  setup:
+    desc: Install the pinned tool versions from mise.toml
+    cmds:
+      - mise install
+
+  build:
+    desc: Build the migrune binary into dist/
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/joaopaulosr95/migrune/internal/cmd.version={{.VERSION}}" -o dist/migrune ./cmd/migrune
+
+  dev:
+    desc: "Run migrune from source, e.g. task dev -- --version"
+    cmds:
+      - go run ./cmd/migrune {{.CLI_ARGS}}
+
+  test:
+    desc: Run the unit tests
+    cmds:
+      - go test -short ./...
+
+  test:int:
+    desc: Start the replica set and run all tests, integration tests included
+    deps: [replicaset:up]
+    env:
+      MIGRUNE_TEST_URI: "{{.TEST_URI}}"
+    cmds:
+      - go test -count=1 ./...
+
+  test:int:all:
+    desc: Run test:int on every tested MongoDB image in turn, stopping at the first failure
+    cmds:
+      # Each image gets a new replica set: data files aren't portable across
+      # majors. The default image is left running at the end.
+      - |
+        for image in {{.TESTED_MONGO_IMAGES}}; do
+          echo "test:int:all: $image"
+          {{.TASK_EXE}} replicaset:down
+          if ! {{.TASK_EXE}} test:int MONGO_IMAGE="$image"; then
+            echo "test:int:all: failed on $image"; exit 1
+          fi
+        done
+      # A no-op when the list ends on the default image.
+      - "{{.TASK_EXE}} replicaset:up MONGO_IMAGE={{.DEFAULT_MONGO_IMAGE}}"
+
+  replicaset:up:
+    desc: Start the 3-node test replica set and wait for a primary
+    cmds:
+      - docker compose -f {{.REPLICASET_COMPOSE}} up -d --wait
+    env:
+      MONGO_IMAGE: "{{.MONGO_IMAGE}}"
+
+  replicaset:down:
+    desc: Stop the test replica set and discard its data
+    cmds:
+      - docker compose -f {{.REPLICASET_COMPOSE}} down --volumes
+
+  lint:
+    desc: Run go vet, staticcheck and gofmt, actionlint the workflows, and check the CLI docs are up to date
+    cmds:
+      - go vet ./...
+      - staticcheck ./...
+      # actionlint runs shellcheck on the run: scripts; both are pinned in
+      # mise.toml.
+      - actionlint .github/workflows/*.yml
+      - |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "gofmt needed on:"; echo "$unformatted"; exit 1
+        fi
+      - |
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        go run ./internal/cmd/gendocs "$tmp"
+        if ! diff -r "$tmp" {{.CLI_DOCS_DIR}}; then
+          echo "CLI docs are out of date: run 'task docs'"; exit 1
+        fi
+
+  docs:
+    desc: Generate the CLI reference into docs/reference/cli/
+    cmds:
+      - rm -rf {{.CLI_DOCS_DIR}}
+      - go run ./internal/cmd/gendocs {{.CLI_DOCS_DIR}}

@@ -1,0 +1,6 @@
+**local**
+.claude/worktrees 
+.DS_Store
+dist/
+node_modules/
+vendor/
