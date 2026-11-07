@@ -4,10 +4,10 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
-        { "$lookup": { "from": "migrations_changelog", "pipeline": [], "as": "entries" } }
+      "operation": "aggregate",
+      "pipeline": [
+        { "$lookup": { "from": "migrations_changelog", "pipeline": [], "as": "entries" } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

@@ -1,0 +1,25 @@
+{
+  "id": "2026-01-01-049-merge-on-empty-string",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

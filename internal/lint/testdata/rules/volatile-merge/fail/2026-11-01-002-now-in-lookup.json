@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-002-now-in-lookup",
+  "description": "Stamp items with the time their owner was looked up",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$lookup": { "from": "owners", "pipeline": [{ "$set": { "seenAt": "$$NOW" } }], "as": "owner" } },
+        { "$project": { "owner": 1 } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

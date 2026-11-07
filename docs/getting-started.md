@@ -30,8 +30,9 @@ environment:
 ## 2. Lint the sample migrations
 
 [`examples/migrations/`](../examples/migrations/) holds one migration of each
-kind: a **data** migration seeding currencies and plans, and an **index**
-migration creating `currency_1`.
+kind: a **data** migration seeding currencies and plans, an **index**
+migration creating `currency_1`, and a **merge** migration copying each
+currency's symbol onto its plans.
 
 ```sh
 docker compose run --rm migrune lint
@@ -66,15 +67,19 @@ MIGRATION                                 KIND   STATUS   DURATION  ERROR
   /steps/3 updateOne on plans: matched 0, modified 0, upserted 1
 2026-11-02-001-plans-currency-index       index  applied  13ms
   index to create: currency_1 on plans, keys {"currency":1}
+2026-11-03-001-copy-currency-symbol       merge  applied  8ms
+  merge: diffCountBefore 0, unmatchedCount 0, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
 
-Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 161ms
+Total: 3 migrations: 3 applied, 0 errored, 0 interrupted, 0 skipped in 169ms
 ```
 
-plan ran the data migration twice in a transaction and aborted it, and read
-the indexes without building any. Each data step's line shows what its first
-run did: every seed would insert one document. The report names the target
-database, marked new because it has no collections yet: expected here, but
-against a database that should exist, a sign of a mistyped `--db`.
+plan ran the data migration twice in a transaction and aborted it, read the
+indexes without building any, and ran the merge pipeline without its `$merge`.
+Each data step's line shows what its first run did: every seed would insert
+one document. Nothing changed, which is why the merge sees
+`diffCountBefore 0`: the plans aren't seeded yet. The report names the
+target database, marked new because it has no collections yet: expected
+here, but against a database that should exist, a sign of a mistyped `--db`.
 
 ## 4. Apply
 
@@ -93,12 +98,21 @@ MIGRATION                                 KIND   STATUS   DURATION  ERROR
   /steps/3 updateOne on plans: matched 0, modified 0, upserted 1
 2026-11-02-001-plans-currency-index       index  applied  141ms
   index created: currency_1 on plans, keys {"currency":1}
+2026-11-03-001-copy-currency-symbol       merge  applied  22ms
+  merge: diffCountBefore 2, diffCountAfter 0, unmatchedCount 0, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":"basic"}: currencySymbol: missing -> string
+  differs at /steps/0 {"_id":"pro"}: currencySymbol: missing -> string
 
-Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 184ms
+Total: 3 migrations: 3 applied, 0 errored, 0 interrupted, 0 skipped in 206ms
 ```
 
-Each migration now has a `Finished` entry in `migrations_changelog`, so the
-next run leaves it alone.
+This time the seeds were committed first, so the merge found two plans to
+change, and nothing left to change after `$merge` (`diffCountAfter 0`). Each
+sample names the field `$merge` sets and its BSON types, missing before and a
+string after; `--sample-values` would show the values too, which plan and
+apply leave out by default to keep data out of CI logs. Each migration now
+has a `Finished` entry in `migrations_changelog`, so the next run leaves it
+alone.
 
 ## 5. Write a migration
 
@@ -196,6 +210,10 @@ docker compose exec mongo mongosh --quiet example --eval 'db.migrations_changelo
   },
   {
     migrationId: '2026-11-02-001-plans-currency-index',
+    status: 'Finished'
+  },
+  {
+    migrationId: '2026-11-03-001-copy-currency-symbol',
     status: 'Finished'
   },
   { migrationId: '2026-11-07-001-activate-plans', status: 'Finished' }

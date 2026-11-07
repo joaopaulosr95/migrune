@@ -4,16 +4,16 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
+      "operation": "aggregate",
+      "pipeline": [
         {
           "$lookup": {
             "from": "owners",
             "pipeline": [{ "$unionWith": { "coll": "owners", "pipeline": [{ "$unionWith": "migrations_changelog" }] } }],
             "as": "owners"
           }
-        }
+        },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

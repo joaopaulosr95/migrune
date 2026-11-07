@@ -77,7 +77,7 @@ func TestPlanApplyUsage(t *testing.T) {
 // migration that names a reserved collection, so skipping lint can't bypass
 // the check.
 func TestReservedCollection(t *testing.T) {
-	for _, file := range []string{"2026-11-01-001-changelog-data", "2026-11-01-009-facet-lookup"} {
+	for _, file := range []string{"2026-11-01-004-merge-into-changelog", "2026-11-01-009-facet-lookup"} {
 		for _, command := range []string{"plan", "apply"} {
 			t.Run(command+" "+file, func(t *testing.T) {
 				dir := t.TempDir()
@@ -230,6 +230,79 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 130},
 	}
+	const (
+		copyLabel      = "2026-11-03-001-copy-label"
+		amountToDouble = "2026-11-03-002-amount-to-double"
+		priceBySKU     = "2026-11-03-003-price-by-sku"
+		qtyToDouble    = "2026-11-03-004-qty-to-double"
+	)
+	labelSample := runner.MergeSample{Key: raw(`{"_id":1}`), Fields: []runner.MergeField{
+		{Field: "label", BeforeType: "missing", AfterType: "string"},
+	}}
+	// With --sample-values.
+	labelValues := runner.MergeSample{Key: raw(`{"_id":1}`), Fields: []runner.MergeField{
+		{Field: "label", BeforeType: "missing", AfterType: "string", After: raw(`"a"`)},
+	}}
+	longValues := runner.MergeSample{Key: raw(`{"_id":2}`), Fields: []runner.MergeField{
+		{Field: "label", BeforeType: "string", AfterType: "string", Before: raw(`"b"`),
+			After: raw(`"\"` + strings.Repeat("b", runner.MaxSampleValueChars-1) + `…"`), Truncated: true},
+	}}
+	mergePlan := &runner.Report{
+		Command: "plan",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: copyLabel, Kind: "merge", Status: runner.RowApplied, DurationMs: 30,
+				DiffCountBefore: n(3), UnmatchedCount: n(1), TypeChangedCount: n(0), DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				Samples: []runner.MergeSample{labelSample}},
+			// On a case-insensitive unique index.
+			{ID: priceBySKU, Kind: "merge", Status: runner.RowApplied, DurationMs: 15,
+				DiffCountBefore: n(1), UnmatchedCount: n(2), TypeChangedCount: n(0), DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				CollationOnlyMatchCount: n(1)},
+			{ID: qtyToDouble, Kind: "merge", Status: runner.RowErrored, DurationMs: 20,
+				Error:           "/steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters",
+				DiffCountBefore: n(2), UnmatchedCount: n(0), TypeChangedCount: n(1), DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				Samples: []runner.MergeSample{
+					{Key: raw(`{"_id":1}`), Fields: []runner.MergeField{
+						{Field: "qty", BeforeType: "int", AfterType: "double", TypeChanged: true},
+					}},
+					{Key: raw(`{"_id":2}`), Fields: []runner.MergeField{{Field: "qty", BeforeType: "missing", AfterType: "null"}}},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 3, Applied: 2, Errored: 1, DurationMs: 70},
+		Error:             "migration " + qtyToDouble + " failed: /steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters",
+	}
+	nestedError := "/steps/0 (aggregate on prices): typeChangedCount is 1: the merge would change the BSON type of existing fields in prices"
+	mergeNested := &runner.Report{
+		Command: "plan",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: amountToDouble, Kind: "merge", Status: runner.RowErrored, DurationMs: 25, Error: nestedError,
+				DiffCountBefore: n(2), UnmatchedCount: n(0), TypeChangedCount: n(1), DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				Samples: []runner.MergeSample{
+					{Key: raw(`{"_id":1}`), Fields: []runner.MergeField{
+						{Field: "price", Path: "price.amount", BeforeType: "long", AfterType: "double", TypeChanged: true},
+					}},
+					{Key: raw(`{"_id":2}`), Fields: []runner.MergeField{
+						{Field: "price", BeforeType: "object", AfterType: "object"},
+					}},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Errored: 1, DurationMs: 30},
+		Error:             "migration " + amountToDouble + " failed: " + nestedError,
+	}
+	mergeApply := &runner.Report{
+		Command: "apply",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: copyLabel, Kind: "merge", Status: runner.RowApplied, DurationMs: 45,
+				DiffCountBefore: n(3), DiffCountAfter: n(0), UnmatchedCount: n(0), TypeChangedCount: n(0), DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				Samples: []runner.MergeSample{labelValues, longValues}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 50},
+	}
 	// A plan against a new database.
 	newDB := &runner.Report{
 		Command:           "plan",
@@ -262,6 +335,12 @@ func TestWriteReport(t *testing.T) {
 		{name: "index plan table", rep: indexPlan, output: "table", golden: "plan-index.txt"},
 		{name: "index plan json", rep: indexPlan, output: "json", golden: "plan-index.json"},
 		{name: "index apply table", rep: indexApply, output: "table", golden: "apply-index.txt"},
+		{name: "merge plan table", rep: mergePlan, output: "table", golden: "plan-merge.txt"},
+		{name: "merge plan json", rep: mergePlan, output: "json", golden: "plan-merge.json"},
+		{name: "merge nested plan table", rep: mergeNested, output: "table", golden: "plan-merge-nested.txt"},
+		{name: "merge nested plan json", rep: mergeNested, output: "json", golden: "plan-merge-nested.json"},
+		{name: "merge apply table", rep: mergeApply, output: "table", golden: "apply-merge.txt"},
+		{name: "merge apply json", rep: mergeApply, output: "json", golden: "apply-merge.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -435,6 +514,54 @@ func TestPlanThenApply(t *testing.T) {
 			e.ApprovedBy != (runner.ApprovedBy{Name: "Ada Lovelace", Email: "ada@example.com"}) {
 			t.Errorf("entry %s: status %s runner %q approvedBy %+v", e.MigrationID, e.Status, e.Runner, e.ApprovedBy)
 		}
+	}
+}
+
+// TestSampleValues checks merge samples leave values out of the report and
+// the logs by default, and show them with --sample-values or
+// MIGRUNE_SAMPLE_VALUES.
+func TestSampleValues(t *testing.T) {
+	const copyLabel = "2026-11-03-001-copy-label"
+	cases := []struct {
+		name   string
+		args   []string
+		env    string
+		values bool
+	}{
+		{name: "default"},
+		{name: "flag", args: []string{"--sample-values"}, values: true},
+		{name: "env", env: "true", values: true},
+		{name: "flag over env", args: []string{"--sample-values=false"}, env: "true"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, db := testTarget(t)
+			if _, err := db.Collection("items").InsertOne(context.Background(), bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: "s3cret-name"}}); err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			addMigration(t, dir, runnerFixtures("merge"), copyLabel)
+			if tc.env != "" {
+				t.Setenv("MIGRUNE_SAMPLE_VALUES", tc.env)
+			}
+			t.Setenv("MIGRUNE_URI", uri)
+			t.Setenv("MIGRUNE_DB", db.Name())
+			var out, logs bytes.Buffer
+			if _, err := Execute(context.Background(), append([]string{"plan", "--dir", dir}, tc.args...), &out, &logs); err != nil {
+				t.Fatalf("plan: %v\n%s", err, logs.String())
+			}
+			shown := strings.Contains(out.String(), "s3cret-name") || strings.Contains(logs.String(), "s3cret-name")
+			if shown != tc.values {
+				t.Errorf("value shown %v, want %v:\nstdout:\n%s\nstderr:\n%s", shown, tc.values, out.String(), logs.String())
+			}
+			want := `differs at /steps/0 {"_id":1}: label: missing -> string`
+			if tc.values {
+				want = `differs at /steps/0 {"_id":1}: label: absent -> "s3cret-name"`
+			}
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("report:\n%s\nwant a line with %s", out.String(), want)
+			}
+		})
 	}
 }
 

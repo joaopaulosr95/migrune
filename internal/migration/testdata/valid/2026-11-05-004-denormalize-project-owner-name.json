@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-05-004-denormalize-project-owner-name",
+  "description": "Copy the owner name onto projects that don't have it",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "ownerName": { "$exists": false } } },
+        { "$lookup": { "from": "owners", "localField": "ownerId", "foreignField": "_id", "as": "o" } },
+        { "$project": { "ownerName": { "$first": "$o.name" } } },
+        { "$merge": { "into": "projects", "on": "_id", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

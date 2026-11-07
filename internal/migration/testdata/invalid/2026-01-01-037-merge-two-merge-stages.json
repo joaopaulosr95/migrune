@@ -1,0 +1,33 @@
+{
+  "id": "2026-01-01-037-merge-two-merge-stages",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

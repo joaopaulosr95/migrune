@@ -57,6 +57,7 @@ type StepResult struct {
 	UpsertedCount *int64 `bson:"upsertedCount,omitempty"`
 	DeletedCount  *int64 `bson:"deletedCount,omitempty"`
 	IndexName     string `bson:"indexName,omitempty"`
+	MergeCounts   `bson:",inline"`
 }
 
 // StepError is one error of an Errored entry. Step is the index of the failed
@@ -93,8 +94,8 @@ const EntryVersion = 1
 
 // WriteFinished records m as Finished, with the results of its steps, as the
 // changelog entry with _id id. Call it inside the fenced transaction the
-// entry commits with: a data migration's, or one of its own for index
-// migrations.
+// entry commits with: a data migration's, or one of its own for index and
+// merge migrations.
 func (r *Run) WriteFinished(ctx context.Context, id bson.ObjectID, m migration.Migration, results []StepResult) error {
 	if results == nil {
 		results = []StepResult{}
@@ -103,8 +104,8 @@ func (r *Run) WriteFinished(ctx context.Context, id bson.ObjectID, m migration.M
 }
 
 // writeFinishedAlone records m as Finished, with the results of its steps, as
-// a new changelog entry, in a fenced transaction of its own: for index
-// migrations, whose steps run outside one.
+// a new changelog entry, in a fenced transaction of its own: for index and
+// merge migrations, whose steps run outside one.
 func (r *Run) writeFinishedAlone(m migration.Migration, results []StepResult) error {
 	entry := bson.NewObjectID()
 	return r.transaction(func(ctx context.Context) error {
@@ -112,8 +113,8 @@ func (r *Run) writeFinishedAlone(m migration.Migration, results []StepResult) er
 	}, true, &entry)
 }
 
-// stepFailed returns the error for step i, s, of an index migration m, which
-// failed with err. When the run was interrupted or lost its lock,
+// stepFailed returns the error for step i, s, of an index or merge migration
+// m, which failed with err. When the run was interrupted or lost its lock,
 // it returns that, and records nothing. Otherwise it returns a StepFailure
 // and, with apply, records m as Errored with it.
 func (r *Run) stepFailed(m migration.Migration, i int, s migration.Step, err error, apply bool) error {

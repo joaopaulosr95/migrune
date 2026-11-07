@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-02-001-items-sku-unique",
+  "description": "Index items by sku, for the merge on sku",
+  "steps": [
+    { "collection": "items", "operation": "createIndex", "keys": { "sku": 1 }, "options": { "name": "sku_1", "unique": true } }
+  ]
+}

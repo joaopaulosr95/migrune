@@ -4,12 +4,12 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
+      "operation": "aggregate",
+      "pipeline": [
         { "$lookup": { "from": "migrations_changelog_archive", "pipeline": [], "as": "archive" } },
         { "$unionWith": { "coll": "systems", "pipeline": [] } },
-        { "$facet": { "x": [{ "$graphLookup": { "from": "owners.system", "startWith": "$o", "connectFromField": "a", "connectToField": "b", "as": "c" } }] } }
+        { "$facet": { "x": [{ "$graphLookup": { "from": "owners.system", "startWith": "$o", "connectFromField": "a", "connectToField": "b", "as": "c" } }] } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

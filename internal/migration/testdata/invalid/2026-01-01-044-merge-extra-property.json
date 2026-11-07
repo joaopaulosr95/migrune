@@ -1,0 +1,28 @@
+{
+  "id": "2026-01-01-044-merge-extra-property",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ],
+      "options": {
+        "allowDiskUse": true
+      }
+    }
+  ]
+}

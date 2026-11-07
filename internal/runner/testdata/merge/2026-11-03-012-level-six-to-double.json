@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-012-level-six-to-double",
+  "description": "Store a value six levels below the top-level field as a double",
+  "steps": [
+    {
+      "collection": "shapes",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "a": { "b": { "c": { "d": { "e": { "f": { "g": { "$toDouble": "$a.b.c.d.e.f.g" } } } } } } } } },
+        { "$merge": { "into": "shapes", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

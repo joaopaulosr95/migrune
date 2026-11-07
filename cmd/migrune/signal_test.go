@@ -283,6 +283,124 @@ func TestSIGTERMDuringIndexBuild(t *testing.T) {
 	}
 }
 
+// copyLabel is a merge migration that copies each item's name into label.
+const copyLabel = "2026-11-03-001-copy-label"
+
+// TestSIGTERMDuringMerge sends SIGTERM to a migrune apply while the server
+// runs a merge migration's $merge. The run cancels the aggregate,
+// reports the migration interrupted, writes no changelog entry and releases
+// the lock; the next run settles the merge.
+func TestSIGTERMDuringMerge(t *testing.T) {
+	bin, uri, client := sigtermSetup(t)
+	ctx := testCtx(t)
+	db := testDB(t, client)
+	items := db.Collection("items")
+	if _, err := items.InsertMany(ctx, []any{
+		bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: "a"}},
+		bson.D{{Key: "_id", Value: 2}, {Key: "name", Value: "b"}},
+		bson.D{{Key: "_id", Value: 3}, {Key: "name", Value: "c"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The primary's $merge into this test's items hangs before writing,
+	// until the fail point is turned off; merges into other namespaces
+	// aren't affected. A hung $merge doesn't see interruptions until then.
+	const fp = "hangWhileBuildingDocumentSourceMergeBatch"
+	configure := func(mode string, data bson.D) {
+		cmd := bson.D{{Key: "configureFailPoint", Value: fp}, {Key: "mode", Value: mode}}
+		if data != nil {
+			cmd = append(cmd, bson.E{Key: "data", Value: data})
+		}
+		if err := client.Database("admin").RunCommand(context.Background(), cmd).Err(); err != nil {
+			t.Fatalf("configure fail point: %v", err)
+		}
+	}
+	configure("alwaysOn", bson.D{{Key: "nss", Value: db.Name() + ".items"}})
+	t.Cleanup(func() { configure("off", nil) })
+
+	dir := fixtureDir(t, "merge", copyLabel)
+	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command(bin, "apply", "--dir", dir, "-o", "json")
+		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
+		return cmd, &stdout, &stderr
+	}
+
+	cmd, stdout, stderr := apply()
+	deadline := time.Now().Add(30 * time.Second)
+	for !mergeHanging(t, ctx, client, db.Name()) {
+		if time.Now().After(deadline) {
+			t.Fatalf("merge never started\nstderr:\n%s", stderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	start := time.Now()
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.Wait()
+	t.Logf("stderr:\n%s", stderr.String())
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 143 {
+		t.Fatalf("exit: %v, want status 143", err)
+	}
+	if d := time.Since(start); d > runner.CleanupTimeout+2*time.Second {
+		t.Errorf("shutdown took %s", d)
+	}
+
+	var rep runner.Report
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+		t.Fatalf("report: %v\n%s", err, stdout.String())
+	}
+	if len(rep.Migrations) != 1 || rep.Migrations[0].Kind != "merge" || rep.Migrations[0].Status != runner.RowInterrupted {
+		t.Errorf("report %+v, want the merge migration interrupted", rep)
+	}
+	if !strings.Contains(stderr.String(), "migration interrupted") || !strings.Contains(stderr.String(), "aggregate in progress cancelled") {
+		t.Error("no interruption or cancellation in the logs")
+	}
+	if n := count(t, ctx, db.Collection(runner.ChangelogCollection), bson.D{}); n != 0 {
+		t.Errorf("%d changelog entries, want none: the migration must stay pending", n)
+	}
+	if n := count(t, ctx, db.Collection(runner.LockCollection), bson.D{}); n != 0 {
+		t.Errorf("lock not released")
+	}
+
+	// Released, the cancelled $merge stops without writing.
+	configure("off", nil)
+	deadline = time.Now().Add(30 * time.Second)
+	for mergeRunning(t, ctx, client, db.Name()) {
+		if time.Now().After(deadline) {
+			t.Fatal("the cancelled merge is still running")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := count(t, ctx, items, bson.D{{Key: "label", Value: bson.D{{Key: "$exists", Value: true}}}}); n != 0 {
+		t.Errorf("%d items labelled, want none: the aggregate wasn't cancelled", n)
+	}
+
+	// The next run settles the merge.
+	cmd, stdout, stderr = apply()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("next apply: %v\nstderr:\n%s", err, stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil || len(rep.Migrations) != 1 ||
+		rep.Migrations[0].Status != runner.RowApplied || rep.Migrations[0].DiffCountAfter == nil || *rep.Migrations[0].DiffCountAfter != 0 {
+		t.Errorf("next apply report %+v, %v", rep, err)
+	}
+	if n := count(t, ctx, items, bson.D{{Key: "$expr", Value: bson.D{{Key: "$eq", Value: bson.A{"$label", "$name"}}}}}); n != 3 {
+		t.Errorf("%d items labelled, want 3", n)
+	}
+	if n := count(t, ctx, db.Collection(runner.ChangelogCollection), bson.D{{Key: "migrationId", Value: copyLabel}, {Key: "status", Value: "Finished"}}); n != 1 {
+		t.Errorf("%d Finished entries, want 1", n)
+	}
+}
+
 // conflict creates createdAt_-1, then name_1 on other keys than an
 // existing name_1: its second step fails.
 const conflict = "2026-11-02-004-conflict"
@@ -517,6 +635,36 @@ func fixtureDir(t *testing.T, sub string, ids ...string) string {
 		}
 	}
 	return dir
+}
+
+// mergeHanging reports whether an aggregate on db.items is held by the merge
+// fail point.
+func mergeHanging(t *testing.T, ctx context.Context, client *mongo.Client, db string) bool {
+	t.Helper()
+	return currentOps(t, ctx, client, bson.D{
+		{Key: "command.aggregate", Value: "items"}, {Key: "command.$db", Value: db},
+		{Key: "failpointMsg", Value: "hangWhileBuildingDocumentSourceMergeBatch"},
+	})
+}
+
+// mergeRunning reports whether an aggregate on db.items is in progress.
+func mergeRunning(t *testing.T, ctx context.Context, client *mongo.Client, db string) bool {
+	t.Helper()
+	return currentOps(t, ctx, client, bson.D{{Key: "command.aggregate", Value: "items"}, {Key: "command.$db", Value: db}})
+}
+
+// currentOps reports whether an operation in progress matches filter.
+func currentOps(t *testing.T, ctx context.Context, client *mongo.Client, filter bson.D) bool {
+	t.Helper()
+	cur, err := client.Database("admin").Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$currentOp", Value: bson.D{}}},
+		{{Key: "$match", Value: filter}},
+	})
+	if err != nil {
+		t.Fatalf("currentOp: %v", err)
+	}
+	defer func() { _ = cur.Close(ctx) }()
+	return cur.Next(ctx)
 }
 
 // indexBuildRunning reports whether a createIndexes on db.coll is in

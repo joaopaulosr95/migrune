@@ -66,6 +66,15 @@ func (l *lockFlags) check() error {
 	return nil
 }
 
+// sampleValuesFlag registers the merge sample values flag shared by plan and
+// apply.
+func sampleValuesFlag(fs *pflag.FlagSet, p *bool) {
+	fs.BoolVar(p, "sample-values", false, fmt.Sprintf(
+		"show the values of the fields that differ in merge samples, in the logs and the report, each cut to %d characters; "+
+			"by default samples show only the on fields, field names, BSON types and nested paths, so data stays out of CI logs",
+		runner.MaxSampleValueChars))
+}
+
 func checkOutput(output string) error {
 	if output != "table" && output != "json" {
 		return &UsageError{Err: fmt.Errorf("invalid --output %q: want table or json", output)}

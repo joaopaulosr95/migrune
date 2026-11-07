@@ -71,6 +71,21 @@ name already used by an index with other keys or options, is the last item,
 with the reason in `conflict`, and makes the row `errored`. The same lines
 also go to the logs on stderr, one per step.
 
+Merge rows (`kind` `merge`) carry the counts of the comparison migrune runs
+before and, in apply, after `$merge`, summed over the steps that ran (see
+[JSON](#json)), plus up to five `samples` per step, those with a type change
+first, also logged on stderr. What each count means, the type-strict rules, nested
+types and their depth are in
+[how the comparison works](../writing-migrations.md#how-the-comparison-works).
+
+A sample shows the document's `on` fields as they are, and for each field
+that differs its name, its BSON types before and after, and the path of a
+nested type change, but no values: plan runs before anyone approves it, and
+its report and logs often end up in CI logs and artifacts. `--sample-values`
+(`MIGRUNE_SAMPLE_VALUES=true`) adds the values, in the report and the logs
+alike, each cut to 200 characters. Use it where those logs are as protected
+as the data, such as locally.
+
 ## JSON
 
 ```json
@@ -133,12 +148,22 @@ also go to the logs on stderr, one per step.
 | `newDatabase`             | boolean          | `true` when the target database had no collections, apart from `migrations_lock`, when the run started. See [new databases](#new-databases). |
 | `migrations`              | array            | One row per migration considered, in id order. Empty when nothing is pending.                                |
 | `migrations[].id`         | string           | The migration id: the file name without `.json`.                                                             |
-| `migrations[].kind`       | string           | `data` or `index`.                                                                                           |
+| `migrations[].kind`       | string           | `data`, `index` or `merge`.                                                                                  |
 | `migrations[].status`     | string           | `applied`, `errored`, `interrupted` or `skipped`.                                                            |
 | `migrations[].durationMs` | integer          | How long the migration ran, in milliseconds. 0 when skipped.                                                 |
 | `migrations[].error`      | string, optional | Why the migration errored or was interrupted. Absent otherwise.                                              |
 | `migrations[].steps`      | array, optional  | Data migrations only: one item per step, in file order, with the first run's counts (see below). Absent for other kinds, for `skipped` rows, and when the first run failed. |
 | `migrations[].indexes`    | array, optional  | Index migrations only: one item per step that ran, in file order (see below). Absent for other kinds and for `skipped` rows. |
+| `migrations[].diffCountBefore`  | integer, optional | Merge migrations only: the documents `$merge` would change, counted before it ran. Absent for other kinds and for `skipped` rows. |
+| `migrations[].diffCountAfter`   | integer, optional | Merge migrations, apply only: the documents that still differed after `$merge` ran. 0 once the merge settled. Absent in plan. |
+| `migrations[].unmatchedCount`   | integer, optional | Merge migrations only: the output documents with no match in the target, which `$merge` discards. |
+| `migrations[].typeChangedCount` | integer, optional | Merge migrations only: the documents where `$merge` would change the BSON type of an existing, non-null field, or of a value nested in it, or drop a non-null nested field. Above 0 fails the migration. |
+| `migrations[].duplicateOnCount` | integer, optional | Merge migrations only: the output documents whose `on` fields equal another output document's and match a target document. Above 0 fails the migration before anything is written. |
+| `migrations[].nullOnCount`      | integer, optional | Merge migrations only: the output documents with a null or missing `on` field. Above 0 fails the migration before anything is written. |
+| `migrations[].arrayOnCount`     | integer, optional | Merge migrations only: the output documents with an array as an `on` field, which `$merge` rejects. Above 0 fails the migration before anything is written. |
+| `migrations[].idMismatchCount`  | integer, optional | Merge migrations only, when `on` isn't `_id`: the matched output documents whose `_id` differs from the target's. Above 0 fails the migration before anything is written. |
+| `migrations[].collationOnlyMatchCount` | integer, optional | Merge migrations only, when the unique index `$merge` matches the `on` fields through has a non-simple collation, such as a case-insensitive one: the output documents with no exact match in the target, so also in `unmatchedCount`, that match one through that collation. What MongoDB does with them depends on its version: see [collations](../writing-migrations.md#collations). Absent otherwise. |
+| `migrations[].samples`    | array, optional  | Merge migrations only: up to five documents per step that differed before the merge (see below). Absent when none differed. |
 | `appliedButMissing`       | array            | Migrations with a `Finished` changelog entry and no file, e.g. after a revert, in id order. Not empty means the run failed before running anything. |
 | `appliedButMissing[].id`  | string           | The migration id.                                                                                            |
 | `appliedButMissing[].description` | string   | The migration's description, as stored by its latest `Finished` changelog entry.                             |
@@ -203,6 +228,76 @@ Each item of `migrations[].indexes` is one step of an index migration:
 }
 ```
 
+### Merge samples
+
+Each item of `migrations[].samples` is an output document that differs from
+its target document:
+
+| Field                 | Type              | Description                                                                                         |
+| --------------------- | ----------------- | --------------------------------------------------------------------------------------------------- |
+| `step`                | integer           | The step's index in file order.                                                                     |
+| `key`                 | object            | The output document's `on` fields, as relaxed Extended JSON, with or without `--sample-values`.     |
+| `fields`              | array             | The output fields that differ, in output order.                                                     |
+| `fields[].field`      | string            | The field name.                                                                                     |
+| `fields[].beforeType` | string            | The target value's BSON type (`$type` name), `missing` when the target lacks the field; with `path`, the type of the target's value at `path`. |
+| `fields[].afterType`  | string            | The output value's BSON type, which `$merge` writes; with `path`, the type of the output's value at `path`. The same two types mean the value changed. |
+| `fields[].path`       | string, optional  | A nested type change: the dotted path, from the field, of the shallowest nested value whose type changes, with array elements by index, e.g. `price.amount` or `lines.1.qty`. A nested field the output drops is a change to type `missing`, e.g. `address.street` with `afterType` `missing`. Absent otherwise. |
+| `fields[].typeChanged`| boolean, optional | `true` when the field exists in the target, not null, with another BSON type, or has a nested type change or drop (`path`). Absent otherwise. |
+| `fields[].before`     | any, optional     | `--sample-values` only: the target's value, as relaxed Extended JSON. Absent when the target lacks the field. |
+| `fields[].after`      | any, optional     | `--sample-values` only: the output's value.                                                         |
+| `fields[].truncated`  | boolean, optional | `true` when `before` or `after` was longer than 200 characters of Extended JSON: it is then a JSON string of its first 200 characters followed by `…`. Absent otherwise. |
+
+```json
+{
+  "id": "2026-11-03-004-qty-to-double",
+  "kind": "merge",
+  "status": "errored",
+  "durationMs": 20,
+  "error": "/steps/0 (aggregate on counters): typeChangedCount is 1: ...",
+  "diffCountBefore": 2,
+  "unmatchedCount": 0,
+  "typeChangedCount": 1,
+  "duplicateOnCount": 0,
+  "nullOnCount": 0,
+  "arrayOnCount": 0,
+  "idMismatchCount": 0,
+  "samples": [
+    {
+      "step": 0,
+      "key": { "_id": 1 },
+      "fields": [{ "field": "qty", "beforeType": "int", "afterType": "double", "typeChanged": true }]
+    },
+    {
+      "step": 0,
+      "key": { "_id": 2 },
+      "fields": [{ "field": "qty", "beforeType": "missing", "afterType": "null" }]
+    }
+  ]
+}
+```
+
+A nested type change, where the field's value is equal under `$eq`:
+
+```json
+{
+  "step": 0,
+  "key": { "_id": 1 },
+  "fields": [{ "field": "price", "beforeType": "long", "afterType": "double", "path": "price.amount", "typeChanged": true }]
+}
+```
+
+The first sample again, with `--sample-values`:
+
+```json
+{
+  "step": 0,
+  "key": { "_id": 1 },
+  "fields": [
+    { "field": "qty", "beforeType": "int", "afterType": "double", "typeChanged": true, "before": 1, "after": 1.0 }
+  ]
+}
+```
+
 This page describes the shape of the migrune version it ships with.
 
 ## Table
@@ -256,6 +351,40 @@ MIGRATION                   KIND   STATUS   DURATION  ERROR
   index to create: createdAt_-1 on items, keys {"createdAt":-1}
   index to create, would fail: name_1 on items, keys {"name":-1}: index name_1 already exists with a different definition ...
 2026-11-02-005-email-index  index  skipped  0s
+```
+
+A merge row is followed by its counts, then one line per sample: the step,
+the `on` fields, and each differing field as `beforeType -> afterType`:
+
+```txt
+Database: app
+
+MIGRATION                     KIND   STATUS   DURATION  ERROR
+2026-11-03-001-copy-label     merge  applied  45ms
+  merge: diffCountBefore 3, diffCountAfter 0, unmatchedCount 0, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":1}: label: missing -> string
+2026-11-03-004-qty-to-double  merge  errored  20ms      /steps/0 (aggregate on counters): typeChangedCount is 1: ...
+  merge: diffCountBefore 2, unmatchedCount 0, typeChangedCount 1, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":1}: qty: int -> double, type changed
+  differs at /steps/0 {"_id":2}: qty: missing -> null
+```
+
+A nested type change names the path and its types, and a nested field the
+output drops has type `missing`:
+
+```txt
+  differs at /steps/0 {"_id":1}: price: type changed at price.amount (long -> double)
+  differs at /steps/0 {"_id":1}: address: type changed at address.street (string -> missing)
+```
+
+With `--sample-values`, each field reads `before -> after` instead, `absent`
+for a field the target lacks, with the BSON types when they differ, and a
+value longer than 200 characters cut and followed by `…`:
+
+```txt
+  differs at /steps/0 {"_id":1}: label: absent -> "a"
+  differs at /steps/0 {"_id":1}: qty: 1 (int) -> 1.0 (double), type changed
+  differs at /steps/0 {"_id":1}: price: {"amount":5} -> {"amount":5.0}, type changed at price.amount (long -> double)
 ```
 
 A plan's table starts with a line saying nothing was committed, before the

@@ -14,6 +14,7 @@ type applyOptions struct {
 	runnerID        string
 	output          string
 	lock            lockFlags
+	values          bool
 }
 
 func (a *app) newApplyCmd() *cobra.Command {
@@ -24,9 +25,9 @@ func (a *app) newApplyCmd() *cobra.Command {
 		Long: `Apply the pending migrations in id order, under the migration lock.
 
 Each data migration runs twice in one transaction, which commits with its
-Finished changelog entry only if the second run changed nothing. Index
-migrations run outside a transaction. apply stops at the first migration that
-fails.
+Finished changelog entry only if the second run changed nothing. Index and
+merge migrations run outside a transaction; merges are checked before and
+after writing. apply stops at the first migration that fails.
 
 What apply checks and reports: docs/reference/report.md, in
 https://github.com/joaopaulosr95/migrune.`,
@@ -41,6 +42,7 @@ https://github.com/joaopaulosr95/migrune.`,
 	fs.StringVar(&o.runnerID, "runner-id", "", "runner id used for the lock and logs (default: hostname, PID and a random suffix)")
 	outputFlag(fs, &o.output)
 	o.lock.register(fs)
+	sampleValuesFlag(fs, &o.values)
 	return c
 }
 
@@ -65,5 +67,5 @@ func (a *app) apply(cmd *cobra.Command, o applyOptions) error {
 			LockWait:   o.lock.wait,
 			ApprovedBy: runner.ApprovedBy{Name: o.approvedByName, Email: o.approvedByEmail},
 		},
-		runner.Config{Mode: runner.ModeApply, Mutable: o.mutable})
+		runner.Config{Mode: runner.ModeApply, Mutable: o.mutable, SampleValues: o.values})
 }

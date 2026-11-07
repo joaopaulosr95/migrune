@@ -1,0 +1,65 @@
+{
+  "version": "0.1.0",
+  "command": "apply",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-03-001-copy-label",
+      "kind": "merge",
+      "status": "applied",
+      "durationMs": 45,
+      "diffCountBefore": 3,
+      "diffCountAfter": 0,
+      "unmatchedCount": 0,
+      "typeChangedCount": 0,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "samples": [
+        {
+          "step": 0,
+          "key": {
+            "_id": 1
+          },
+          "fields": [
+            {
+              "field": "label",
+              "beforeType": "missing",
+              "afterType": "string",
+              "after": "a"
+            }
+          ]
+        },
+        {
+          "step": 0,
+          "key": {
+            "_id": 2
+          },
+          "fields": [
+            {
+              "field": "label",
+              "beforeType": "string",
+              "afterType": "string",
+              "before": "b",
+              "after": "\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…",
+              "truncated": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 1,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 50
+  }
+}

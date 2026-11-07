@@ -4,12 +4,12 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
+      "operation": "aggregate",
+      "pipeline": [
         { "$facet": { "locks": [{ "$lookup": { "from": "migrations_lock", "pipeline": [], "as": "lock" } }] } },
         { "$unwind": "$locks" },
-        { "$replaceWith": "$locks" }
+        { "$replaceWith": "$locks" },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

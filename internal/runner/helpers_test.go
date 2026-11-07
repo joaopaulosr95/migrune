@@ -263,10 +263,3 @@ func waitFailPoint(t *testing.T, ctx context.Context, client *mongo.Client, n in
 		t.Fatalf("wait for the fail point: %v", err)
 	}
 }
-
-func insert(t *testing.T, ctx context.Context, coll *mongo.Collection, docs ...bson.D) {
-	t.Helper()
-	if _, err := coll.InsertMany(ctx, docs); err != nil {
-		t.Fatal(err)
-	}
-}

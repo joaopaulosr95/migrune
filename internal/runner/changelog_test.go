@@ -273,6 +273,10 @@ func TestSnapshot(t *testing.T) {
 				{"collection", "operation", "name"},
 			},
 		},
+		{
+			id:     "2026-11-05-004-denormalize-project-owner-name",
+			fields: [][]string{{"collection", "operation", "pipeline"}},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {

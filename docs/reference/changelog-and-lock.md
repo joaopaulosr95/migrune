@@ -46,9 +46,9 @@ write to it.
 
 - **`Finished`**: written when the migration succeeds. For a data migration,
   inside its transaction, together with its data changes, so the entry and
-  the data commit or abort together. For index migrations, right after the
-  last step; if the run dies between the two, the next run repeats the
-  steps, which is harmless.
+  the data commit or abort together. For index and merge migrations, right
+  after the last step; if the run dies between the two, the next run repeats
+  the steps, which is harmless.
 - **`Errored`**: written after the migration failed, in a transaction of
   its own, fenced like a data migration's (see [fence](#fence)): a runner
   that lost its lock writes no `Errored` entry, and its report row says the
@@ -107,6 +107,7 @@ returned for that kind of step:
 | ----- | -------------------------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs. |
 | index | `indexName`.                                                                           |
+| merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
 To read the latest `Finished` entry of a migration, steps included:
 
@@ -130,7 +131,7 @@ fail or are interrupted. lint doesn't take it.
   v: 1,
   token: '9f86d081884c7d659a2feaa0c55ad015',
   owner: 'ci-42-1-AB12CD34',
-  current: '2026-11-02-001-plans-currency-index',
+  current: '2026-11-03-001-copy-currency-symbol',
   acquiredAt: ISODate('2026-11-08T00:10:02.114Z'),
   lastHeartbeat: ISODate('2026-11-08T00:11:27.300Z'),
   expiresAt: ISODate('2026-11-08T00:12:57.300Z')
@@ -167,7 +168,7 @@ Otherwise the run fails with exit code 3, before anything else and without a
 report, naming the holder:
 
 ```txt
-Error: migration lock is held by runner "ci-42-1-AB12CD34" (applying 2026-11-02-001-plans-currency-index), last heartbeat 2026-11-08T00:11:27Z
+Error: migration lock is held by runner "ci-42-1-AB12CD34" (applying 2026-11-03-001-copy-currency-symbol), last heartbeat 2026-11-08T00:11:27Z
 ```
 
 With `--lock-wait <duration>`, the runner keeps trying, with a backoff from 1
@@ -181,7 +182,7 @@ release.
 ### Heartbeat
 
 While it holds the lock, the runner refreshes `lastHeartbeat` and `expiresAt`
-every 10 seconds, during index builds too, and right before each
+every 10 seconds, during index builds and merges too, and right before each
 transaction. A timed heartbeat waits at most 10 seconds for the server. If
 the lock document no longer has the runner's token, the lock is lost: the run
 stops at once.
@@ -191,9 +192,9 @@ that succeeded, plus the expiry, minus a 10-second margin. When the lease has
 passed, the server may hand the lock to another runner soon, so the run stops,
 as if the lock were lost. The lease is measured on the runner's monotonic
 clock, so a step of its system clock, such as NTP setting it back, doesn't
-extend it. The runner checks the lease right before every index command
-(`createIndexes`, `dropIndexes`), which aren't fenced, and after each
-heartbeat that fails.
+extend it. The runner checks the lease right before every
+index command (`createIndexes`, `dropIndexes`) and every `$merge` aggregate,
+which aren't fenced, and after each heartbeat that fails.
 
 `--lock-ttl` must stay above the server's transaction lifetime limit
 (`transactionLifetimeLimitSeconds`, 60 seconds by default), so the lock can't
@@ -202,13 +203,13 @@ value under 61 seconds. Raise it if your server allows longer transactions.
 
 ### Fence
 
-Every transaction (a data migration's, the one an index migration's
+Every transaction (a data migration's, the one an index or merge migration's
 `Finished` entry is written in, and the one each `Errored` entry is written
 in) first updates the lock document, matching `{_id: "migrations", token:
 <this runner's token>}`. If another runner took the lock over, that update
 matches nothing, or conflicts with the takeover, and the transaction aborts.
 So a runner that lost its lock (a "zombie", paused or cut off for longer than
-the expiry) can never commit. Index steps aren't fenced; the local
+the expiry) can never commit. Index and merge steps aren't fenced; the local
 lease keeps a runner from sending one once its lock may have expired, and they
 are idempotent, so one that still lands gives the same result.
 

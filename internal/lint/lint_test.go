@@ -93,10 +93,20 @@ func TestRules(t *testing.T) {
 		// finding, with a message that says what to do.
 		{rule: RuleSchema, want: []string{
 			"2026-11-01-001-no-description.json: error: schema: (root): missing property 'description'",
+			`2026-11-01-002-out-in-merge.json: error: schema: /steps/0/pipeline/1: $out is not allowed: it replaces the whole target collection. Use $merge with whenMatched: "merge" and whenNotMatched: "discard"`,
 			"2026-11-01-003-out-in-update.json: error: schema: /steps/0/update/1: $out is not allowed: it replaces the whole target collection",
+			`2026-11-01-004-replace-insert.json: error: schema: /steps/0/pipeline/0/$merge/whenMatched: must be "merge", got "replace"`,
+			`2026-11-01-004-replace-insert.json: error: schema: /steps/0/pipeline/0/$merge/whenNotMatched: must be "discard", got "insert"`,
+			`2026-11-01-005-defaults-and-let.json: error: schema: /steps/0/pipeline/0/$merge: missing properties 'whenMatched', 'whenNotMatched': $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`,
+			`2026-11-01-005-defaults-and-let.json: error: schema: /steps/0/pipeline/0/$merge: additional properties 'let' not allowed: $merge takes into`,
+			`2026-11-01-006-string-form.json: error: schema: /steps/0/pipeline/0/$merge: got string, want object: $merge takes into`,
 			"2026-11-01-007-data-then-index.json: error: schema: /steps/1/operation: createIndex belongs to index migrations, but the file's first operation, deleteMany, belongs to data migrations; a file holds one kind of migration",
-			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), or createIndex or dropIndex (index); seed documents with updateOne, upsert: true and $setOnInsert",
-			"2026-11-01-009-merge-in-update.json: error: schema: /steps/0/update/1: $merge is not allowed: it writes the pipeline's output into a collection",
+			"2026-11-01-007-data-then-index.json: error: schema: /steps/2/operation: aggregate belongs to merge migrations",
+			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex or dropIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert",
+			"2026-11-01-009-merge-in-update.json: error: schema: /steps/0/update/1: $merge is only allowed as the last stage of an aggregate step in a merge migration",
+			// Two problems, two findings.
+			"2026-11-01-010-out-and-replace.json: error: schema: /steps/0/pipeline/1: $out is not allowed",
+			`2026-11-01-010-out-and-replace.json: error: schema: /steps/0/pipeline/2/$merge/whenMatched: must be "merge", got "replace"`,
 		}},
 		{rule: RuleID, want: []string{
 			`2026-11-01-001-file-name.json: error: id: /id: "2026-11-01-001-other-id" doesn't match the file name; want "2026-11-01-001-file-name"`,
@@ -104,20 +114,37 @@ func TestRules(t *testing.T) {
 			`2026-11-01-002-bad-id.json: error: id: /id: "2026-11-01-002-Bad_Id" doesn't match the file name; want "2026-11-01-002-bad-id"`,
 		}},
 		{rule: RuleDuplicateKey, want: []string{
-			`2026-11-01-001-duplicate-collection.json: error: duplicate-key: duplicate key: /steps/0/collection: "collection" appears twice in the same object; keep one`,
+			`2026-11-01-001-duplicate-into.json: error: duplicate-key: duplicate key: /steps/0/pipeline/1/$merge/into: "into" appears twice in the same object; keep one`,
 		}},
 		{rule: RuleDuplicatePrefix, want: []string{
 			"2026-11-01-001-first.json: error: duplicate-prefix: prefix 2026-11-01-001 is also used by 2026-11-01-001-second.json",
 			"2026-11-01-001-second.json: error: duplicate-prefix: prefix 2026-11-01-001 is also used by 2026-11-01-001-first.json",
 		}},
+		{rule: RuleMergeLast, want: []string{
+			"2026-11-01-001-merge-first.json: error: merge-last: /steps/0/pipeline/0: $merge is stage 1 of 2; it must be the last stage",
+		}},
 		{rule: RuleNested, want: []string{
+			"2026-11-01-001-lookup-out.json: error: nested-out-merge: /steps/0/pipeline/0/$lookup/pipeline/0: $out is not allowed inside a $lookup pipeline",
+			"2026-11-01-002-facet-merge.json: error: nested-out-merge: /steps/0/pipeline/0/$facet/copy/1: $merge is not allowed inside a $facet pipeline",
+			"2026-11-01-003-deep-union-with.json: error: nested-out-merge: /steps/0/pipeline/0/$unionWith/pipeline/0/$lookup/pipeline/0/$facet/deep/0: $out is not allowed inside a $facet pipeline",
 			"2026-11-01-004-in-update-pipeline.json: error: nested-out-merge: /steps/0/update/0/$facet/x/0: $out is not allowed inside a $facet pipeline",
 		}},
+		{rule: RuleVolatileMerge, want: []string{
+			"2026-11-01-001-rand.json: error: volatile-merge: /steps/0/pipeline/0/$project/score/$multiply/0/$rand: $rand returns a new random number on each run: a merge must give the same output when run again, computed from fields it doesn't write",
+			"2026-11-01-002-now-in-lookup.json: error: volatile-merge: /steps/0/pipeline/0/$lookup/pipeline/0/$set/seenAt: $$NOW changes on each run",
+			"2026-11-01-003-cluster-time-in-facet.json: error: volatile-merge: /steps/0/pipeline/0/$facet/stamped/0/$project/at: $$CLUSTER_TIME changes on each run",
+			"2026-11-01-004-function.json: error: volatile-merge: /steps/0/pipeline/0/$project/slug/$function: $function runs JavaScript migrune can't check",
+			"2026-11-01-005-accumulator.json: error: volatile-merge: /steps/0/pipeline/0/$group/itemCount/$accumulator: $accumulator runs JavaScript migrune can't check",
+		}},
+		// In a merge step, $function and $accumulator are volatile-merge
+		// findings only.
 		{rule: RuleServerJS, want: []string{
 			"2026-11-01-001-where-filter.json: error: server-js: /steps/0/filter/$where: $where runs JavaScript on the server: migrune can't check what it does, it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead",
 			"2026-11-01-002-function-update.json: error: server-js: /steps/0/update/0/$set/slug/$function: $function runs JavaScript on the server",
 			"2026-11-01-003-accumulator-and-where.json: error: server-js: /steps/0/filter/$and/0/$where: $where runs JavaScript on the server",
 			"2026-11-01-003-accumulator-and-where.json: error: server-js: /steps/0/update/0/$set/n/$accumulator: $accumulator runs JavaScript on the server",
+			"2026-11-01-004-merge.json: error: server-js: /steps/0/pipeline/0/$match/$where: $where runs JavaScript on the server",
+			"2026-11-01-004-merge.json: error: volatile-merge: /steps/0/pipeline/1/$project/slug/$function: $function runs JavaScript migrune can't check",
 		}},
 		{rule: RuleTTLIndex, want: []string{
 			"2026-11-01-001-expire-sessions.json: warning: ttl-index: /steps/0/options/expireAfterSeconds: a TTL index deletes the documents of sessions whose lastUsedAt is more than 3600 seconds old, from the moment it is built and from then on: check the wouldExpire count plan reports for it",
@@ -130,15 +157,15 @@ func TestRules(t *testing.T) {
 			"2026-11-01-001-delete-all.json: warning: empty-filter: /steps/0/filter: {} matches every document in sessions: make sure this deleteMany is meant to touch them all",
 			"2026-11-01-002-update-all.json: warning: empty-filter: /steps/1/filter: {} matches every document in items: make sure this updateMany is meant to touch them all",
 		}},
-		// The schema refuses a reserved step collection; this rule covers
-		// the collections pipelines read or write.
+		// The schema refuses a reserved step collection or $merge.into;
+		// this rule covers the collections pipelines read or write.
 		{rule: RuleReserved, want: []string{
-			`2026-11-01-005-lookup-from.json: error: reserved-collection: /steps/0/update/0/$lookup/from: "migrations_changelog" is reserved: migrations must not name migrune's own collections (migrations_changelog, migrations_lock) or MongoDB's system.* collections`,
-			`2026-11-01-006-graph-lookup-from.json: error: reserved-collection: /steps/0/update/0/$graphLookup/from: "system.users" is reserved`,
-			`2026-11-01-007-union-with-name.json: error: reserved-collection: /steps/0/update/0/$unionWith: "migrations_lock" is reserved`,
-			`2026-11-01-008-union-with-coll.json: error: reserved-collection: /steps/0/update/0/$unionWith/coll: "system.js" is reserved`,
-			`2026-11-01-009-facet-lookup.json: error: reserved-collection: /steps/0/update/0/$facet/locks/0/$lookup/from: "migrations_lock" is reserved`,
-			`2026-11-01-010-nested-union-with.json: error: reserved-collection: /steps/0/update/0/$lookup/pipeline/0/$unionWith/pipeline/0/$unionWith: "migrations_changelog" is reserved`,
+			`2026-11-01-005-lookup-from.json: error: reserved-collection: /steps/0/pipeline/0/$lookup/from: "migrations_changelog" is reserved: migrations must not name migrune's own collections (migrations_changelog, migrations_lock) or MongoDB's system.* collections`,
+			`2026-11-01-006-graph-lookup-from.json: error: reserved-collection: /steps/0/pipeline/0/$graphLookup/from: "system.users" is reserved`,
+			`2026-11-01-007-union-with-name.json: error: reserved-collection: /steps/0/pipeline/0/$unionWith: "migrations_lock" is reserved`,
+			`2026-11-01-008-union-with-coll.json: error: reserved-collection: /steps/0/pipeline/0/$unionWith/coll: "system.js" is reserved`,
+			`2026-11-01-009-facet-lookup.json: error: reserved-collection: /steps/0/pipeline/0/$facet/locks/0/$lookup/from: "migrations_lock" is reserved`,
+			`2026-11-01-010-nested-union-with.json: error: reserved-collection: /steps/0/pipeline/0/$lookup/pipeline/0/$unionWith/pipeline/0/$unionWith: "migrations_changelog" is reserved`,
 		}},
 	}
 	for _, tc := range cases {

@@ -21,6 +21,14 @@
       "keys": { "name": 1 },
       "options": { "name": "name_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
     },
-    { "collection": "accounts", "operation": "dropIndex", "name": "name_1" }
+    { "collection": "accounts", "operation": "dropIndex", "name": "name_1" },
+    {
+      "collection": "accounts",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "ownerName": "$owner.name" } },
+        { "$merge": { "into": "projects", "on": "_id", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
   ]
 }

@@ -1,0 +1,28 @@
+{
+  "id": "2026-11-01-002-out-in-merge",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "a": 1
+          }
+        },
+        {
+          "$out": "projects_copy"
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

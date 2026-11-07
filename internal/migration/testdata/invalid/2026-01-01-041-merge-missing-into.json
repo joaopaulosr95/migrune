@@ -1,0 +1,24 @@
+{
+  "id": "2026-01-01-041-merge-missing-into",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

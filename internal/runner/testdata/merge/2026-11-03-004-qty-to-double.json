@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-004-qty-to-double",
+  "description": "Convert qty to a double in place, which changes its BSON type",
+  "steps": [
+    {
+      "collection": "counters",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "qty": { "$toDouble": "$qty" } } },
+        { "$merge": { "into": "counters", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

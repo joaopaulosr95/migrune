@@ -1,7 +1,7 @@
 // Package migration loads migration files from a directory.
 //
 // Each *.json file is validated against the embedded migration file schema,
-// parsed as MongoDB Extended JSON, and classified as a data or index
+// parsed as MongoDB Extended JSON, and classified as a data, index or merge
 // migration.
 package migration
 
@@ -29,6 +29,7 @@ type Kind string
 const (
 	KindData  Kind = "data"
 	KindIndex Kind = "index"
+	KindMerge Kind = "merge"
 )
 
 // kinds maps each allowed operation to the kind of migration it belongs to.
@@ -38,6 +39,7 @@ var kinds = map[string]Kind{
 	"deleteMany":  KindData,
 	"createIndex": KindIndex,
 	"dropIndex":   KindIndex,
+	"aggregate":   KindMerge,
 }
 
 // Errors wrapped by LoadFile and LoadDir when a file can't be read or parsed.
@@ -76,6 +78,8 @@ type Step struct {
 	// Index steps: createIndex uses Keys and Options, dropIndex uses Name.
 	Keys bson.Raw `bson:"keys,omitempty"`
 	Name string   `bson:"name,omitempty"`
+	// Merge steps.
+	Pipeline []bson.Raw `bson:"pipeline,omitempty"`
 }
 
 type file struct {

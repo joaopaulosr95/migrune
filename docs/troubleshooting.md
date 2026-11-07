@@ -100,6 +100,15 @@ under the same id**, and run again.
    - Data: nothing; the transaction aborted.
    - Index: the steps before the failed one stay done. Running them again
      does nothing.
+   - Merge: the steps before the failed one stay done. A step that failed on
+     `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount` or
+     `idMismatchCount` wrote nothing. One that failed
+     while `$merge` ran may have written part of its documents; once fixed,
+     the next run compares again and completes it. One that failed on
+     `diffCountAfter` wrote everything and doesn't converge: running it again
+     writes again, so fix the pipeline (see
+     [shape the output](writing-migrations.md#shape-the-output)) and check
+     the data it wrote.
 
 3. **Fix the file and run again**, keeping its name and `id`. For example,
    make a step idempotent by filtering on the target state:
@@ -126,7 +135,7 @@ migrune stops gracefully and exits 130 or 143:
 - no new migration starts;
 - the migration in progress is reported as `interrupted` and the rest as
   `skipped`. A data migration's transaction is aborted; an index build is
-  left to finish on the server;
+  left to finish on the server; a merge's aggregate is cancelled;
 - no changelog entry is written, so the migration stays pending; but a
   data migration whose commit was already sent lets it finish, for up to 30
   seconds, and is reported as `applied` if it committed;
@@ -138,7 +147,8 @@ cut short. SIGKILL can't be caught: the server aborts the open transaction on
 its own, and the lock expires.
 
 Nothing needs fixing: run plan and apply again. The next run's identical
-`createIndex` waits for a build still in progress or does nothing.
+`createIndex` waits for a build still in progress or does nothing, and a
+half-done merge is finished.
 
 ## The lock is held
 
@@ -161,8 +171,8 @@ with the same `--runner-id`. See
 
 Don't delete the lock document by hand unless you are sure its holder is
 gone. Even then, a runner that lost its lock can't commit a data migration
-(the fence aborts its transaction), but it could still be running index
-steps.
+(the fence aborts its transaction), but it could still be running index or
+merge steps.
 
 ## The lock was lost
 
@@ -180,7 +190,7 @@ went without a successful heartbeat for longer than the expiry: the
 connection to the primary was cut, the server was overloaded, or the process
 was paused. When the runner notices it first, before another one takes over,
 the run stops the same way, after a failed heartbeat or before its next index
-step, with `migration lock lost:` followed by the heartbeat's error,
+or merge step, with `migration lock lost:` followed by the heartbeat's error,
 or by `no heartbeat succeeded within the lock expiry, less a 10s margin` (see
 [heartbeat](reference/changelog-and-lock.md#heartbeat)). Deleting the lock
 document by hand has the same effect.
@@ -188,9 +198,9 @@ document by hand has the same effect.
 No transaction commits without the lock (the
 [fence](reference/changelog-and-lock.md#fence)): a data migration's changes
 are aborted, no changelog entry is written, and the migration stays pending.
-An index migration's steps done before the loss stay done, and one already
-sent may still finish on the server; the next run handles them as it does
-after an [interrupted run](#a-run-was-interrupted).
+An index migration's or a merge migration's steps done before the loss stay
+done, and one already sent may still finish on the server; the next run
+handles them as it does after an [interrupted run](#a-run-was-interrupted).
 
 Find the runner that holds the lock now, if any, and let it finish:
 
@@ -296,6 +306,15 @@ To rename a migration on purpose, retire the old id this way. The file under
 its new name is then pending and runs again, which is harmless when it is
 idempotent, but documents written since the first run may match its filters
 again, so read the plan before applying.
+
+## A merge warns about a collation
+
+plan and apply log a warning for each merge step that reads a collection with
+a non-simple default collation, such as a case-insensitive one; when the
+target's unique index on the `on` fields has it too, the same warning lists
+what the comparison can't check through it. The run
+continues, but the counts may not show everything `$merge` writes. See
+[collations](writing-migrations.md#collations) for the limits and what to do.
 
 ## An applied migration did the wrong thing
 

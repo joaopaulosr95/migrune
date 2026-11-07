@@ -6,7 +6,7 @@
   migrations, and `docker compose down -v` to discard everything. The
   [getting started guide](../docs/getting-started.md) walks through it.
 - [`migrations/`](migrations/): one migration of each kind: a data migration
-  seeding reference data and an index migration.
+  seeding reference data, an index migration and a merge migration.
 - [`.gitattributes`](.gitattributes): keeps git from converting the line
   endings of the migrations, which would change their checksums.
 - [`ci/github-actions.yaml`](ci/github-actions.yaml) and

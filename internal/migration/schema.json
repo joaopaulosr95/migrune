@@ -16,7 +16,8 @@
   "required": ["id", "description", "steps"],
   "oneOf": [
     { "properties": { "steps": { "items": { "$ref": "#/$defs/dataStep" } } } },
-    { "properties": { "steps": { "items": { "$ref": "#/$defs/indexStep" } } } }
+    { "properties": { "steps": { "items": { "$ref": "#/$defs/indexStep" } } } },
+    { "properties": { "steps": { "items": { "$ref": "#/$defs/mergeStep" } } } }
   ],
   "$defs": {
     "collection": {
@@ -33,7 +34,7 @@
       "not": { "required": ["$out"] }
     },
     "noMerge": {
-      "description": "A pipeline stage other than $merge, which writes the pipeline's output into a collection",
+      "description": "A pipeline stage other than $merge, which only a merge step's pipeline may end with",
       "not": { "required": ["$merge"] }
     },
     "dataStep": {
@@ -77,6 +78,46 @@
       "if": { "properties": { "operation": { "const": "createIndex" } } },
       "then": { "required": ["keys", "options"], "not": { "required": ["name"] } },
       "else": { "required": ["name"], "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] } }
+    },
+    "mergeStep": {
+      "type": "object",
+      "properties": {
+        "collection": { "$ref": "#/$defs/collection" },
+        "operation": { "const": "aggregate" },
+        "pipeline": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "allOf": [{ "$ref": "#/$defs/noOut" }],
+            "properties": { "$merge": { "$ref": "#/$defs/merge" } }
+          },
+          "contains": { "required": ["$merge"] },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": ["collection", "operation", "pipeline"]
+    },
+    "merge": {
+      "description": "The $merge stage of a merge step: it updates matched documents in place and writes nothing else",
+      "type": "object",
+      "properties": {
+        "into": { "$ref": "#/$defs/collection" },
+        "on": {
+          "description": "A field name, or an array of distinct field names; _id when absent",
+          "type": ["string", "array"],
+          "minLength": 1,
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "whenMatched": { "const": "merge" },
+        "whenNotMatched": { "const": "discard" }
+      },
+      "additionalProperties": false,
+      "required": ["into", "whenMatched", "whenNotMatched"]
     }
   }
 }

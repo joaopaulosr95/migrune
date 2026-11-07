@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-02-002-items-sku-unique-ci",
+  "description": "Index items by sku, case-insensitively",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": { "sku": 1 },
+      "options": { "name": "sku_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
+    }
+  ]
+}

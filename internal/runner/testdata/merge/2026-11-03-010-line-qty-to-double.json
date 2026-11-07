@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-010-line-qty-to-double",
+  "description": "Store each order line's qty as a double",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "lines": { "$map": { "input": "$lines", "as": "l", "in": { "qty": { "$toDouble": "$$l.qty" } } } } } },
+        { "$merge": { "into": "orders", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+Database: app
+
+MIGRATION                  KIND   STATUS   DURATION  ERROR
+2026-11-03-001-copy-label  merge  applied  45ms
+  merge: diffCountBefore 3, diffCountAfter 0, unmatchedCount 0, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":1}: label: absent -> "a"
+  differs at /steps/0 {"_id":2}: label: "b" -> "\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…"
+
+Total: 1 migration: 1 applied, 0 errored, 0 interrupted, 0 skipped in 50ms

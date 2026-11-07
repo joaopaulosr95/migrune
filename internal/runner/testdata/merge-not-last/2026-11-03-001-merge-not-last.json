@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-001-merge-not-last",
+  "description": "A $merge before another stage, which lint rejects",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } },
+        { "$project": { "label": "$name" } }
+      ]
+    }
+  ]
+}

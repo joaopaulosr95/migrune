@@ -97,6 +97,25 @@
         "collection": "accounts",
         "operation": "dropIndex",
         "name": "name_1"
+      },
+      {
+        "collection": "accounts",
+        "operation": "aggregate",
+        "pipeline": [
+          {
+            "$project": {
+              "ownerName": "$owner.name"
+            }
+          },
+          {
+            "$merge": {
+              "into": "projects",
+              "on": "_id",
+              "whenMatched": "merge",
+              "whenNotMatched": "discard"
+            }
+          }
+        ]
       }
     ]
   },
@@ -143,6 +162,37 @@
       "collection": "accounts",
       "operation": "dropIndex",
       "indexName": "name_1"
+    },
+    {
+      "collection": "accounts",
+      "operation": "aggregate",
+      "diffCountBefore": {
+        "$numberLong": "5"
+      },
+      "diffCountAfter": {
+        "$numberLong": "0"
+      },
+      "unmatchedCount": {
+        "$numberLong": "1"
+      },
+      "typeChangedCount": {
+        "$numberLong": "2"
+      },
+      "duplicateOnCount": {
+        "$numberLong": "0"
+      },
+      "nullOnCount": {
+        "$numberLong": "0"
+      },
+      "arrayOnCount": {
+        "$numberLong": "0"
+      },
+      "idMismatchCount": {
+        "$numberLong": "0"
+      },
+      "collationOnlyMatchCount": {
+        "$numberLong": "1"
+      }
     }
   ],
   "errors": [

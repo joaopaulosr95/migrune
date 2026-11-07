@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -185,4 +186,49 @@ func killSession(ctx context.Context, client *mongo.Client, sess *mongo.Session)
 func hasErrorLabel(err error, label string) bool {
 	var le mongo.LabeledError
 	return errors.As(err, &le) && le.HasErrorLabel(label)
+}
+
+// aggregate runs pipeline on coll with opts, in a session of its own, and
+// hands the cursor to fn, if any. When the run is interrupted or loses its lock, the
+// session is killed, so the server stops the aggregate instead of finishing
+// it unattended.
+func (r *Run) aggregate(coll string, pipeline []any, log *slog.Logger, fn func(context.Context, *mongo.Cursor) error,
+	opts ...options.Lister[options.AggregateOptions]) error {
+	sess, err := r.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("start session: %w", err)
+	}
+	defer func() {
+		ctx, cancel := cleanupContext(r.ctx)
+		defer cancel()
+		sess.EndSession(ctx)
+	}()
+	ctx := mongo.NewSessionContext(r.ctx, sess)
+	c := r.db.Collection(coll, options.Collection().SetWriteConcern(writeconcern.Majority()))
+	cur, err := c.Aggregate(ctx, pipeline, opts...)
+	if err == nil {
+		if fn != nil {
+			err = fn(ctx, cur)
+		}
+		cctx, cancel := cleanupContext(r.ctx)
+		if cerr := cur.Close(cctx); cerr != nil && err == nil {
+			err = cerr
+		}
+		cancel()
+	}
+	if err != nil && r.ctx.Err() != nil {
+		r.killSession(sess, log)
+	}
+	return err
+}
+
+// killSession kills the operations running in sess, on a cleanup context.
+func (r *Run) killSession(sess *mongo.Session, log *slog.Logger) {
+	ctx, cancel := cleanupContext(r.ctx)
+	defer cancel()
+	if err := killSession(ctx, r.client, sess); err != nil {
+		log.Warn("could not cancel the aggregate in progress", "error", err)
+		return
+	}
+	log.Info("aggregate in progress cancelled")
 }

@@ -4,10 +4,11 @@
   "steps": [
     {
       "collection": "projects",
-      "operation": "updateMany",
-      "filter": { "x": 1 },
-      "update": { "$set": { "x": 2 } },
-      "collection": "migrations_changelog"
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "x": 1 } },
+        { "$merge": { "into": "projects", "whenMatched": "merge", "whenNotMatched": "discard", "into": "migrations_changelog" } }
+      ]
     }
   ]
 }

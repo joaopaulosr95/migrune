@@ -33,6 +33,12 @@ type Config struct {
 	// Mutable re-runs Finished migrations whose file changed instead of
 	// failing. Meant for local use only.
 	Mutable bool
+	// SampleValues puts the before and after values of the differing
+	// fields in merge samples, in the logs and the report, each cut to
+	// MaxSampleValueChars characters. Without it, samples show only field
+	// names, BSON types and nested paths, so production data stays out of
+	// CI logs.
+	SampleValues bool
 }
 
 // MigrationError reports the migration that stopped the run.
@@ -69,6 +75,7 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	if err != nil {
 		return nil, err
 	}
+	run.sampleValues = c.SampleValues
 	rep := &Report{
 		Command:           string(c.Mode),
 		Database:          db.Name(),
@@ -187,6 +194,8 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 		err = r.runData(m, apply, log, row)
 	case migration.KindIndex:
 		err = r.runIndex(m, apply, log, row)
+	case migration.KindMerge:
+		err = r.runMerge(m, apply, log, row)
 	default:
 		err = fmt.Errorf("unknown migration kind %q", m.Kind)
 	}
@@ -209,6 +218,9 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 		case migration.KindIndex:
 			log.Warn("migration interrupted: it stays pending; an index command in progress is left to the server, " +
 				"and the next run's identical step waits for it or does nothing")
+		case migration.KindMerge:
+			log.Warn("migration interrupted: it stays pending; the aggregate in progress was cancelled, " +
+				"a half-done $merge is safe and the next run completes it")
 		default:
 			log.Warn("migration interrupted: its transaction was aborted and it stays pending")
 		}

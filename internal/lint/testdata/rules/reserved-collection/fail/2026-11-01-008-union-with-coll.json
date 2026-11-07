@@ -4,10 +4,10 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
-        { "$unionWith": { "coll": "system.js", "pipeline": [{ "$project": { "_id": 1 } }] } }
+      "operation": "aggregate",
+      "pipeline": [
+        { "$unionWith": { "coll": "system.js", "pipeline": [{ "$project": { "_id": 1 } }] } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

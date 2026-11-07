@@ -17,7 +17,7 @@ Each finding is printed to stdout on its own line:
 ```
 
 `severity` is `error` or `warning`. Messages about a place inside a file start
-with a JSON pointer to it, such as `/steps/0/update/2`. Findings are sorted
+with a JSON pointer to it, such as `/steps/0/pipeline/2`. Findings are sorted
 by file. Logs, including the final summary, go to stderr.
 
 With `--output json` (`-o json`, `MIGRUNE_OUTPUT=json`), stdout is one JSON
@@ -26,10 +26,10 @@ array instead, `[]` when there are no findings, with an object per finding:
 ```json
 [
   {
-    "file": "migrations/2026-11-01-001-facet-out.json",
+    "file": "migrations/2026-11-01-001-merge-first.json",
     "severity": "error",
-    "rule": "nested-out-merge",
-    "message": "/steps/0/update/0/$facet/x/0: $out is not allowed inside a $facet pipeline"
+    "rule": "merge-last",
+    "message": "/steps/0/pipeline/0: $merge is stage 1 of 2; it must be the last stage"
   }
 ]
 ```
@@ -52,15 +52,17 @@ unreadable `--expected-indexes` file, exits 2 (see
 | `file-size`           | error    | the file is over 1 MiB (1,048,576 bytes). lint doesn't read it; plan and apply refuse it too                   |
 | `line-endings`        | error    | the file has a carriage return (CRLF line endings), or starts with a UTF-8 byte order mark. The checksum covers the raw bytes, so a checkout or an editor that changes them makes the migration look edited wherever it is applied. A file with a byte order mark doesn't load either, in plan and apply. Use LF and no BOM, and add `migrations/*.json -text` to `.gitattributes` |
 | `json`                | error    | the file isn't valid JSON                                                                                      |
-| `duplicate-key`       | error    | an object has the same key twice, such as two `collection` in a step: JSON parsers disagree on which one wins. The message gives the JSON pointer of the second one. plan and apply refuse the file too |
+| `duplicate-key`       | error    | an object has the same key twice, such as two `into` in a `$merge`: JSON parsers disagree on which one wins. The message gives the JSON pointer of the second one. plan and apply refuse the file too |
 | `extended-json`       | error    | a value isn't valid MongoDB Extended JSON, such as a malformed `$oid`                                          |
-| `schema`              | error    | the file doesn't match the [migration file schema](migration-file.md#json-schema), which owns what it can express: the fields of each step, the allowed operations (no `insert*`: seed data with `updateOne`, `upsert: true` and `$setOnInsert`), one kind of migration per file, and no `$out` or `$merge` stage in an update pipeline. Each problem is one finding, with a message that says what to do |
+| `schema`              | error    | the file doesn't match the [migration file schema](migration-file.md#json-schema), which owns what it can express: the fields of each step, the allowed operations (no `insert*`: seed data with `updateOne`, `upsert: true` and `$setOnInsert`), one kind of migration per file, exactly one `$merge` with `whenMatched: "merge"` and `whenNotMatched: "discard"`, no `$out` stage, and no `$merge` in an update pipeline. Each problem is one finding, with a message that says what to do |
 | `id`                  | error    | the `id` field differs from the file name without `.json`                                                      |
 | `duplicate-prefix`    | error    | another file has the same `YYYY-MM-DD-NNN` prefix                                                              |
 | `empty-filter`        | warning  | a `deleteMany` or `updateMany` has the filter `{}`, which matches every document in its collection. Make sure that is meant, and check the counts plan reports |
+| `merge-last`          | error    | `$merge` isn't the last stage of a merge pipeline                                                              |
 | `nested-out-merge`    | error    | `$out` or `$merge` appears in a nested pipeline: `$lookup.pipeline`, `$unionWith.pipeline` or a `$facet` output, at any depth |
-| `server-js`           | error    | a step uses `$where`, `$function` or `$accumulator`, at any depth: they run JavaScript on the server, which migrune can't check, which is slow, often disabled, and deprecated from MongoDB 8.0 |
-| `reserved-collection` | error    | a pipeline reads or writes a [reserved collection](migration-file.md#reserved-collections) (`migrations_changelog`, `migrations_lock` or `system.*`): the `from` of `$lookup` or `$graphLookup`, the collection of `$unionWith`, or the target of `$out`, at any depth. A reserved step `collection` is a `schema` finding. plan and apply refuse the file too |
+| `volatile-merge`      | error    | a merge pipeline uses `$rand`, `$$NOW`, `$$CLUSTER_TIME`, `$function` or `$accumulator`, at any depth: its output would change from one run to the next, or can't be checked, so the merge wouldn't converge. plan can't detect that, and apply only after writing |
+| `server-js`           | error    | a step uses `$where`, `$function` or `$accumulator`, at any depth: they run JavaScript on the server, which migrune can't check, which is slow, often disabled, and deprecated from MongoDB 8.0. In a merge step, `$function` and `$accumulator` are `volatile-merge` findings instead, so each is reported once |
+| `reserved-collection` | error    | a pipeline reads or writes a [reserved collection](migration-file.md#reserved-collections) (`migrations_changelog`, `migrations_lock` or `system.*`): the `from` of `$lookup` or `$graphLookup`, the collection of `$unionWith`, or the target of `$merge` or `$out`, at any depth. A reserved step `collection` or `$merge.into` is a `schema` finding. plan and apply refuse the file too |
 | `index-name-reused`   | error    | during the [index replay](#index-replay), `createIndex` reuses a live index name in the same collection for a different definition |
 | `index-conflict`      | error    | during the [index replay](#index-replay), `createIndex` uses the key pattern of a live index with another name in the same collection, and its `collation`, `partialFilterExpression`, `unique`, `sparse` and `wildcardProjection` are the same |
 | `drop-then-create`    | error    | during the [index replay](#index-replay), a migration drops an index and later creates one with the same name or keys in the same collection |

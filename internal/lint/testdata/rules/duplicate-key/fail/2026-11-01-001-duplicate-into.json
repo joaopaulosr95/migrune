@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-001-duplicate-into",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "x": 1 } },
+        { "$merge": { "into": "projects", "whenMatched": "merge", "whenNotMatched": "discard", "into": "migrations_changelog" } }
+      ]
+    }
+  ]
+}

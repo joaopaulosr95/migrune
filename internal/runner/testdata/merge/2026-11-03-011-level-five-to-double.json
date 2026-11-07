@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-011-level-five-to-double",
+  "description": "Store a value five levels below the top-level field as a double",
+  "steps": [
+    {
+      "collection": "shapes",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "a": { "b": { "c": { "d": { "e": { "f": { "$toDouble": "$a.b.c.d.e.f" } } } } } } } },
+        { "$merge": { "into": "shapes", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

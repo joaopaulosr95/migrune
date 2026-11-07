@@ -79,10 +79,21 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 }
 
 // writeRowDetails writes the lines under a row: for a data migration, one
-// per step with its counts; for an index migration, one per index step.
+// per step with its counts; for an index migration, one per index step; for a
+// merge migration, its counts and samples.
 func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	for _, s := range row.Steps {
 		fmt.Fprintf(w, "  /steps/%d %s on %s: %s\n", s.Index, s.Operation, s.Collection, s.Counts())
+	}
+	if counts := row.Counts(); counts != "" {
+		fmt.Fprintln(w, "  merge: "+counts)
+	}
+	for _, s := range row.Samples {
+		var fields []string
+		for _, f := range s.Fields {
+			fields = append(fields, f.Field+": "+f.Describe())
+		}
+		fmt.Fprintf(w, "  differs at /steps/%d %s: %s\n", s.Step, s.Key, strings.Join(fields, "; "))
 	}
 	for _, c := range row.Indexes {
 		line := fmt.Sprintf("  index %s: %s on %s", indexLabel(command, c), c.Name, c.Collection)

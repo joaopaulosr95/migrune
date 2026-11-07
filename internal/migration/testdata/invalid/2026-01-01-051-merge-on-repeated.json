@@ -1,0 +1,28 @@
+{
+  "id": "2026-01-01-051-merge-on-repeated",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": [
+              "sku",
+              "sku"
+            ],
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -54,6 +54,7 @@ mixes kinds:
 | ------- | -------------------------------------- | ------------------------------------------------------------------- |
 | `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. |
 | `index` | `createIndex`, `dropIndex`             | Step by step, outside a transaction.                                |
+| `merge` | `aggregate`                            | Step by step, outside a transaction; the pipeline ends in `$merge`. |
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: inserts and
 `deleteOne` aren't idempotent.
@@ -65,10 +66,10 @@ and `migrations_lock`, or any collection whose name starts with `system.`:
 a step could otherwise forge or delete changelog entries, break the lock, or
 copy them elsewhere. This applies wherever a collection is named:
 
-- a step's `collection`: the schema refuses it;
+- a step's `collection`, and `$merge.into`: the schema refuses them;
 - the `from` of `$lookup` and `$graphLookup`, the collection of `$unionWith`
-  (its string form or its `coll`), and the target of any `$out`, at any
-  depth of a pipeline, `$facet` and nested pipelines included: the
+  (its string form or its `coll`), and the target of any `$merge` or `$out`,
+  at any depth of a pipeline, `$facet` and nested pipelines included: the
   file fails to load, in lint (`reserved-collection`), plan and apply alike.
 
 ## Data steps
@@ -101,6 +102,29 @@ The schema rejects `$merge` and `$out` as stages of an update pipeline, as Mongo
 | `options`    | object | `createIndex` only   | The index options. `name` is required; every other option is passed to MongoDB as given. |
 | `name`       | string | `dropIndex` only     | The name of the index to drop.                                                  |
 
+## Merge steps
+
+| Field        | Type   | Required | Description                                                     |
+| ------------ | ------ | -------- | --------------------------------------------------------------- |
+| `collection` | string | yes      | The collection the pipeline runs on.                            |
+| `operation`  | string | yes      | `aggregate`.                                                    |
+| `pipeline`   | array  | yes      | The aggregation pipeline, ending in exactly one `$merge` stage. |
+
+The `$merge` stage:
+
+| Field            | Required | Value                                                       |
+| ---------------- | -------- | ----------------------------------------------------------- |
+| `into`           | yes      | The target collection's name, in the same database, not a [reserved](#reserved-collections) one. |
+| `on`             | no       | A field name, or an array of distinct field names, none empty. Default `_id`. |
+| `whenMatched`    | yes      | `"merge"`, nothing else.                                    |
+| `whenNotMatched` | yes      | `"discard"`, nothing else.                                  |
+
+`$merge` must be the last stage. `$out` is not allowed anywhere, and neither
+`$out` nor `$merge` may appear in a nested pipeline (`$lookup.pipeline`,
+`$unionWith.pipeline`, `$facet`). The schema checks there is exactly one
+`$merge`, its options, and no `$out` stage; lint checks the rest
+(`merge-last`, `nested-out-merge`).
+
 ## JSON Schema
 
 migrune validates every file against a [JSON Schema](https://json-schema.org/draft/2020-12/schema)
@@ -108,10 +132,10 @@ migrune validates every file against a [JSON Schema](https://json-schema.org/dra
 [`internal/migration/schema.json`](../../internal/migration/schema.json).
 Point your editor at it for completion and inline errors. It owns
 everything it can express: the fields of each step, the allowed operations,
-one kind of migration per file, and no `$out` or `$merge` stage in an update
-pipeline, so each problem is reported once, as a `schema` finding in lint.
-The checks a schema can't express, such as nested pipelines, Extended JSON
-values, the file name and the prefix, are [lint](lint-rules.md) code;
+one kind of migration per file, the `$merge` options and no `$out` stage, so
+each problem is reported once, as a `schema` finding in lint. The checks a
+schema can't express, such as the position of `$merge`, nested pipelines, Extended
+JSON values, the file name and the prefix, are [lint](lint-rules.md) code;
 the reserved collections a pipeline reads or writes are also checked when
 plan and apply load the files.
 

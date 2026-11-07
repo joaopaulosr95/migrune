@@ -1,0 +1,44 @@
+{
+  "id": "2026-11-01-003-deep-union-with",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$unionWith": {
+            "coll": "a",
+            "pipeline": [
+              {
+                "$lookup": {
+                  "from": "b",
+                  "pipeline": [
+                    {
+                      "$facet": {
+                        "deep": [
+                          {
+                            "$out": "c"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "as": "x"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

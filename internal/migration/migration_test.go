@@ -46,6 +46,7 @@ func TestLoadValid(t *testing.T) {
 		{id: "2026-11-05-001-add-archived-flag", kind: KindData, operations: []string{"updateMany", "updateMany", "deleteMany"}},
 		{id: "2026-11-05-002-seed-price-table-v1", kind: KindData, operations: []string{"updateOne"}},
 		{id: "2026-11-05-003-account-name-ci-index", kind: KindIndex, operations: []string{"createIndex", "dropIndex"}},
+		{id: "2026-11-05-004-denormalize-project-owner-name", kind: KindMerge, operations: []string{"aggregate"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -127,6 +128,14 @@ func TestLoadExtendedJSON(t *testing.T) {
 	if got := index.Steps[1].Name; got != "name_1" {
 		t.Errorf("dropIndex name = %q, want name_1", got)
 	}
+
+	merge := byID["2026-11-05-004-denormalize-project-owner-name"]
+	if got := len(merge.Steps[0].Pipeline); got != 4 {
+		t.Fatalf("pipeline has %d stages, want 4", got)
+	}
+	if _, err := merge.Steps[0].Pipeline[3].LookupErr("$merge"); err != nil {
+		t.Errorf("last stage is not $merge: %v", err)
+	}
 }
 
 func TestLoadDirectory(t *testing.T) {
@@ -143,6 +152,7 @@ func TestLoadDirectory(t *testing.T) {
 		"2026-11-05-001-add-archived-flag",
 		"2026-11-05-002-seed-price-table-v1",
 		"2026-11-05-003-account-name-ci-index",
+		"2026-11-05-004-denormalize-project-owner-name",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -195,9 +205,9 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "add-flag", want: "file name must start with a YYYY-MM-DD date"},
 		// The id field must match the file name.
 		// A key twice in the same object: JSON parsers disagree on which
-		// wins, and the schema saw the last collection while the runner
-		// would see the first.
-		{file: "2026-01-01-054-duplicate-key", want: `duplicate key: /steps/0/collection: "collection" appears twice in the same object`},
+		// wins, and the schema saw the last into while the runner would
+		// see the first.
+		{file: "2026-01-01-054-duplicate-key", want: `duplicate key: /steps/0/pipeline/1/$merge/into: "into" appears twice in the same object`},
 		{file: "2026-01-01-048-id-mismatch", want: `id "2026-01-01-048-another-name" doesn't match the file name; want "2026-01-01-048-id-mismatch"`},
 		// Top-level shape.
 		{file: "2026-01-01-001-not-an-object", pointer: "", want: "got array, want object"},
@@ -211,7 +221,7 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-009-steps-not-array", pointer: "/steps", want: "got object, want array"},
 		// Unknown or undetectable kind.
 		{file: "2026-01-01-010-mixed-kinds", pointer: "/steps/1/operation", want: "createIndex belongs to index migrations, but the file's first operation, updateMany, belongs to data migrations"},
-		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), or createIndex or dropIndex (index); seed documents with updateOne, upsert: true and $setOnInsert"},
+		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex or dropIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert"},
 		{file: "2026-01-01-012-delete-one", pointer: "/steps/0/operation", want: "deleteOne is not an operation migrune runs"},
 		{file: "2026-01-01-013-replace-one", pointer: "/steps/0/operation", want: "replaceOne is not an operation migrune runs"},
 		{file: "2026-01-01-014-missing-operation", pointer: "/steps/0", want: "missing property 'operation'"},
@@ -236,6 +246,23 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-031-index-drop-with-keys", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
 		{file: "2026-01-01-032-index-drop-with-options", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
 		{file: "2026-01-01-033-index-extra-property", pointer: "/steps/0", want: "additional properties 'background' not allowed"},
+		// Merge steps.
+		{file: "2026-01-01-034-merge-missing-pipeline", pointer: "/steps/0", want: "missing property 'pipeline'"},
+		{file: "2026-01-01-035-merge-empty-pipeline", pointer: "/steps/0/pipeline", want: "minItems"},
+		{file: "2026-01-01-036-merge-no-merge-stage", pointer: "/steps/0/pipeline", want: "the pipeline has no $merge stage"},
+		{file: "2026-01-01-037-merge-two-merge-stages", pointer: "/steps/0/pipeline", want: "the pipeline has 2 $merge stages, at indexes 1, 2"},
+		{file: "2026-01-01-038-merge-out-stage", pointer: "/steps/0/pipeline/1", want: "$out is not allowed: it replaces the whole target collection"},
+		{file: "2026-01-01-039-merge-when-matched-replace", pointer: "/steps/0/pipeline/1/$merge/whenMatched", want: `must be "merge", got "replace"`},
+		{file: "2026-01-01-040-merge-when-not-matched-insert", pointer: "/steps/0/pipeline/1/$merge/whenNotMatched", want: `must be "discard", got "insert"`},
+		{file: "2026-01-01-041-merge-missing-into", pointer: "/steps/0/pipeline/1/$merge", want: `missing property 'into': $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`},
+		{file: "2026-01-01-042-merge-into-object", pointer: "/steps/0/pipeline/1/$merge/into", want: "got object, want string"},
+		{file: "2026-01-01-043-merge-extra-option", pointer: "/steps/0/pipeline/1/$merge", want: "additional properties 'let' not allowed"},
+		{file: "2026-01-01-044-merge-extra-property", pointer: "/steps/0", want: "additional properties 'options' not allowed"},
+		{file: "2026-01-01-049-merge-on-empty-string", pointer: "/steps/0/pipeline/1/$merge/on", want: "minLength"},
+		{file: "2026-01-01-050-merge-on-empty-array", pointer: "/steps/0/pipeline/1/$merge/on", want: "minItems"},
+		{file: "2026-01-01-051-merge-on-repeated", pointer: "/steps/0/pipeline/1/$merge/on", want: "items at 0 and 1 are equal"},
+		{file: "2026-01-01-052-merge-on-number", pointer: "/steps/0/pipeline/1/$merge/on", want: "got number, want string or array"},
+		{file: "2026-01-01-053-merge-on-array-of-numbers", pointer: "/steps/0/pipeline/1/$merge/on/1", want: "got number, want string"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -373,8 +400,8 @@ func TestChecksumRawBytes(t *testing.T) {
 
 // TestLoadReserved checks every place a migration can name a collection
 // refuses migrune's own collections and system.* ones: the schema for a
-// step's collection, a check at load for the collections a pipeline reads or
-// writes, at any depth.
+// step's collection and $merge.into, a check at load for the collections a
+// pipeline reads or writes, at any depth.
 func TestLoadReserved(t *testing.T) {
 	cases := []struct {
 		file    string
@@ -385,12 +412,13 @@ func TestLoadReserved(t *testing.T) {
 		{file: "2026-11-01-001-changelog-data", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
 		{file: "2026-11-01-002-lock-index", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
 		{file: "2026-11-01-003-system-collection", schema: true, pointer: "/steps/0/collection", want: "the collection is reserved"},
-		{file: "2026-11-01-005-lookup-from", pointer: "/steps/0/update/0/$lookup/from", want: `"migrations_changelog" is reserved`},
-		{file: "2026-11-01-006-graph-lookup-from", pointer: "/steps/0/update/0/$graphLookup/from", want: `"system.users" is reserved`},
-		{file: "2026-11-01-007-union-with-name", pointer: "/steps/0/update/0/$unionWith", want: `"migrations_lock" is reserved`},
-		{file: "2026-11-01-008-union-with-coll", pointer: "/steps/0/update/0/$unionWith/coll", want: `"system.js" is reserved`},
-		{file: "2026-11-01-009-facet-lookup", pointer: "/steps/0/update/0/$facet/locks/0/$lookup/from", want: `"migrations_lock" is reserved`},
-		{file: "2026-11-01-010-nested-union-with", pointer: "/steps/0/update/0/$lookup/pipeline/0/$unionWith/pipeline/0/$unionWith", want: `"migrations_changelog" is reserved`},
+		{file: "2026-11-01-004-merge-into-changelog", schema: true, pointer: "/steps/0/pipeline/1/$merge/into", want: "the collection is reserved"},
+		{file: "2026-11-01-005-lookup-from", pointer: "/steps/0/pipeline/0/$lookup/from", want: `"migrations_changelog" is reserved`},
+		{file: "2026-11-01-006-graph-lookup-from", pointer: "/steps/0/pipeline/0/$graphLookup/from", want: `"system.users" is reserved`},
+		{file: "2026-11-01-007-union-with-name", pointer: "/steps/0/pipeline/0/$unionWith", want: `"migrations_lock" is reserved`},
+		{file: "2026-11-01-008-union-with-coll", pointer: "/steps/0/pipeline/0/$unionWith/coll", want: `"system.js" is reserved`},
+		{file: "2026-11-01-009-facet-lookup", pointer: "/steps/0/pipeline/0/$facet/locks/0/$lookup/from", want: `"migrations_lock" is reserved`},
+		{file: "2026-11-01-010-nested-union-with", pointer: "/steps/0/pipeline/0/$lookup/pipeline/0/$unionWith/pipeline/0/$unionWith", want: `"migrations_changelog" is reserved`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {

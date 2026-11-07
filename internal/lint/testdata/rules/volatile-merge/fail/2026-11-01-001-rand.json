@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-001-rand",
+  "description": "Give each item a random score",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "score": { "$multiply": [{ "$rand": {} }, 100] } } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

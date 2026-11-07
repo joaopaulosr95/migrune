@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-03-001-copy-currency-symbol",
+  "description": "Copy each plan's currency symbol onto the plan",
+  "steps": [
+    {
+      "collection": "plans",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "currencySymbol": { "$exists": false } } },
+        { "$lookup": { "from": "currencies", "localField": "currency", "foreignField": "_id", "as": "currencyDocs" } },
+        { "$project": { "currencySymbol": { "$first": "$currencyDocs.symbol" } } },
+        { "$merge": { "into": "plans", "on": "_id", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

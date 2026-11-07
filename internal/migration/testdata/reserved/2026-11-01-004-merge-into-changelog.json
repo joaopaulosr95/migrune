@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-004-merge-into-changelog",
+  "description": "Rewrite changelog entries",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "status": "Finished" } },
+        { "$merge": { "into": "migrations_changelog", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

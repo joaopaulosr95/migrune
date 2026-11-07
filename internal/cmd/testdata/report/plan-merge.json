@@ -1,0 +1,105 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-03-001-copy-label",
+      "kind": "merge",
+      "status": "applied",
+      "durationMs": 30,
+      "diffCountBefore": 3,
+      "unmatchedCount": 1,
+      "typeChangedCount": 0,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "samples": [
+        {
+          "step": 0,
+          "key": {
+            "_id": 1
+          },
+          "fields": [
+            {
+              "field": "label",
+              "beforeType": "missing",
+              "afterType": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2026-11-03-003-price-by-sku",
+      "kind": "merge",
+      "status": "applied",
+      "durationMs": 15,
+      "diffCountBefore": 1,
+      "unmatchedCount": 2,
+      "typeChangedCount": 0,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "collationOnlyMatchCount": 1
+    },
+    {
+      "id": "2026-11-03-004-qty-to-double",
+      "kind": "merge",
+      "status": "errored",
+      "durationMs": 20,
+      "error": "/steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters",
+      "diffCountBefore": 2,
+      "unmatchedCount": 0,
+      "typeChangedCount": 1,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "samples": [
+        {
+          "step": 0,
+          "key": {
+            "_id": 1
+          },
+          "fields": [
+            {
+              "field": "qty",
+              "beforeType": "int",
+              "afterType": "double",
+              "typeChanged": true
+            }
+          ]
+        },
+        {
+          "step": 0,
+          "key": {
+            "_id": 2
+          },
+          "fields": [
+            {
+              "field": "qty",
+              "beforeType": "missing",
+              "afterType": "null"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 3,
+    "applied": 2,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 70
+  },
+  "error": "migration 2026-11-03-004-qty-to-double failed: /steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters"
+}

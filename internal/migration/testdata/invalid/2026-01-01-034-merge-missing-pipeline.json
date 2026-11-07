@@ -1,0 +1,10 @@
+{
+  "id": "2026-01-01-034-merge-missing-pipeline",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate"
+    }
+  ]
+}

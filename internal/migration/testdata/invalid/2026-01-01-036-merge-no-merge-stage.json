@@ -1,0 +1,17 @@
+{
+  "id": "2026-01-01-036-merge-no-merge-stage",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "2026-01-01-039-merge-when-matched-replace",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$match": {
+            "x": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "replace",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

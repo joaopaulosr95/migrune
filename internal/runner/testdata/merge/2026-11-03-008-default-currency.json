@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-008-default-currency",
+  "description": "Give each price a currency, defaulting to EUR",
+  "steps": [
+    {
+      "collection": "prices",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "price": { "amount": "$price.amount", "currency": { "$ifNull": ["$price.currency", "EUR"] } } } },
+        { "$merge": { "into": "prices", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

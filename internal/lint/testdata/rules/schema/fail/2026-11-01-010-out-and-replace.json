@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-010-out-and-replace",
+  "description": "Top-level $out and whenMatched replace",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$set": { "total": { "$sum": "$items.price" } } },
+        { "$out": "orders_archive" },
+        { "$merge": { "into": "orders", "on": "_id", "whenMatched": "replace", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

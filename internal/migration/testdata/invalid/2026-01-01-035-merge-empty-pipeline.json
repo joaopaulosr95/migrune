@@ -1,0 +1,11 @@
+{
+  "id": "2026-01-01-035-merge-empty-pipeline",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": []
+    }
+  ]
+}

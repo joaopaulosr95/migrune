@@ -1,0 +1,31 @@
+{
+  "id": "2026-11-01-001-lookup-out",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$lookup": {
+            "from": "owners",
+            "pipeline": [
+              {
+                "$out": "owners_copy"
+              }
+            ],
+            "as": "o"
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

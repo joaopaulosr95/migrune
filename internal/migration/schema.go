@@ -61,8 +61,9 @@ func (e *SchemaError) Error() string {
 }
 
 // stepKinds are the step definitions of the schema's top-level oneOf, in
-// order: oneOf/0 is the data step, oneOf/1 the index step.
-var stepKinds = []Kind{KindData, KindIndex}
+// order: oneOf/0 is the data step, oneOf/1 the index step, oneOf/2 the merge
+// step.
+var stepKinds = []Kind{KindData, KindIndex, KindMerge}
 
 // violations flattens a validation error into its leaf causes, deduplicated,
 // sorted by pointer, and with clearer messages where the validator's
@@ -125,7 +126,7 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 			return
 		}
 		ptr := jsonPointer(e.InstanceLocation)
-		switch e.ErrorKind.(type) {
+		switch k := e.ErrorKind.(type) {
 		case *kind.OneOf:
 			if len(e.InstanceLocation) == 0 && fileKind != "" {
 				branch := "#/oneOf/" + strconv.Itoa(slices.Index(stepKinds, fileKind)) + "/"
@@ -141,6 +142,20 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 				// not an array of steps, which is reported on its own.
 				return
 			}
+		case *kind.Contains, *kind.MinContains:
+			// An empty pipeline has no causes here, and fails minItems.
+			if len(e.Causes) > 0 {
+				add(Violation{ptr, "the pipeline has no $merge stage: a merge step's pipeline ends with exactly one"})
+			}
+			return
+		case *kind.MaxContains:
+			stages := make([]string, len(k.Got))
+			for j, g := range k.Got {
+				stages[j] = strconv.Itoa(g)
+			}
+			add(Violation{ptr, fmt.Sprintf("the pipeline has %d $merge stages, at indexes %s: a merge step's pipeline ends with exactly one",
+				len(k.Got), strings.Join(stages, ", "))})
+			return
 		}
 		if len(e.Causes) > 0 {
 			for _, c := range e.Causes {
@@ -185,25 +200,36 @@ func comparePointers(a, b string) int {
 var notMessages = map[string]string{
 	"#/$defs/collection":     "the collection is reserved: " + reservedMessage,
 	"#/$defs/noOut":          "$out is not allowed: it replaces the whole target collection",
-	"#/$defs/noMerge":        "$merge is not allowed: it writes the pipeline's output into a collection",
+	"#/$defs/noMerge":        "$merge is only allowed as the last stage of an aggregate step in a merge migration",
 	"#/$defs/dataStep/else":  "update is not allowed: deleteMany takes no update",
 	"#/$defs/indexStep/then": "name is not allowed in createIndex: name the index in options.name",
 	"#/$defs/indexStep/else": "keys and options are not allowed in dropIndex: it takes only the name of the index",
 }
 
+// mergeHint follows a violation on a $merge stage itself.
+const mergeHint = `: $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`
+
 // leafMessage renders a leaf violation at ptr.
 func leafMessage(e *jsonschema.ValidationError, ptr string) string {
-	switch e.ErrorKind.(type) {
+	switch k := e.ErrorKind.(type) {
 	case *kind.Not:
 		for suffix, msg := range notMessages {
 			if !strings.HasSuffix(e.SchemaURL, suffix) {
 				continue
 			}
+			if suffix == "#/$defs/noOut" && strings.Contains(ptr, "/pipeline/") {
+				msg += `. Use $merge with whenMatched: "merge" and whenNotMatched: "discard"`
+			}
 			return msg
 		}
+	case *kind.Const:
+		return fmt.Sprintf("must be %s, got %s", jsonValue(k.Want), jsonValue(k.Got))
 	}
 	// A leaf renders as "at '<pointer>': <message>".
 	msg := strings.TrimPrefix(e.Error(), "at "+quote(ptr)+": ")
+	if strings.HasSuffix(ptr, "/$merge") {
+		msg += mergeHint
+	}
 	return msg
 }
 
@@ -214,7 +240,7 @@ func unknownOperation(op any) string {
 		name = jsonValue(op)
 	}
 	msg := name + " is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), " +
-		"or createIndex or dropIndex (index)"
+		"createIndex or dropIndex (index), or aggregate (merge)"
 	if strings.HasPrefix(name, "insert") {
 		msg += "; seed documents with updateOne, upsert: true and $setOnInsert"
 	}

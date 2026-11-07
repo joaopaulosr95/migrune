@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-014-price-by-sku-with-id",
+  "description": "Copy each source's price onto the item with the same sku, keeping the source's _id by mistake",
+  "steps": [
+    {
+      "collection": "sources",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "sku": 1, "price": 1 } },
+        { "$merge": { "into": "items", "on": "sku", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

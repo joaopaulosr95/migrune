@@ -1,0 +1,27 @@
+{
+  "id": "2026-11-01-005-accumulator",
+  "description": "Count items per owner in JavaScript",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$group": {
+            "_id": "$ownerId",
+            "itemCount": {
+              "$accumulator": {
+                "init": "function() { return 0 }",
+                "accumulate": "function(n) { return n + 1 }",
+                "accumulateArgs": [],
+                "merge": "function(a, b) { return a + b }",
+                "lang": "js"
+              }
+            }
+          }
+        },
+        { "$merge": { "into": "owners", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

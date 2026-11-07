@@ -44,10 +44,14 @@ opens transactions it aborts. Give it the same credentials as apply, and run
 it only in pipelines you trust with them, such as tag or default-branch
 pipelines, never in pull request pipelines that run the branch's own CI file.
 
+The plan report and logs are meant to be published, so merge samples show
+field names and BSON types, never values. Leave `--sample-values` off in CI
+unless its logs and artifacts are as protected as the database.
+
 Run lint before plan in every pipeline that plans: in pull requests, and in
 the release or tag pipeline too, as the first step of the plan job, as both
-examples do. plan and apply don't run lint's rules, such as `server-js`, and
-a tag can point at a commit no pull request checked.
+examples do. plan and apply don't run lint's rules, such as `server-js` or
+`volatile-merge`, and a tag can point at a commit no pull request checked.
 lint needs no database; add `MIGRUNE_URI` and `--db`, with a read-only user
 in pull requests, to also catch edited or deleted applied migrations, and
 `--expected-indexes <file>` if your application declares indexes (see
@@ -105,18 +109,31 @@ primary, while holding the migration lock:
   and plan then aborts it. They are bounded by the server's transaction
   lifetime, 60 seconds by default, which is why they
   [stay small](writing-migrations.md#data-migrations).
+- **Merge migrations**: plan runs each step's pipeline in full, without
+  `$merge`, and compares every output document with its target. apply runs
+  it up to three times: that comparison before, the pipeline with `$merge`,
+  and the comparison again after (see
+  [how the comparison works](writing-migrations.md#how-the-comparison-works)).
 - **Index migrations**: plan reads the indexes and counts the documents a
   new TTL index would delete. apply builds each index with
   `createIndexes` and waits for it: migrune sets no `commitQuorum`, so the
   server's default applies (every data-bearing voting member), and no time
   limit.
 
-migrune sets no `maxTimeMS` on any of these, and no overall deadline: an
-index build runs as long as the server takes. Bound the job instead, with
-your CI system's job timeout (`timeout-minutes` in GitHub Actions, `timeout`
-in GitLab CI), set above the longest run you expect. A timed-out job is cancelled like any other: see
+migrune sets no `maxTimeMS` on any of these, and no overall deadline: a
+merge over a large collection, or an index build, runs as long as the server
+takes. Bound the job instead, with your CI system's job timeout
+(`timeout-minutes` in GitHub Actions, `timeout` in GitLab CI), set above the
+longest run you expect. A timed-out job is cancelled like any other: see
 [a run was interrupted](troubleshooting.md#a-run-was-interrupted). An index
 build in progress is left to finish on the server.
+
+As a rough guide only, not a benchmark: a merge step over 1 million
+documents took 39 seconds in plan and 1 minute 48 seconds in apply, on the
+local 3-node test replica set (`test/replicaset/`, three `mongod` processes
+on one machine). Your timings depend on the documents, the pipeline, the
+indexes and the hardware: time plan against a copy of production, or read
+the durations in its report, before you choose the timeout.
 
 ## Credentials
 
@@ -126,7 +143,7 @@ logs. migrune never logs or prints the URI, not even in error messages: it
 logs the database it connects to.
 
 The database user needs `readWrite` on the target database: it covers data
-changes, `createIndex` and `dropIndex`, and the
+changes, `createIndex` and `dropIndex`, `$merge`, and the
 `migrations_changelog` and `migrations_lock` collections. For lint in pull
 requests, use another user with `read`.
 

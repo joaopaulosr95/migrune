@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-005-random-score",
+  "description": "Give each item a random score, which never settles",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "score": { "$rand": {} } } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

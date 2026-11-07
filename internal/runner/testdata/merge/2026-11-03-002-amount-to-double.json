@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-002-amount-to-double",
+  "description": "Store each price's amount as a double, inside the price document",
+  "steps": [
+    {
+      "collection": "prices",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "price": { "amount": { "$toDouble": "$price.amount" } } } },
+        { "$merge": { "into": "prices", "on": "_id", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

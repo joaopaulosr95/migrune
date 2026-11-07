@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-001-deterministic",
+  "description": "Values computed from fields the merge does not write, and a variable whose name starts like NOW",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "slug": { "$exists": false } } },
+        { "$project": { "slug": { "$toLower": "$name" }, "note": { "$let": { "vars": { "nowish": "$name" }, "in": "$$nowish" } }, "label": { "$literal": "rand" } } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

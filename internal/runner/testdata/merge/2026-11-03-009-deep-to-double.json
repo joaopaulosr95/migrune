@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-009-deep-to-double",
+  "description": "Store a value three levels below the top-level field as a double",
+  "steps": [
+    {
+      "collection": "shapes",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "a": { "b": { "c": { "d": { "$toDouble": "$a.b.c.d" } } } } } },
+        { "$merge": { "into": "shapes", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

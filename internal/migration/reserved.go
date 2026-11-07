@@ -32,8 +32,8 @@ func IsReservedCollection(coll string) bool {
 // ReservedCollectionError reports the places in a migration file that name a
 // reserved collection (see IsReservedCollection) where the schema can't see
 // them: the from of $lookup and $graphLookup, the collection of $unionWith,
-// and the target of an $out, at any depth of a pipeline. The schema already
-// refuses a reserved step collection.
+// and the target of a $merge or $out, at any depth of a pipeline. The schema
+// already refuses a reserved step collection or top-level $merge.into.
 type ReservedCollectionError struct {
 	File       string
 	Violations []Violation
@@ -62,6 +62,7 @@ func ReservedCollections(steps []Step) []Violation {
 				w.pipeline(ptr+"/update", stages)
 			}
 		}
+		w.pipeline(ptr+"/pipeline", s.Pipeline)
 	}
 	return w.out
 }
@@ -75,7 +76,7 @@ func (w *reservedWalker) check(ptr, coll string) {
 }
 
 // target checks a collection given as a name, or as a document naming it in
-// field (a $lookup from with a database, for instance).
+// field (a $lookup from or $merge into with a database, for instance).
 func (w *reservedWalker) target(ptr string, v bson.RawValue, field string) {
 	switch v.Type {
 	case bson.TypeString:
@@ -117,6 +118,12 @@ func (w *reservedWalker) pipeline(ptr string, stages []bson.Raw) {
 				outputs, _ := arg.Elements()
 				for _, o := range outputs {
 					w.subPipeline(sp+"/"+PointerToken(o.Key()), o.Value())
+				}
+			case "$merge":
+				if isDoc {
+					w.target(sp+"/into", arg.Lookup("into"), "coll")
+				} else {
+					w.target(sp, v, "coll")
 				}
 			case "$out":
 				w.target(sp, v, "coll")

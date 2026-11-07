@@ -14,7 +14,7 @@ import (
 )
 
 // passDir holds migrations that lint without findings.
-var passDir = filepath.Join("..", "lint", "testdata", "rules", "nested-out-merge", "pass")
+var passDir = filepath.Join("..", "lint", "testdata", "rules", "merge-last", "pass")
 
 func TestEnvPrecedence(t *testing.T) {
 	cases := []struct {

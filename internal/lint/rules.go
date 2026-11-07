@@ -51,9 +51,18 @@ func checkFile(path, stem string, raw []byte) []Finding {
 					ptr, coll, strings.Join(sortedKeys(keys), ", "), jsonString(ttl)))
 			}
 		}
-		c.serverJS(ptr, step)
-		if p, ok := step["update"].([]any); ok {
-			c.pipeline(ptr+"/update", p)
+		c.serverJS(ptr, step, op == "aggregate")
+		if op == "aggregate" {
+			if p, ok := step["pipeline"].([]any); ok {
+				c.mergePipeline(ptr+"/pipeline", p)
+				c.volatile(ptr+"/pipeline", p)
+			}
+			continue
+		}
+		for _, field := range []string{"update", "pipeline"} {
+			if p, ok := step[field].([]any); ok {
+				c.pipeline(ptr+"/"+field, p)
+			}
 		}
 	}
 	return c.findings
@@ -77,8 +86,24 @@ func (c *checker) warn(rule, msg string) {
 	c.findings = append(c.findings, Finding{File: c.path, Severity: Warning, Rule: rule, Message: msg})
 }
 
-// pipeline checks the pipelines nested in the stages of an update pipeline.
-// The schema refuses $out and $merge as its own stages.
+// mergePipeline checks the pipeline of a merge step: its $merge is the last
+// stage. The schema checks there is one, with the allowed options, and no
+// $out.
+func (c *checker) mergePipeline(ptr string, stages []any) {
+	for i, s := range stages {
+		sp := ptr + "/" + strconv.Itoa(i)
+		for _, name := range stageNames(s) {
+			if name == "$merge" && i != len(stages)-1 {
+				c.add(RuleMergeLast, fmt.Sprintf("%s: $merge is stage %d of %d; it must be the last stage", sp, i+1, len(stages)))
+			}
+			c.subPipelines(sp+"/"+migration.PointerToken(name), name, s.(map[string]any)[name])
+		}
+	}
+}
+
+// pipeline checks the pipelines nested in the stages of a pipeline outside
+// a merge step, such as an update pipeline. The schema refuses $out and
+// $merge as its own stages.
 func (c *checker) pipeline(ptr string, stages []any) {
 	for i, s := range stages {
 		sp := ptr + "/" + strconv.Itoa(i)
@@ -125,24 +150,64 @@ func (c *checker) nested(ptr, parent string, stages []any) {
 var serverJSOperators = []string{"$where", "$function", "$accumulator"}
 
 // serverJS reports, anywhere in v, the operators that run JavaScript on the
-// server.
-func (c *checker) serverJS(ptr string, v any) {
+// server. In a merge step, $function and $accumulator are left to
+// volatileMerge, which already reports them.
+func (c *checker) serverJS(ptr string, v any, merge bool) {
 	switch x := v.(type) {
 	case map[string]any:
 		for _, k := range sortedKeys(x) {
 			kp := ptr + "/" + migration.PointerToken(k)
-			if slices.Contains(serverJSOperators, k) {
+			if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
 				c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
 					"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
 			}
-			c.serverJS(kp, x[k])
+			c.serverJS(kp, x[k], merge)
 		}
 	case []any:
 		for i, e := range x {
-			c.serverJS(ptr+"/"+strconv.Itoa(i), e)
+			c.serverJS(ptr+"/"+strconv.Itoa(i), e, merge)
 		}
 	}
 }
+
+// volatileOperators give a different result on each run.
+var volatileOperators = map[string]string{
+	"$rand":        "returns a new random number on each run",
+	"$function":    "runs JavaScript migrune can't check",
+	"$accumulator": "runs JavaScript migrune can't check",
+}
+
+// volatileVariables give a different value on each run.
+var volatileVariables = []string{"$$NOW", "$$CLUSTER_TIME"}
+
+// volatile reports, anywhere in a merge pipeline v, the operators and
+// variables whose value changes from one run to the next: a merge computed
+// from them never settles, and plan can't tell.
+func (c *checker) volatile(ptr string, v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for _, k := range sortedKeys(x) {
+			kp := ptr + "/" + migration.PointerToken(k)
+			if reason, ok := volatileOperators[k]; ok {
+				c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
+			}
+			c.volatile(kp, x[k])
+		}
+	case []any:
+		for i, e := range x {
+			c.volatile(ptr+"/"+strconv.Itoa(i), e)
+		}
+	case string:
+		for _, name := range volatileVariables {
+			if x == name || strings.HasPrefix(x, name+".") {
+				c.add(RuleVolatileMerge, ptr+": "+name+" changes on each run"+volatileAdvice)
+			}
+		}
+	}
+}
+
+const volatileAdvice = ": a merge must give the same output when run again, computed from fields it doesn't write, " +
+	"or it never settles; plan can't detect that, and apply only after writing"
 
 // stageNames returns the keys of a pipeline stage, sorted. A valid stage has
 // exactly one.

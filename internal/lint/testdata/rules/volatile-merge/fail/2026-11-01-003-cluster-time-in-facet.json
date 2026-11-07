@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-003-cluster-time-in-facet",
+  "description": "Stamp items with the cluster time",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$facet": { "stamped": [{ "$project": { "at": "$$CLUSTER_TIME" } }] } },
+        { "$unwind": "$stamped" },
+        { "$replaceWith": "$stamped" },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

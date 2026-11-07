@@ -700,27 +700,3 @@ func serverVersion(t *testing.T, ctx context.Context, db *mongo.Database) string
 	}
 	return info.Version
 }
-
-func TestSameCollationSpec(t *testing.T) {
-	full := `{"alternate": "non-ignorable", "locale": "en", "strength": 2, "version": "57.1"}`
-	cases := []struct {
-		a, b       string
-		same, sure bool
-	}{
-		{a: "", b: "", same: true, sure: true},
-		{a: full, b: full, same: true, sure: true},
-		{a: "", b: full, same: false, sure: true},
-		{a: full, b: "", same: false, sure: true},
-		// A collation from a file lists only what it sets.
-		{a: `{"locale": "en", "strength": 2}`, b: full, same: true, sure: false},
-		{a: `{"locale": "en", "strength": 1}`, b: full, same: false, sure: true},
-		{a: `{"locale": "fr"}`, b: full, same: false, sure: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.a+" "+tc.b, func(t *testing.T) {
-			if same, sure := sameCollationSpec(tc.a, tc.b); same != tc.same || sure != tc.sure {
-				t.Errorf("sameCollationSpec = %v, %v; want %v, %v", same, sure, tc.same, tc.sure)
-			}
-		})
-	}
-}

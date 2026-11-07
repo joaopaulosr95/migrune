@@ -5,8 +5,9 @@ to your code; migrune checks them (`lint`), shows what would change (`plan`)
 and applies them (`apply`) under a lock, recording each one in a changelog
 collection.
 
-- **Two kinds of migration**: data (`updateOne`, `updateMany`,
-  `deleteMany` in one transaction) and index (`createIndex`, `dropIndex`).
+- **Three kinds of migration**: data (`updateOne`, `updateMany`,
+  `deleteMany` in one transaction), index (`createIndex`, `dropIndex`) and
+  merge (an aggregation pipeline ending in `$merge`).
 - **Checked before they run**: lint works offline; plan runs every data
   migration twice in a transaction and aborts it, so non-idempotent
   migrations fail before anyone approves them.
@@ -109,7 +110,7 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 
 - [Getting started](docs/getting-started.md): a ten-minute walkthrough with
   Docker.
-- [Writing migrations](docs/writing-migrations.md): data and index
+- [Writing migrations](docs/writing-migrations.md): data, index and merge
   migrations, and the checks they must pass.
 - [Running migrations](docs/running.md): plan and apply in CI with an
   approval gate, large collections, credentials and AWS IAM, `--mutable`

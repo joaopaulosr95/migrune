@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-001-copy-label",
+  "description": "Copy each item's name into a new label field",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "label": "$name" } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

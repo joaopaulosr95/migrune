@@ -18,6 +18,20 @@
       "options": {
         "name": "owner_1"
       }
+    },
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
     }
   ]
 }

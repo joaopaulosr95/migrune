@@ -1,0 +1,17 @@
+Plan: each status is what apply would do. Nothing was committed.
+Database: app
+
+MIGRATION                     KIND   STATUS   DURATION  ERROR
+2026-11-03-001-copy-label     merge  applied  30ms
+  merge: diffCountBefore 3, unmatchedCount 1, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":1}: label: missing -> string
+2026-11-03-003-price-by-sku   merge  applied  15ms
+  merge: diffCountBefore 1, unmatchedCount 2, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0, collationOnlyMatchCount 1
+2026-11-03-004-qty-to-double  merge  errored  20ms      /steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters
+  merge: diffCountBefore 2, unmatchedCount 0, typeChangedCount 1, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  differs at /steps/0 {"_id":1}: qty: int -> double, type changed
+  differs at /steps/0 {"_id":2}: qty: missing -> null
+
+Total: 3 migrations: 2 applied, 1 errored, 0 interrupted, 0 skipped in 70ms
+
+Error: migration 2026-11-03-004-qty-to-double failed: /steps/0 (aggregate on counters): typeChangedCount is 1: the merge would change the BSON type of existing fields in counters

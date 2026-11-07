@@ -1,0 +1,19 @@
+{
+  "id": "2026-11-01-004-replace-insert",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "projects",
+            "whenMatched": "replace",
+            "whenNotMatched": "insert"
+          }
+        }
+      ]
+    }
+  ]
+}

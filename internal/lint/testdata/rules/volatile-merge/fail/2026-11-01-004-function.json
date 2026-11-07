@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-004-function",
+  "description": "Compute a slug in JavaScript",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "slug": { "$function": { "body": "function(n) { return n.toLowerCase() }", "args": ["$name"], "lang": "js" } } } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

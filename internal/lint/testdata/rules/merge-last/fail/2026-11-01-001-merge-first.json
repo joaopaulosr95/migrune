@@ -1,0 +1,25 @@
+{
+  "id": "2026-11-01-001-merge-first",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        },
+        {
+          "$project": {
+            "a": 1
+          }
+        }
+      ]
+    }
+  ]
+}

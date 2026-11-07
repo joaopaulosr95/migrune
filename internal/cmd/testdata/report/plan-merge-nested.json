@@ -1,0 +1,64 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-03-002-amount-to-double",
+      "kind": "merge",
+      "status": "errored",
+      "durationMs": 25,
+      "error": "/steps/0 (aggregate on prices): typeChangedCount is 1: the merge would change the BSON type of existing fields in prices",
+      "diffCountBefore": 2,
+      "unmatchedCount": 0,
+      "typeChangedCount": 1,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "samples": [
+        {
+          "step": 0,
+          "key": {
+            "_id": 1
+          },
+          "fields": [
+            {
+              "field": "price",
+              "beforeType": "long",
+              "afterType": "double",
+              "path": "price.amount",
+              "typeChanged": true
+            }
+          ]
+        },
+        {
+          "step": 0,
+          "key": {
+            "_id": 2
+          },
+          "fields": [
+            {
+              "field": "price",
+              "beforeType": "object",
+              "afterType": "object"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 0,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 30
+  },
+  "error": "migration 2026-11-03-002-amount-to-double failed: /steps/0 (aggregate on prices): typeChangedCount is 1: the merge would change the BSON type of existing fields in prices"
+}

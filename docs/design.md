@@ -10,15 +10,19 @@ how, where that stops, and why migrune works the way it does.
 **Data and changelog commit together.** A data migration runs in one
 transaction, and its `Finished` changelog entry is written in that same
 transaction, so the changelog can't claim a migration that didn't happen or
-miss one that did. This is why migrune needs a replica set. Index builds can't
-run in a transaction, so index migrations write their entry right after
-their last step; if a run dies in between, the next run repeats steps that
-are idempotent by construction.
+miss one that did. This is why migrune needs a replica set. Index builds and
+`$merge` can't run in a transaction, so those kinds write their entry right
+after their last step; if a run dies in between, the next run repeats steps
+that are idempotent by construction.
 
 **Idempotency is checked, not trusted.** Every data migration runs twice in
 its transaction and fails if the second run changes anything, which catches
 any non-idempotent update, pipeline updates included, without a list of
-allowed operators. Since the changelog already runs each
+allowed operators. Merges can't run twice in a transaction, so migrune counts
+the documents `$merge` would change before and after it, and requires 0 after.
+The count is type-strict, and a merge that would change an existing field's
+BSON type fails before writing, because a type changed in place breaks the
+code still reading the old type. Since the changelog already runs each
 migration once per database, this is a safety net for crash re-runs, retired
 or renamed migrations and `--mutable`.
 
@@ -36,8 +40,8 @@ holder's lock expires after `max(30s, --lock-ttl)`, computed with the
 server's clock, so clock skew between machines doesn't matter. A paused or
 cut-off holder may wake up after its lock was taken over, so every
 transaction also writes to the lock document, matching only while its runner
-owns it (a **fence**): a zombie's transaction aborts. Index steps can't be
-fenced, so the runner stops before sending one once its last
+owns it (a **fence**): a zombie's transaction aborts. Index and merge steps
+can't be fenced, so the runner stops before sending one once its last
 successful heartbeat is too old to be sure the lock is still its own. The
 90-second default is above MongoDB's 60-second transaction lifetime, so a
 live runner's transaction never outlives its lock. Details in
@@ -45,8 +49,10 @@ live runner's transaction never outlives its lock. Details in
 
 **Problems show up before approval.** plan runs everything for real and throws
 the result away (data migrations run twice and abort, indexes are diffed
-against `listIndexes`), so it catches non-idempotent data migrations and
-index conflicts against the actual data.
+against `listIndexes`, merges run without `$merge`), so it catches
+non-idempotent data migrations, type changes, duplicate merge keys and index
+conflicts against the actual data. It can't prove a merge converges: that
+shows only once apply has written (`diffCountAfter`).
 
 **Failures stop the run; interruptions are clean.** A transaction that
 fails with a transient error (a write conflict, an election) runs again, up
@@ -64,24 +70,28 @@ and lock expiry already handle.
 - **Compatibility with your code.** Every migration must work with the code
   running before and after the deploy; reviews and expand/contract ensure
   that, not migrune.
-- **Atomicity of index migrations.** A failure leaves earlier steps done;
-  the next run completes them.
-- **Correct values.** The checks prove a data migration is repeatable, not
-  that it computes the right values. The plan's report is there for a human
-  to read.
+- **Atomicity of index and merge migrations.** A failure leaves earlier steps
+  done and a merge possibly half written; the next run completes them, as
+  long as the merge converges.
+- **Merges that don't converge.** A merge that computes a field from its own
+  value writes a new result on every run. plan can't see that; apply detects
+  it after writing and fails.
+- **Correct values.** The checks prove a data migration is repeatable and a
+  merge keeps types, not that it computes the right values. The plan's report and samples
+  are there for a human to read.
 - **Unique index builds.** plan can't predict a unique index failing on
   duplicates; apply finds out.
 - **Bounded run times.** migrune sets no time limit on index builds (and
-  no `commitQuorum`, so the server's default applies) or plan's reads; a
-  run on a large collection lasts as long as the server takes.
+  no `commitQuorum`, so the server's default applies), merges or plan's
+  reads; a run on a large collection lasts as long as the server takes.
   The CI job timeout is the bound: see
   [large collections](running.md#large-collections).
 - **Who approved a run.** `approvedBy` (`--approved-by-name`,
   `--approved-by-email`) is an unverified label: migrune records what the
   apply job passes. Who may start apply is your CI's gate (see
   [running in CI](running.md#in-ci-with-an-approval-gate)).
-- **Work on the server after the runner loses it.** An index build already
-  sent keeps running on the server if the runner loses its network
+- **Work on the server after the runner loses it.** An index build or merge
+  already sent keeps running on the server if the runner loses its network
   mid-step, possibly after the lock expired and another runner took it. The
   fence stops the runner's own later writes, not what the server is already
   doing.
@@ -169,17 +179,18 @@ change: check current versions before deciding.
 
 |                                 | golang-migrate (MongoDB driver)                      | migrate-mongo                                    | Flyway (MongoDB, JSON)                                                    | migrune                                                                   |
 | ------------------------------- | ---------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Migration format                | JSON arrays of `runCommand` documents, up/down pairs | JavaScript modules with `up` and `down`          | One command document per file                                             | Declarative Extended JSON: data and index kinds, with a JSON Schema        |
+| Migration format                | JSON arrays of `runCommand` documents, up/down pairs | JavaScript modules with `up` and `down`          | One command document per file                                             | Declarative Extended JSON: data, index and merge kinds, with a JSON Schema |
 | What counts as pending          | Anything above one stored version number            | Any file missing from the changelog              | Versions missing from its history collection                              | Any id without a `Finished` changelog entry                                |
 | A file merged late, out of order | Silently skipped                                    | Runs                                             | Error by default; runs with `outOfOrder`                                  | Runs, in id order                                                          |
-| Idempotency                     | Not checked                                          | The author's responsibility                      | Not checked                                                               | Data migrations run twice in a transaction                                 |
+| Idempotency                     | Not checked                                          | The author's responsibility                      | Not checked                                                               | Data migrations run twice in a transaction; merges must reach a diff of 0  |
 | Edits to applied files          | Not detected                                         | Ignored, or re-run with a file hash option       | Rejected (checksum)                                                       | Rejected (checksum); `--mutable` re-runs them locally                      |
-| Transactions                    | Opt-in                                               | Written by the author                            | On by default for JSON, off per file                                      | Always for data migrations; index migrations run outside by design         |
+| Transactions                    | Opt-in                                               | Written by the author                            | On by default for JSON, off per file                                      | Always for data migrations; index and merge kinds run outside by design    |
 | Record written with the data    | No: a version number and a dirty flag                | No: written after `up` resolves                  | Yes, for transactional files                                              | Yes: the `Finished` entry is in the migration's transaction                |
 | Lock                            | Advisory lock collection                             | Lock collection, optional TTL                    | None; two parallel runs end in a write conflict                           | Global lock with heartbeat, server-time expiry and an in-transaction fence |
 | On failure                      | Version marked dirty; a human forces it              | Stops                                            | Transactional: rolled back. Otherwise a failed row blocks until `repair` | Stops, records `Errored`; the file can be fixed in place                   |
 | Dry run                         | None                                                 | None                                             | None for MongoDB (`info` lists what's pending)                            | `plan` runs everything and aborts                                          |
 | Indexes                         | Any command, unchecked                               | Any code, unchecked                              | `createIndexes` with transactions off                                     | Own kind; lint replays them and checks expected indexes                    |
+| Cross-collection logic          | `aggregate` through `runCommand`, unchecked          | Any code                                         | `$merge` failed with an error although the data was written               | Merge kind: pipeline ending in `$merge`, `$out` banned, diff counted       |
 | Audit history                   | Current version only                                 | File name, date, optional hash                   | Version, checksum, date, duration, success                                | Outcome, step results, runner, approver and the migration as applied       |
 | Lint without a database         | JSON parsing                                         | None (it's code)                                 | None                                                                      | Schema, Extended JSON, pipeline rules, prefixes, index replay              |
 | Rollbacks                       | Down files                                           | `down`                                           | Undo migrations in paid editions                                          | Forward-only: compensating migrations                                      |
@@ -191,7 +202,8 @@ change: check current versions before deciding.
   trust authors with idempotency and do without plan or lint; the changelog
   written in the migration's transaction can't be added as a convention.
 - **Flyway** has transactional JSON migrations, checksums and out-of-order
-  runs, but no lock, dry run or idempotency check.
+  runs, but no lock, dry run or idempotency check, and its `$merge` support
+  didn't work when tried.
 - **migrune** has a plan to approve, verified idempotency and offline lint,
   at the cost of being a smaller, younger, MongoDB-only tool.
 

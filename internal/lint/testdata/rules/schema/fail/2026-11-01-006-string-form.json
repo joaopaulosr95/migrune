@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-006-string-form",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": "projects"
+        }
+      ]
+    }
+  ]
+}

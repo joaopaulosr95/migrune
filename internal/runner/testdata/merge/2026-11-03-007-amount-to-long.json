@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-007-amount-to-long",
+  "description": "Store each price's amount as a long, inside the price document",
+  "steps": [
+    {
+      "collection": "prices",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "price": { "amount": { "$toLong": "$price.amount" } } } },
+        { "$merge": { "into": "prices", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

@@ -13,7 +13,7 @@ internal/cmd/gendocs/  CLI reference generator (not part of the binary)
 internal/inttest/      keeps integration test packages from sharing the replica set (fails them without -p 1)
 internal/migration/    load, validate (embedded schema.json) and parse migration files
 internal/lint/         offline lint: per-file rules, index replay, expected indexes
-internal/runner/       plan/apply: pending set, data migrations (double-run), index migrations, report;
+internal/runner/       plan/apply: pending set, data migrations (double-run), index migrations, merge migrations (diff count), report;
                        lock, heartbeat and fence, changelog, format versions (v), graceful shutdown
 test/replicaset/       3-node replica set for integration tests (test commands on, for fail points; image from MONGO_IMAGE), smoke test
 docs/                  getting-started, writing-migrations, running, troubleshooting, design;

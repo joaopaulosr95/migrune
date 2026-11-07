@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-006-on-two-fields",
+  "description": "Copy each source's price onto the item with the same sku and region",
+  "steps": [
+    {
+      "collection": "sources",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "_id": 0, "sku": 1, "region": 1, "price": 1 } },
+        { "$merge": { "into": "items", "on": ["sku", "region"], "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

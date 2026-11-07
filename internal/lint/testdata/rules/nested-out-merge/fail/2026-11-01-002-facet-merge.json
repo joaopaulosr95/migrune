@@ -1,0 +1,38 @@
+{
+  "id": "2026-11-01-002-facet-merge",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$facet": {
+            "copy": [
+              {
+                "$match": {
+                  "a": 1
+                }
+              },
+              {
+                "$merge": {
+                  "into": "x",
+                  "whenMatched": "merge",
+                  "whenNotMatched": "discard"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

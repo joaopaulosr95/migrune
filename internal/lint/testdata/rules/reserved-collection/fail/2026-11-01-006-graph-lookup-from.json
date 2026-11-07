@@ -4,10 +4,10 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
-        { "$graphLookup": { "from": "system.users", "startWith": "$owner", "connectFromField": "user", "connectToField": "user", "as": "users" } }
+      "operation": "aggregate",
+      "pipeline": [
+        { "$graphLookup": { "from": "system.users", "startWith": "$owner", "connectFromField": "user", "connectToField": "user", "as": "users" } },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

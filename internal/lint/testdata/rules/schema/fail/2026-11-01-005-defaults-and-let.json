@@ -1,0 +1,20 @@
+{
+  "id": "2026-11-01-005-defaults-and-let",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "projects",
+            "let": {
+              "x": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

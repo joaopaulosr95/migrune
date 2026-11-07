@@ -42,7 +42,7 @@ const (
 	expiryFactor = 3
 	// maxLeaseMargin is how long before the lock's expiry, counted from the
 	// send time of the last heartbeat that succeeded, the runner stops
-	// sending unfenced writes (index commands). For an
+	// sending unfenced writes (index commands, $merge aggregates). For an
 	// expiry under twice the margin, which only tests use, the margin is
 	// half the expiry.
 	maxLeaseMargin = 10 * time.Second

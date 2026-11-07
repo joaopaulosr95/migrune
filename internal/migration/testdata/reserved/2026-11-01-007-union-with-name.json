@@ -4,10 +4,10 @@
   "steps": [
     {
       "collection": "items",
-      "operation": "updateMany",
-      "filter": { "sku": { "$exists": true } },
-      "update": [
-        { "$unionWith": "migrations_lock" }
+      "operation": "aggregate",
+      "pipeline": [
+        { "$unionWith": "migrations_lock" },
+        { "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }
       ]
     }
   ]

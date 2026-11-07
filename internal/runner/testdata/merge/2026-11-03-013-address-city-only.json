@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-03-013-address-city-only",
+  "description": "Rewrite each address with its city only, which drops the other address fields",
+  "steps": [
+    {
+      "collection": "people",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$project": { "address": { "city": "$address.city" } } },
+        { "$merge": { "into": "people", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}

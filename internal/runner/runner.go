@@ -1,5 +1,6 @@
 // Package runner runs migrations against a database: plan and apply (pending
-// set, double-run data migrations, index migrations, report), the
+// set, double-run data migrations, index migrations, merge migrations with
+// their diff count, report), the
 // global lock with its heartbeat and fence, the changelog and
 // graceful shutdown.
 package runner
@@ -78,6 +79,8 @@ type Run struct {
 	runnerID   string
 	approvedBy ApprovedBy
 	log        *slog.Logger
+	// sampleValues puts values in merge samples; set by Execute.
+	sampleValues bool
 	// planIndexes are, in plan, the indexes of each collection as the
 	// pending index migrations planned so far would leave them, read with
 	// listIndexes on first use.
@@ -173,7 +176,7 @@ func (r *Run) lockErr(err error) error {
 // checkLease cancels the run, as a lost lock, when the local lease deadline
 // has passed: no heartbeat succeeded recently enough to be sure the lock is
 // still this runner's. Call it right before every unfenced write: each index
-// command.
+// command and each $merge aggregate.
 func (r *Run) checkLease() error {
 	if err := r.Err(); err != nil {
 		return err
