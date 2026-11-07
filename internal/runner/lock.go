@@ -34,6 +34,9 @@ const (
 	// is above MongoDB's default transactionLifetimeLimitSeconds (60s), so the
 	// lock can't expire while one of its holder's transactions is open.
 	DefaultLockTTL = 90 * time.Second
+	// MinLockTTL is the shortest lock TTL the command line accepts: above
+	// MongoDB's default transaction lifetime limit of 60s.
+	MinLockTTL = 61 * time.Second
 	// expiryFactor is how many heartbeat intervals pass before a lock with no
 	// heartbeat can be taken over, unless its TTL is longer.
 	expiryFactor = 3
@@ -59,7 +62,7 @@ var ErrLockHeld = errors.New("migration lock is held by another runner")
 
 // LockHeldError reports that another runner holds the lock.
 type LockHeldError struct {
-	// Owner is the holder's runner id, a label: two runners
+	// Owner is the holder's runner id (--runner-id), a label: two runners
 	// may share it.
 	Owner         string
 	Current       string

@@ -1,0 +1,12 @@
+Database: app
+
+MIGRATION                     KIND  STATUS   DURATION  ERROR
+2026-11-01-001-set-flag       data  applied  12ms
+  /steps/0 updateMany on items: matched 2, modified 2, upserted 0
+2026-11-01-002-inc-counter    data  errored  1.5s      /steps/0 (updateMany on items, second run): not idempotent
+  /steps/0 updateMany on items: matched 3, modified 3, upserted 0
+2026-11-01-003-seed-settings  data  skipped  0s
+
+Total: 3 migrations: 1 applied, 1 errored, 0 interrupted, 1 skipped in 1.53s
+
+Error: migration 2026-11-01-002-inc-counter failed: not idempotent

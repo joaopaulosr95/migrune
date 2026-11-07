@@ -1,0 +1,31 @@
+{
+  "version": "0.1.0",
+  "command": "apply",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-003-seed-settings",
+      "kind": "data",
+      "status": "skipped",
+      "durationMs": 0
+    }
+  ],
+  "appliedButMissing": [
+    {
+      "id": "2026-10-03-001-by-hand",
+      "description": "Fix by hand"
+    }
+  ],
+  "totals": {
+    "migrations": 1,
+    "applied": 0,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 1,
+    "durationMs": 40
+  },
+  "error": "applied migrations must keep their file, but the file of 2026-10-03-001-by-hand is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand"
+}

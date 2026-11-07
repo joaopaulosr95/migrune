@@ -51,7 +51,8 @@ incompatibility with this version of MongoDB"
 Ubuntu runners the 8.0 and 8.3 images do, while 7.0, 8.2 and 9.0 start. It
 depends on the host, not only on the kernel version: the same 8.0 and 8.3
 images start on other Linux 6.19+ hosts. It can affect the test replica set
-in `test/replicaset/`, so `task test:int:all`.
+in `test/replicaset/`, so `task test:int:all`, and
+`examples/docker-compose.yaml`.
 
 Use an image that starts on that host, for example
 `MONGO_IMAGE=mongo:8.2 task test:int` for the test replica set, or another
@@ -63,8 +64,8 @@ If you change a command or flag, run `task docs` and commit the regenerated
 ## Changelog and lock formats
 
 Changelog entries and lock documents carry a format version, `v`
-(`runner.EntryVersion`, `runner.LockVersion`), and every command that
-connects refuses a database holding a newer one (see
+(`runner.EntryVersion`, `runner.LockVersion`), and every run refuses a
+database holding a newer one (see
 [format versions](docs/reference/changelog-and-lock.md#format-versions)).
 `TestFormatGolden` in `internal/runner` pins their shape in
 `internal/runner/testdata/format/`. When it fails, decide whether `v` must go
@@ -112,5 +113,6 @@ Before pushing a release:
 
 - `task lint test test:int:all` passed on the commit being released, on all
   four images (CI runs only three).
+- The examples pin the latest release.
 - For a release with breaking changes or a MongoDB major dropped, the notes
   say so.

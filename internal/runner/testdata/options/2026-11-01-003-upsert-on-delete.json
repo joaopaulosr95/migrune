@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-003-upsert-on-delete",
+  "description": "upsert isn't a delete option",
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": {}, "options": { "upsert": true } }]
+}

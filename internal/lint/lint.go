@@ -61,7 +61,7 @@ func (f Finding) String() string {
 }
 
 // Run lints every *.json file in dir (subdirectories are not read), and warns
-// on the entries migrune ignores although they may be meant as
+// on the entries plan and apply would ignore although they may be meant as
 // migrations (migration.IgnoredEntry).
 // When applied is not nil, it maps the id of every migration Finished
 // in the target database to what its latest Finished entry recorded, and a
@@ -81,7 +81,7 @@ func Run(dir string, applied map[string]migration.Applied) ([]Finding, error) {
 	)
 	for _, e := range entries {
 		if reason := migration.IgnoredEntry(e); reason != "" {
-			findings = append(findings, Finding{File: filepath.Join(dir, e.Name()), Severity: Warning, Rule: RuleIgnoredEntry, Message: "not read by lint: " + reason})
+			findings = append(findings, Finding{File: filepath.Join(dir, e.Name()), Severity: Warning, Rule: RuleIgnoredEntry, Message: "not read by lint, plan or apply: " + reason})
 			continue
 		}
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
@@ -227,7 +227,7 @@ func appliedMissing(dir string, stems map[string]bool, applied map[string]migrat
 		if stems[id] {
 			continue
 		}
-		out = append(out, Finding{File: filepath.Join(dir, id+".json"), Severity: Error, Rule: RuleAppliedMissing, Message: a.MissingContext() + ". Restore the file: removing a file doesn't undo its migration; " +
+		out = append(out, Finding{File: filepath.Join(dir, id+".json"), Severity: Error, Rule: RuleAppliedMissing, Message: a.MissingContext() + ". plan and apply fail until the file is restored: removing a file doesn't undo its migration; " +
 			"to retire a migration on purpose, delete its changelog entries by hand"})
 	}
 	slices.SortFunc(out, func(a, b Finding) int { return strings.Compare(a.File, b.File) })

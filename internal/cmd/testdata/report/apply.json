@@ -1,0 +1,63 @@
+{
+  "version": "0.1.0",
+  "command": "apply",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "approvedBy": {
+    "name": "Ada Lovelace",
+    "email": "ada@example.com"
+  },
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-001-set-flag",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 12,
+      "steps": [
+        {
+          "index": 0,
+          "operation": "updateMany",
+          "collection": "items",
+          "matched": 2,
+          "modified": 2,
+          "upserted": 0
+        }
+      ]
+    },
+    {
+      "id": "2026-11-01-002-inc-counter",
+      "kind": "data",
+      "status": "errored",
+      "durationMs": 1500,
+      "error": "/steps/0 (updateMany on items, second run): not idempotent",
+      "steps": [
+        {
+          "index": 0,
+          "operation": "updateMany",
+          "collection": "items",
+          "matched": 3,
+          "modified": 3,
+          "upserted": 0
+        }
+      ]
+    },
+    {
+      "id": "2026-11-01-003-seed-settings",
+      "kind": "data",
+      "status": "skipped",
+      "durationMs": 0
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 3,
+    "applied": 1,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 1,
+    "durationMs": 1530
+  },
+  "error": "migration 2026-11-01-002-inc-counter failed: not idempotent"
+}

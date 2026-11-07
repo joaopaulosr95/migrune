@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-01-003-seed-settings",
+  "description": "Seed version 1 of the settings document",
+  "steps": [
+    {
+      "collection": "settings",
+      "operation": "updateOne",
+      "filter": { "version": 1 },
+      "update": { "$setOnInsert": { "version": 1, "theme": "light" } },
+      "options": { "upsert": true }
+    }
+  ]
+}

@@ -38,7 +38,7 @@ func checkFile(path, stem string, raw []byte) []Finding {
 		op, _ := step["operation"].(string)
 		if filter, ok := step["filter"].(map[string]any); ok && len(filter) == 0 && (op == "deleteMany" || op == "updateMany") {
 			coll, _ := step["collection"].(string)
-			c.warn(RuleEmptyFilter, fmt.Sprintf("%s/filter: {} matches every document in %s: make sure this %s is meant to touch them all",
+			c.warn(RuleEmptyFilter, fmt.Sprintf("%s/filter: {} matches every document in %s: make sure this %s is meant to touch them all, and check the counts plan reports",
 				ptr, coll, op))
 		}
 		c.serverJS(ptr, step)

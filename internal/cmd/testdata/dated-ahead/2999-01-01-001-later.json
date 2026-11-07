@@ -1,0 +1,12 @@
+{
+  "id": "2999-01-01-001-later",
+  "description": "Dated far after today: the date doesn't affect whether it runs",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "later": { "$exists": false } },
+      "update": { "$set": { "later": true } }
+    }
+  ]
+}

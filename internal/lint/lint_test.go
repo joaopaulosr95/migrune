@@ -66,13 +66,13 @@ func TestRules(t *testing.T) {
 			"2026-11-01-1-short-sequence.json: error: file-name: file name must be YYYY-MM-DD-NNN-slug.json",
 			"2026-13-01-001-bad-month.json: error: file-name: file name date 2026-13-01 is not a valid date",
 		}},
-		// Entries migrune skips although they may be meant as
+		// Entries plan and apply skip although they may be meant as
 		// migrations; README.md is skipped silently.
 		{rule: RuleIgnoredEntry, want: []string{
-			"2026-11-05-002-upper.JSON: warning: ignored-entry: not read by lint: its extension is .JSON, and only *.json files are read, as plain JSON",
-			"2026-11-05-003-five.json5: warning: ignored-entry: not read by lint: its extension is .json5",
-			"2026-11-05-004-commented.jsonc: warning: ignored-entry: not read by lint: its extension is .jsonc",
-			"archive: warning: ignored-entry: not read by lint: it is a subdirectory, and only the files directly in the directory are read",
+			"2026-11-05-002-upper.JSON: warning: ignored-entry: not read by lint, plan or apply: its extension is .JSON, and only *.json files are read, as plain JSON",
+			"2026-11-05-003-five.json5: warning: ignored-entry: not read by lint, plan or apply: its extension is .json5",
+			"2026-11-05-004-commented.jsonc: warning: ignored-entry: not read by lint, plan or apply: its extension is .jsonc",
+			"archive: warning: ignored-entry: not read by lint, plan or apply: it is a subdirectory, and only the files directly in the directory are read",
 		}},
 		// A file with both gets both findings; a BOM keeps it from
 		// loading, which isn't reported again as a json finding.
@@ -231,7 +231,7 @@ func TestChecksums(t *testing.T) {
 	gone := func(id string) string {
 		return id + `.json: error: applied-missing: Finished 2026-01-04T10:12:00Z by ci-7: "Retired ` + id + `"; ` +
 			`the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "` + id + `"). ` +
-			"Restore the file"
+			"plan and apply fail until the file is restored"
 	}
 	cases := []struct {
 		name    string

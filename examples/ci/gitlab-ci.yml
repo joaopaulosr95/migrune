@@ -1,0 +1,105 @@
+# Run migrune with an approval gate in GitLab CI.
+#
+# Add these jobs to your .gitlab-ci.yml and adjust the variables. In merge
+# request pipelines, migrate:lint checks the migration files, offline. On
+# every v* tag pipeline, migrate:plan lints them again, since plan and apply
+# don't run lint's rules and a tag can point at a commit no merge request
+# checked, then runs `migrune plan` and keeps the report as an artifact.
+# migrate:apply is a manual job: whoever starts it, after reading the plan,
+# approves the run, and it runs `migrune apply`. Make your deploy job
+# `needs:` migrate:apply.
+#
+# Setup, in the project settings:
+# - Repository > Protected tags: protect v* and choose who may create these
+#   tags. GitLab passes protected variables only to pipelines for protected
+#   branches and tags, so without this the jobs below get no MIGRUNE_URI.
+#   Whoever can push a v* tag runs these jobs, as written at that tag, with
+#   the production credentials.
+# - CI/CD variables: add MIGRUNE_URI, the connection string, as a protected,
+#   masked variable scoped to the `production` environment. plan needs it
+#   too, since it takes the migration lock (a write) and runs migrations in
+#   transactions it aborts.
+# - Protected environments: protect `production` and choose who may deploy
+#   to it, and add deployment approvals if you want a second person.
+#
+# The migrune image is distroless and has no shell, so it can't be a job
+# image: the jobs install the pinned version with `go install` instead.
+#
+# See docs/running.md.
+stages:
+  - lint
+  - plan
+  - apply
+
+variables:
+  # Pin an exact migrune version.
+  MIGRUNE_VERSION: v1.0.0
+  MIGRUNE_DB: app
+  MIGRUNE_DIR: migrations
+
+.migrune:
+  image: golang:1.27.4
+  before_script:
+    - go install "github.com/joaopaulosr95/migrune/cmd/migrune@${MIGRUNE_VERSION}"
+
+# Offline: merge request pipelines get no database credentials.
+migrate:lint:
+  extends: .migrune
+  stage: lint
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - migrune lint
+
+migrate:plan:
+  extends: .migrune
+  stage: plan
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  environment:
+    name: production
+    action: prepare
+  # lint runs first, so a migration that fails it is never planned. With
+  # MIGRUNE_URI and MIGRUNE_DB set, it also checks, read-only, that no
+  # applied migration was edited or deleted.
+  # The report goes to stdout and the logs to stderr. Keep the report as an
+  # artifact and print it, even when plan fails.
+  script:
+    - migrune lint
+    - status=0
+    - migrune plan > plan.txt || status=$?
+    - cat plan.txt
+    - exit "$status"
+  artifacts:
+    when: always
+    paths:
+      - plan.txt
+
+migrate:apply:
+  extends: .migrune
+  stage: apply
+  needs:
+    - migrate:plan
+  # A manual job in rules blocks the pipeline (allow_failure: false) until
+  # someone runs it.
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+      when: manual
+  environment:
+    name: production
+  # GitLab sets GITLAB_USER_LOGIN and GITLAB_USER_EMAIL to the user who
+  # started this manual job: record them as the approver. The login is the
+  # username, unique on the instance; GITLAB_USER_NAME is a free-form display
+  # name anyone can set to anything, another user's name included.
+  variables:
+    MIGRUNE_APPROVED_BY_NAME: $GITLAB_USER_LOGIN
+    MIGRUNE_APPROVED_BY_EMAIL: $GITLAB_USER_EMAIL
+  script:
+    - status=0
+    - migrune apply > apply.txt || status=$?
+    - cat apply.txt
+    - exit "$status"
+  artifacts:
+    when: always
+    paths:
+      - apply.txt

@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-004-unknown-option",
+  "description": "An option migrune doesn't pass on",
+  "steps": [{ "collection": "items", "operation": "updateOne", "filter": {}, "update": { "$set": { "a": 1 } }, "options": { "bypassDocumentValidation": true } }]
+}

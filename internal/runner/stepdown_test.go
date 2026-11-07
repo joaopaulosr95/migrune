@@ -24,14 +24,14 @@ func primary(ctx context.Context, client *mongo.Client) string {
 	return hello.Primary
 }
 
-// TestTransactionSurvivesStepDown checks a primary step-down while a fenced
-// transaction is open aborts that attempt, and the transaction runs again on
-// the new primary: it commits its Finished entry, once (T2). The
+// TestDataMigrationSurvivesStepDown checks a primary step-down while a data
+// migration's transaction is open aborts that attempt, and the transaction
+// runs again on the new primary: the migration ends Finished, once (T2). The
 // lock (written with w: majority) survives the step-down: another runner
 // can't take it on the new primary. The step-down affects every test using
 // the replica set, so the test gives the original primary time to take back
 // its role before it ends.
-func TestTransactionSurvivesStepDown(t *testing.T) {
+func TestDataMigrationSurvivesStepDown(t *testing.T) {
 	client := testClient(t)
 	db := freshDB(t, client)
 	ctx := testCtx(t)
@@ -42,8 +42,8 @@ func TestTransactionSurvivesStepDown(t *testing.T) {
 	}
 	t.Cleanup(func() { waitOriginalPrimary(t, client, old) })
 
-	// The transaction's update of items is held on the primary while it
-	// is open; the step-down happens meanwhile. Only that
+	// The migration's first update is held on the primary while the
+	// transaction is open; the step-down happens meanwhile. Only that
 	// node has the fail point, and only once.
 	fired := failCommand(t, ctx, client, bson.D{{Key: "times", Value: 1}}, bson.D{
 		{Key: "failCommands", Value: bson.A{"update"}},
@@ -51,14 +51,17 @@ func TestTransactionSurvivesStepDown(t *testing.T) {
 		{Key: "blockConnection", Value: true},
 		{Key: "blockTimeMS", Value: 3000},
 	})
-	m := fixture(t, setFlag)
+	ms := load(t, fixtureDir(t, "data", setFlag))
+	// The run is started here, not by Execute, so it still holds the lock
+	// once the migration is done.
 	run, err := Start(ctx, db, Options{RunnerID: "runner-a", Logger: testLogger(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = run.Close() }()
+	rep := &Report{}
 	done := make(chan error, 1)
-	go func() { done <- flagItemsIn(run, m) }()
+	go func() { done <- run.execute(ms, Config{Mode: ModeApply}, rep) }()
 	waitFailPoint(t, ctx, client, fired+1)
 	// The step-down closes the connection, so the command may fail even
 	// though it worked.
@@ -73,7 +76,7 @@ func TestTransactionSurvivesStepDown(t *testing.T) {
 	t.Logf("primary moved from %s to %s", old, primary(ctx, client))
 
 	if err != nil {
-		t.Fatalf("transaction: %v", err)
+		t.Fatalf("apply: %v", err)
 	}
 	// Still held: another runner can't take it.
 	other := newTestLock(t, db, "runner-b", time.Second, time.Second)
@@ -88,6 +91,9 @@ func TestTransactionSurvivesStepDown(t *testing.T) {
 	}
 	if doc := readLock(t, ctx, db); doc != nil {
 		t.Errorf("lock %+v not released after the step-down", doc)
+	}
+	if got := statuses(rep); !slices.Equal(got, []string{setFlag + ":applied"}) {
+		t.Errorf("rows %v", got)
 	}
 	if got := entryStatuses(changelog(t, ctx, db)); !slices.Equal(got, []string{setFlag + ":Finished"}) {
 		t.Errorf("changelog %v, want exactly one Finished entry", got)

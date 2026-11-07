@@ -1,13 +1,15 @@
 # migrune
 
 migrune runs MongoDB migrations. Migrations are Extended JSON files kept next
-to your code; migrune checks them (`lint`), and records each applied one in a
-changelog collection, under a lock.
+to your code; migrune checks them (`lint`), shows what would change (`plan`)
+and applies them (`apply`) under a lock, recording each one in a changelog
+collection.
 
 - **Data migrations**: `updateOne`, `updateMany` and `deleteMany` steps in
   one transaction.
-- **Checked before they run**: lint works offline; with a connection, it
-  also fails on applied migrations that were edited or deleted.
+- **Checked before they run**: lint works offline; plan runs every data
+  migration twice in a transaction and aborts it, so non-idempotent
+  migrations fail before anyone approves them.
 - **Safe to run from CI**: one runner at a time, the changelog written in the
   migration's own transaction, applied migrations immutable, graceful
   shutdown.
@@ -60,11 +62,15 @@ Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI.
 
 ## Try it
 
-[`examples/migrations/`](examples/migrations/) has a sample migration:
+[`examples/`](examples/) has a Docker Compose file with a single-node replica
+set and a sample migration:
 
 ```sh
-migrune lint --dir examples/migrations
+cd examples
+docker compose up --build
 ```
+
+[Getting started](docs/getting-started.md) walks through it.
 
 ## Usage
 
@@ -73,6 +79,8 @@ migrune lint  --dir migrations   # offline checks
 
 export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
 migrune lint  --dir migrations --db app   # also compares checksums with the changelog
+migrune plan  --dir migrations --db app
+migrune apply --dir migrations --db app
 ```
 
 With `MIGRUNE_URI` set, `lint` needs `--db` too. Every flag can also be set
@@ -99,17 +107,23 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 
 ## Documentation
 
+- [Getting started](docs/getting-started.md): a ten-minute walkthrough with
+  Docker.
 - [Writing migrations](docs/writing-migrations.md): data migrations, and the
   checks they must pass.
+- [Running migrations](docs/running.md): plan and apply in CI with an
+  approval gate, large collections, credentials and AWS IAM, `--mutable`
+  locally.
 - [Troubleshooting](docs/troubleshooting.md): connection and permission
-  errors, a newer changelog or lock format, edited or missing applied
-  migrations.
+  errors, errored or interrupted runs, a held or lost lock, edited or missing
+  applied migrations.
 - [Design](docs/design.md): the guarantees, and why migrune works the way it
   does.
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
   the [migration file](docs/reference/migration-file.md),
   [lint rules](docs/reference/lint-rules.md), the
+  [report](docs/reference/report.md), the
   [changelog and lock](docs/reference/changelog-and-lock.md).
 
 ## Contributing

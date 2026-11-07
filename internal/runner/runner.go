@@ -1,4 +1,5 @@
-// Package runner runs migrations against a database: the
+// Package runner runs migrations against a database: plan and apply (pending
+// set, double-run data migrations, report), the
 // global lock with its heartbeat and fence, the changelog and
 // graceful shutdown.
 package runner
@@ -34,8 +35,8 @@ func (e *InterruptedError) Unwrap() error { return e.Cause }
 
 // ApprovedBy is who approved the run, recorded in the changelog.
 type ApprovedBy struct {
-	Name  string `bson:"name"`
-	Email string `bson:"email"`
+	Name  string `bson:"name" json:"name"`
+	Email string `bson:"email" json:"email"`
 }
 
 // Options configure a Run.
@@ -66,7 +67,7 @@ func DefaultRunnerID() string {
 	return fmt.Sprintf("%s-%d-%s", host, os.Getpid(), rand.Text()[:8])
 }
 
-// Run is one run holding the migration lock.
+// Run is one plan or apply run holding the migration lock.
 type Run struct {
 	client     *mongo.Client
 	db         *mongo.Database
@@ -121,6 +122,9 @@ func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
 		stopHeartbeat: lock.StartHeartbeat(runCtx, cancel),
 	}, nil
 }
+
+// RunnerID returns the id this run holds the lock under.
+func (r *Run) RunnerID() string { return r.runnerID }
 
 // Err classifies why the run's context is done: nil while it is live, an
 // error wrapping ErrLockLost when the lock was lost, and an

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-002-delete-options",
+  "description": "Options a delete step accepts",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "deleteMany",
+      "filter": { "stale": true },
+      "options": { "hint": { "stale": 1 }, "collation": { "locale": "fr", "backwards": true } }
+    }
+  ]
+}

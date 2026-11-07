@@ -7,7 +7,7 @@ how to write one, and [lint rules](lint-rules.md) lists every check.
 ## Which files are read
 
 - Every `*.json` file directly in `--dir`. Subdirectories and other files
-  are ignored. lint warns about a subdirectory, and about a
+  are ignored. lint, plan and apply warn about a subdirectory, and about a
   file whose extension is close to `.json`, such as `.JSON`, `.json5` or
   `.jsonc` (`ignored-entry`): it may be a migration that would never run.
 - Each must be a regular file of at most 1 MiB (1,048,576 bytes). A
@@ -48,7 +48,8 @@ value, such as an `$oid` that isn't 24 hex digits, is an error.
 ## Kind
 
 Every step's `operation` is `updateOne`, `updateMany` or `deleteMany`, which
-makes the migration's **kind** `data`: all its steps run in one transaction.
+makes the migration's **kind** `data`: all its steps run in one transaction,
+twice, and the second run must change nothing.
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: inserts and
 `deleteOne` aren't idempotent.
@@ -64,7 +65,7 @@ copy them elsewhere. This applies wherever a collection is named:
 - the `from` of `$lookup` and `$graphLookup`, the collection of `$unionWith`
   (its string form or its `coll`), and the target of any `$out`, at any
   depth of a pipeline, `$facet` and nested pipelines included: the
-  file fails to load, and lint reports it (`reserved-collection`).
+  file fails to load, in lint (`reserved-collection`), plan and apply alike.
 
 ## Data steps
 
@@ -76,7 +77,8 @@ copy them elsewhere. This applies wherever a collection is named:
 | `update`     | object or array | for updates; not for deletes | An update document, or an update pipeline with at least one stage. |
 | `options`    | object          | no                           | See below.                                                      |
 
-Options migrune passes to the driver:
+Options migrune passes to the driver; any other option fails the migration
+when it runs:
 
 | Operation                   | Options                                                   |
 | --------------------------- | --------------------------------------------------------- |
@@ -96,7 +98,7 @@ and no `$out` or `$merge` stage in an update
 pipeline, so each problem is reported once, as a `schema` finding in lint.
 The checks a schema can't express, such as nested pipelines, Extended JSON
 values, the file name and the prefix, are [lint](lint-rules.md) code;
-the reserved collections a pipeline reads or writes are also checked
-whenever the files are loaded.
+the reserved collections a pipeline reads or writes are also checked when
+plan and apply load the files.
 
 [`examples/migrations/`](../../examples/migrations/) has an example migration.

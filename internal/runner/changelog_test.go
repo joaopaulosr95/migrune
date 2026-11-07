@@ -32,8 +32,8 @@ func TestChangelogFinished(t *testing.T) {
 		wantData    int64
 		wantEntries int64
 	}{
-		{name: "commit writes data and entry together", commit: true, wantData: 1, wantEntries: 1},
-		{name: "abort discards both", commit: false},
+		{name: "apply commits data and entry together", commit: true, wantData: 1, wantEntries: 1},
+		{name: "plan aborts both", commit: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -37,17 +37,20 @@ type app struct {
 	// or configuration error.
 	running bool
 
-	// interrupted records whether the context was cancelled by the time
-	// the command's outcome was decided. See settle.
-	interrupted bool
+	// settled is set once the command's outcome is decided; interrupted
+	// records whether the context was cancelled by then. See settle.
+	settled, interrupted bool
 }
 
 // Outcome is what the caller of Execute needs besides the error: how to set
 // the exit code, and how to print the error.
 type Outcome struct {
 	// Interrupted reports whether ctx was cancelled before the command's
-	// outcome was decided, before Execute returned. A cancellation after
-	// that leaves it false: the outcome stands.
+	// outcome was decided: for plan and apply, before the run returned, so a
+	// commit already sent still counts as interrupted; for the other
+	// commands, before Execute returned. A cancellation after that, while
+	// the report is written or the client disconnects, leaves it false: the
+	// outcome stands.
 	Interrupted bool
 	// JSONLogs reports whether the log format is json, so the final error
 	// is printed as a JSON log record too.
@@ -105,7 +108,7 @@ command line wins over the environment variable, which wins over the default.`,
 	pf.StringVar(&a.logFormat, "log-format", "text", "log format: text or json")
 	pf.StringVar(&a.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 
-	root.AddCommand(a.newLintCmd())
+	root.AddCommand(a.newLintCmd(), a.newPlanCmd(), a.newApplyCmd())
 	// cobra adds these when it executes; adding them now puts them in the
 	// generated CLI reference too.
 	root.InitDefaultCompletionCmd()
@@ -129,9 +132,12 @@ func (a *app) execute(ctx context.Context, args []string) error {
 }
 
 // settle decides whether the command was interrupted: whether ctx is
-// cancelled now.
+// cancelled now. Only the first call counts, so a signal after the outcome
+// was decided doesn't change it.
 func (a *app) settle(ctx context.Context) {
-	a.interrupted = ctx.Err() != nil
+	if !a.settled {
+		a.settled, a.interrupted = true, ctx.Err() != nil
+	}
 }
 
 // preRun fills unset flags from the environment, then sets up logging.

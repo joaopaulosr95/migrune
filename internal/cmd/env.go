@@ -10,8 +10,8 @@ import (
 // envPrefix is the prefix of the environment variable that backs each flag.
 const envPrefix = "MIGRUNE_"
 
-// envName returns the environment variable for a flag: --log-level
-// becomes MIGRUNE_LOG_LEVEL.
+// envName returns the environment variable for a flag: --approved-by-name
+// becomes MIGRUNE_APPROVED_BY_NAME.
 func envName(flag string) string {
 	return envPrefix + strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
 }

@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-01-004-drop-stale",
+  "description": "Delete stale items, and copy name to label with an update pipeline",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "deleteMany",
+      "filter": { "stale": true }
+    },
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "label": { "$exists": false } },
+      "update": [{ "$set": { "label": "$name" } }]
+    }
+  ]
+}

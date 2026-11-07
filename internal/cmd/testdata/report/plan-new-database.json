@@ -1,0 +1,25 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "appp",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": true,
+  "migrations": [
+    {
+      "id": "2026-11-01-001-set-flag",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 5
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 1,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 9
+  }
+}

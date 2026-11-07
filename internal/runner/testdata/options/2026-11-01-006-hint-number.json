@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-006-hint-number",
+  "description": "hint must be a name or a key pattern",
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": {}, "options": { "hint": 1 } }]
+}

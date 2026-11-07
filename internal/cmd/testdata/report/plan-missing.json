@@ -1,0 +1,45 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-001-set-flag",
+      "kind": "data",
+      "status": "skipped",
+      "durationMs": 0
+    },
+    {
+      "id": "2026-11-01-003-seed-settings",
+      "kind": "data",
+      "status": "skipped",
+      "durationMs": 0
+    }
+  ],
+  "appliedButMissing": [
+    {
+      "id": "2026-10-01-001-gone",
+      "description": "Backfill the flag",
+      "appliedAt": "2026-01-04T10:12:00Z",
+      "runner": "ci-7"
+    },
+    {
+      "id": "2026-10-02-001-gone",
+      "description": "Rename \"old\" to \"new\"",
+      "appliedAt": "2026-01-05T12:12:01.5Z",
+      "runner": "laptop-81-x7"
+    }
+  ],
+  "totals": {
+    "migrations": 2,
+    "applied": 0,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 2,
+    "durationMs": 40
+  },
+  "error": "applied migrations must keep their file, but the file of 2026-10-01-001-gone, 2026-10-02-001-gone is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand"
+}

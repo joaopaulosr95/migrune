@@ -1,0 +1,65 @@
+# A runnable migrune example: a single-node replica set and a one-off
+# migrune service that applies the migrations in ./migrations.
+#
+#   docker compose up --build                  # apply everything, then keep mongo running
+#   docker compose run --rm migrune plan      # any other migrune command
+#   docker compose down -v                     # stop and discard the data
+#
+# migrune is built from the repository's Dockerfile. In your own project, use
+# the published image instead, pinned to an exact version, for example
+# ghcr.io/joaopaulosr95/migrune:1.0.0.
+#
+# MongoDB transactions need a replica set, so mongod runs as a one-member
+# replica set. The member advertises mongo:27017, which only resolves inside
+# this compose network. From the host, connect straight to it with
+#   mongodb://127.0.0.1:27117/?directConnection=true
+name: migrune-example
+
+services:
+  mongo:
+    image: mongo:9
+    # Keep mongod's logs out of `docker compose up`; see them with
+    # `docker compose logs mongo`.
+    attach: false
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27117:27017"
+    volumes:
+      - mongo-data:/data/db
+    # Initiates the replica set on first start, then reports healthy once this
+    # node is primary.
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - |
+          try { rs.status() } catch (e) {
+            rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongo:27017" }] })
+          }
+          quit(db.hello().isWritablePrimary ? 0 : 1)
+      interval: 10s
+      start_period: 60s
+      start_interval: 1s
+      timeout: 10s
+      retries: 3
+
+  migrune:
+    build:
+      context: ..
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # Every flag can be set as MIGRUNE_<FLAG>. Pass the URI this way, never
+    # as --uri, so credentials stay out of process arguments.
+    environment:
+      MIGRUNE_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MIGRUNE_DB: example
+      MIGRUNE_DIR: /migrations
+    volumes:
+      - ./migrations:/migrations:ro
+    command: ["apply"]
+
+volumes:
+  mongo-data:

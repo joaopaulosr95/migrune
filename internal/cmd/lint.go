@@ -81,11 +81,12 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 
 // findingsOutputFlag registers the findings format flag of lint.
 func findingsOutputFlag(fs *pflag.FlagSet, p *string) {
-	fs.StringVarP(p, "output", "o", "text", "findings format: text, one per line, or json, one array")
+	fs.StringVarP(p, "output", "o", "text",
+		"findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command")
 }
 
 func checkFindingsOutput(output string) error {
-	if output != "text" && output != "json" {
+	if output != "text" && output != "table" && output != "json" {
 		return &UsageError{Err: fmt.Errorf("invalid --output %q: want text or json", output)}
 	}
 	return nil

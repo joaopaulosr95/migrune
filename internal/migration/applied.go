@@ -11,18 +11,18 @@ import (
 const Unknown = "unknown"
 
 // Applied is what the latest Finished changelog entry of a migration records,
-// as read by online lint. It is shared by the runner, which
+// as read by plan, apply and online lint. It is shared by the runner, which
 // reads it, and lint, which must not depend on the database.
 type Applied struct {
-	ID string
+	ID string `json:"id"`
 	// Checksum is the checksum of the file as applied.
-	Checksum    string
-	Description string
+	Checksum    string `json:"-"`
+	Description string `json:"description"`
 	// AppliedAt is when the entry was written (its createdAt). Zero when
 	// the entry has none.
-	AppliedAt time.Time
+	AppliedAt time.Time `json:"appliedAt,omitzero"`
 	// Runner is empty when the entry has none.
-	Runner string
+	Runner string `json:"runner,omitempty"`
 }
 
 // AppliedAtText returns AppliedAt as RFC 3339 in UTC, or Unknown.

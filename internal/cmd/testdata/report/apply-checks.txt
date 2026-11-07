@@ -1,0 +1,13 @@
+Database: app
+
+MIGRATION                     KIND  STATUS   DURATION  ERROR
+2026-11-01-001-set-flag       data  errored  0s        the file changed since the migration was applied
+2026-11-01-003-seed-settings  data  skipped  0s
+
+Applied but missing (Finished in the changelog, no file):
+  2026-10-01-001-gone: Finished 2026-01-04T10:12:00Z by ci-7: "Backfill the flag"; the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "2026-10-01-001-gone")
+
+Total: 2 migrations: 0 applied, 1 errored, 0 interrupted, 1 skipped in 40ms
+
+Error: applied migrations must keep their file, but the file of 2026-10-01-001-gone is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand
+  applied migrations are immutable, but the file of 2026-11-01-001-set-flag changed since it was applied; revert the edit and write a new migration (--mutable re-runs edited migrations, for local use only)

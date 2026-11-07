@@ -8,7 +8,8 @@ next to your data:
   working at once.
 
 Both are written with write concern `majority` and read with read concern
-`majority`; transactions use read concern `snapshot`. Every timestamp is the server's clock (`$$NOW`), never the
+`majority`; data migrations run in transactions with read concern
+`snapshot`. Every timestamp is the server's clock (`$$NOW`), never the
 runner's.
 
 ## Format versions
@@ -17,7 +18,8 @@ Every changelog entry and every lock document carries its format version in
 `v`. This migrune writes and reads changelog entries v1 and lock documents
 v1. A document without `v`, such as one written by hand, reads as v1.
 
-Every command that connects (lint with `--uri`) first looks for a changelog entry or a lock document with a `v` higher than
+Every command that connects (plan, apply, and lint with `--uri`)
+first looks for a changelog entry or a lock document with a `v` higher than
 the one it knows, before it reads or writes anything else.
 If it finds one, a newer migrune has written to this database, and the run
 fails with exit code 1, writing nothing:
@@ -34,26 +36,29 @@ A new format version comes only with a major release.
 
 Neither lookup uses an index: the lock collection holds at most one
 document, and the changelog grows by one entry per migration outcome, so
-scanning it costs about as much as the changelog read lint makes anyway.
+scanning it costs about as much as the changelog read plan and apply make
+anyway.
 
 ## Changelog: `migrations_changelog`
 
-The runner writes an entry when a migration finishes or fails. lint never
-writes to it.
+apply writes an entry when a migration finishes or fails. plan and lint never
+write to it.
 
 - **`Finished`**: written when the migration succeeds, inside its
   transaction, together with its data changes, so the entry and the data
   commit or abort together.
 - **`Errored`**: written after the migration failed, in a transaction of
-  its own, fenced like any other (see [fence](#fence)): a runner that lost
-  its lock writes no `Errored` entry.
+  its own, fenced like a data migration's (see [fence](#fence)): a runner
+  that lost its lock writes no `Errored` entry, and its report row says the
+  lock was lost.
 - An interrupted run (SIGINT, SIGTERM) or a run that lost its lock writes no
-  entry.
+  entry. Checks that fail before any migration runs (an edited or missing
+  applied migration) write none either.
 
-A migration is applied once it has a `Finished` entry: `Errored` entries
-don't count. When a migration has several `Finished` entries (it was retired
-and applied again), the latest one, by `createdAt`, holds the checksum that
-file edits are compared with.
+A migration is **pending** while it has no `Finished` entry: `Errored`
+entries don't count. When a migration has several `Finished` entries (it was
+re-run with `--mutable`, or retired and applied again), the latest one, by
+`createdAt`, holds the checksum that file edits are compared with.
 
 Example `Finished` entry for a data migration:
 
@@ -86,15 +91,15 @@ Example `Finished` entry for a data migration:
 | `migrationId`      | string    | The migration id: the file name without `.json`.                                                    |
 | `checksum`         | string    | SHA-256, lowercase hex, of the migration file's bytes when it ran.                                  |
 | `createdAt`        | date      | When the entry was written, server time.                                                            |
-| `runner`           | string    | The runner id that held the lock.                                                                   |
-| `approvedBy`       | document  | `{name, email}` of the person who approved the run. Empty strings when not given.                   |
+| `runner`           | string    | The runner id that held the lock (`--runner-id`).                                                   |
+| `approvedBy`       | document  | `{name, email}` from `--approved-by-name` and `--approved-by-email`. Empty strings when not given.  |
 | `status`           | string    | `Finished` or `Errored`.                                                                            |
 | `migration`        | document  | The migration as it ran: `id`, `description` and `steps`, parsed from the file. Not byte-identical to the file. |
 | `results`          | array     | `Finished` only. One item per step, in file order; see below.                                       |
 | `errors`           | array     | `Errored` only. `{step, message}` items; `step` is the failed step's index in file order, absent when the error isn't tied to a step. |
 
 Each item of `results` has `collection` and `operation`, plus what MongoDB
-returned for the step: `matchedCount`,
+returned for the step in the first of the two runs: `matchedCount`,
 `modifiedCount` and `upsertedCount` for `updateOne` and `updateMany`,
 `deletedCount` for `deleteMany`.
 
@@ -110,9 +115,9 @@ migration's entries is how you retire it on purpose (see
 
 ## Lock: `migrations_lock`
 
-One global lock per database: a document with `_id: "migrations"`. A run
-takes it before reading the changelog and releases it when it finishes,
-fails or is interrupted. lint doesn't take it.
+One global lock per database: a document with `_id: "migrations"`. plan and
+apply take it before reading the changelog and release it when they finish,
+fail or are interrupted. lint doesn't take it.
 
 ```js
 {
@@ -132,15 +137,15 @@ fails or is interrupted. lint doesn't take it.
 | `_id`           | string       | Always `migrations`.                                                                              |
 | `v`             | int          | The lock format version: `1`, set on every write. See [format versions](#format-versions).        |
 | `token`         | string       | A random 128-bit value, in hex, new on every acquisition. It alone says who owns the lock.        |
-| `owner`         | string       | The holder's runner id (`<hostname>-<pid>-<random>` by default): a label for people, shown in "lock is held" errors. Two runners may share it. |
+| `owner`         | string       | The holder's runner id (`--runner-id`): a label for people, shown in "lock is held" errors. Two runners may share it. |
 | `current`       | string, null | The migration the holder is running, or null between migrations.                                 |
 | `acquiredAt`    | date         | When the holder took the lock, server time.                                                       |
 | `lastHeartbeat` | date         | The holder's last heartbeat, server time.                                                         |
 | `expiresAt`     | date         | When another runner may take the lock: server time of the holder's last write plus its expiry.   |
 
-The **expiry** is the longer of 3 heartbeat intervals (30 seconds) and the
-lock TTL (90 seconds by default), so with the defaults a lock expires 90
-seconds after the holder's last write.
+The **expiry** is the longer of 3 heartbeat intervals (30 seconds) and
+`--lock-ttl` (90 seconds by default, at least 61), so with the defaults a
+lock expires 90 seconds after the holder's last write.
 
 ### Acquire
 
@@ -153,16 +158,17 @@ its old lock to expire like any other runner. A lock document with a newer
 `v` is never taken, even expired: the run fails as described in
 [format versions](#format-versions).
 
-Otherwise the run fails with exit code 3, before anything else, naming the
-holder:
+Otherwise the run fails with exit code 3, before anything else and without a
+report, naming the holder:
 
 ```txt
 Error: migration lock is held by runner "ci-42-1-AB12CD34" (applying 2026-11-01-001-seed-currencies-and-plans), last heartbeat 2026-11-08T00:11:27Z
 ```
 
-With a lock wait, the runner keeps trying, with a backoff from 1 to 10
-seconds, until the wait has passed, then fails the same way, with exit code
-3. A signal while waiting exits at once with 128 + the signal number.
+With `--lock-wait <duration>`, the runner keeps trying, with a backoff from 1
+to 10 seconds, until the duration has passed, then fails the same way, with
+exit code 3. A signal while waiting exits at once with 128 + the signal
+number.
 
 There is no TTL index: the document is overwritten on takeover and deleted on
 release.
@@ -181,13 +187,14 @@ as if the lock were lost. The lease is measured on the runner's monotonic
 clock, so a step of its system clock, such as NTP setting it back, doesn't
 extend it. The runner checks the lease after each heartbeat that fails.
 
-The lock TTL must stay above the server's transaction lifetime limit
+`--lock-ttl` must stay above the server's transaction lifetime limit
 (`transactionLifetimeLimitSeconds`, 60 seconds by default), so the lock can't
-expire while one of the holder's transactions is open.
+expire while one of the holder's transactions is open; migrune rejects a
+value under 61 seconds. Raise it if your server allows longer transactions.
 
 ### Fence
 
-Every transaction (a migration's, and the one each `Errored` entry is
+Every transaction (a data migration's, and the one each `Errored` entry is
 written in) first updates the lock document, matching `{_id: "migrations", token:
 <this runner's token>}`. If another runner took the lock over, that update
 matches nothing, or conflicts with the takeover, and the transaction aborts.
@@ -207,15 +214,15 @@ Transactions use read concern `snapshot` and write concern `majority`.
   that conflicts with a takeover is a transient error, and the next
   attempt's fence matches nothing.
 - **Commit.** The commit isn't cut short by SIGINT or SIGTERM: it runs on its
-  own 30-second budget. A commit that
+  own 30-second budget, and the report shows what happened. A commit that
   fails with `UnknownTransactionCommitResult` (a failover or a timeout while
   committing) is sent again, up to 3 times. If its outcome is still unknown,
   migrune ends the session, so the transaction can't commit later, and
   looks up the entry it wrote by its `_id`, with read concern
   `linearizable`, so a commit that landed can't be missed: there, the
   migration is applied;
-  missing, the transaction didn't commit and the migration failed (it then
-  gets an `Errored` entry).
+  missing, the transaction didn't commit and the migration failed (a data
+  migration then gets an `Errored` entry).
 
 ### Release
 

@@ -18,7 +18,7 @@ import (
 	"github.com/joaopaulosr95/migrune/internal/runner"
 )
 
-// TestNewerFormat checks online lint fails, exiting 1,
+// TestNewerFormat checks plan, apply and online lint fail, exiting 1,
 // before anything else happens and with nothing written, when the changelog
 // holds an entry, or the lock collection a document, with a v above the one
 // this migrune writes.
@@ -43,40 +43,41 @@ func TestNewerFormat(t *testing.T) {
 			want: "the migration lock has format v2, newer than this migrune understands (v1): upgrade migrune"},
 	}
 	for _, tc := range cases {
-		command := "lint"
-		t.Run(tc.name+" "+command, func(t *testing.T) {
-			uri, db := testTarget(t)
-			seedItems(t, db)
-			if _, err := db.Collection(tc.coll).InsertOne(context.Background(), tc.doc); err != nil {
-				t.Fatal(err)
-			}
-			before := dumpDB(t, db)
-			out, err := migrune(t, uri, db, command, "--dir", migrationsDir(t, setFlag))
-			var format *runner.FormatError
-			if !errors.As(err, &format) || err.Error() != tc.want {
-				t.Fatalf("%s: %v, want %q", command, err, tc.want)
-			}
-			// Neither a usage error (exit 2) nor a held lock (exit 3):
-			// exit 1.
-			if errors.As(err, new(*UsageError)) || errors.Is(err, runner.ErrLockHeld) {
-				t.Errorf("%v exits 2 or 3, want 1", err)
-			}
-			if out != "" {
-				t.Errorf("stdout %q, want nothing", out)
-			}
-			if after := dumpDB(t, db); after != before {
-				t.Errorf("%s changed the database:\nbefore %s\nafter  %s", command, before, after)
-			}
-		})
+		for _, command := range []string{"plan", "apply", "lint"} {
+			t.Run(tc.name+" "+command, func(t *testing.T) {
+				uri, db := testTarget(t)
+				seedItems(t, db)
+				if _, err := db.Collection(tc.coll).InsertOne(context.Background(), tc.doc); err != nil {
+					t.Fatal(err)
+				}
+				before := dumpDB(t, db)
+				out, err := migrune(t, uri, db, command, "--dir", migrationsDir(t, setFlag))
+				var format *runner.FormatError
+				if !errors.As(err, &format) || err.Error() != tc.want {
+					t.Fatalf("%s: %v, want %q", command, err, tc.want)
+				}
+				// Neither a usage error (exit 2) nor a held lock (exit 3):
+				// exit 1.
+				if errors.As(err, new(*UsageError)) || errors.Is(err, runner.ErrLockHeld) {
+					t.Errorf("%v exits 2 or 3, want 1", err)
+				}
+				if out != "" {
+					t.Errorf("stdout %q, want nothing", out)
+				}
+				if after := dumpDB(t, db); after != before {
+					t.Errorf("%s changed the database:\nbefore %s\nafter  %s", command, before, after)
+				}
+			})
+		}
 	}
 }
 
 // TestOlderFormat checks entries and a lock document without v read as v1: a
-// Finished entry without v counts as applied, and a lock without v passes the
-// format check.
+// Finished entry without v counts as applied, and an expired lock without v
+// is taken over.
 func TestOlderFormat(t *testing.T) {
 	uri, db := testTarget(t)
-	raw, err := os.ReadFile(filepath.Join(validFixtures, setFlag+".json"))
+	raw, err := os.ReadFile(filepath.Join(runnerFixtures("data"), setFlag+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +108,10 @@ func TestOlderFormat(t *testing.T) {
 	dir := migrationsDir(t, setFlag, seed)
 	if out, err := migrune(t, uri, db, "lint", "--dir", dir); err != nil {
 		t.Errorf("lint: %v\n%s", err, out)
+	}
+	out, err := migrune(t, uri, db, "apply", "--dir", dir)
+	if err != nil || !hasRow(out, seed, "applied") || hasRow(out, setFlag, "applied") {
+		t.Fatalf("apply: %v\n%s", err, out)
 	}
 }
 

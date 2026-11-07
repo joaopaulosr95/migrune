@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-002-inc-counter",
+  "description": "Increment a counter: not idempotent, the second run changes it again",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": {},
+      "update": { "$inc": { "counter": 1 } }
+    }
+  ]
+}

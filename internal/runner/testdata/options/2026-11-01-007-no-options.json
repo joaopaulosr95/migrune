@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-007-no-options",
+  "description": "No options",
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": {} }]
+}

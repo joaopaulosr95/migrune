@@ -1,0 +1,19 @@
+{
+  "id": "2026-11-01-001-all-update-options",
+  "description": "Every option an update step accepts",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "name": "$$target" },
+      "update": { "$set": { "tags.$[t]": "x" } },
+      "options": {
+        "upsert": false,
+        "arrayFilters": [{ "t": "y" }],
+        "collation": { "locale": "en", "strength": 2, "caseLevel": true },
+        "hint": "name_1",
+        "let": { "target": "a" }
+      }
+    }
+  ]
+}

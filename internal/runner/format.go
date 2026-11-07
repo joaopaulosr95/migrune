@@ -34,9 +34,9 @@ func (e *FormatError) Error() string {
 // Neither query has an index on v, and neither needs one. The lock collection
 // holds a single document. The changelog holds one entry per
 // migration outcome, so it grows by a few entries per release, and every
-// online lint already reads its Finished entries (Finished): the scan costs
-// about as much as that read. An index would have to be created by a command
-// that writes, and lint doesn't write.
+// plan, apply and online lint already reads its Finished entries (Finished):
+// the scan costs about as much as that read. An index would only help once
+// apply had created it, and plan and lint don't write.
 func CheckFormats(ctx context.Context, db *mongo.Database) error {
 	if err := checkFormat(ctx, changelogCollection(db), "changelog", EntryVersion); err != nil {
 		return err

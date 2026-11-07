@@ -1,0 +1,18 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 0,
+    "applied": 0,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 0
+  }
+}

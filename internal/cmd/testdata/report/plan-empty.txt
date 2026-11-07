@@ -1,0 +1,6 @@
+Plan: each status is what apply would do. Nothing was committed.
+Database: app
+
+No pending migrations.
+
+Total: 0 migrations: 0 applied, 0 errored, 0 interrupted, 0 skipped in 0s

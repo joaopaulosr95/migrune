@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-005-upsert-not-bool",
+  "description": "upsert must be a boolean",
+  "steps": [{ "collection": "items", "operation": "updateOne", "filter": {}, "update": { "$set": { "a": 1 } }, "options": { "upsert": "yes" } }]
+}

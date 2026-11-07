@@ -44,11 +44,12 @@ they aren't idempotent.
   rename a field or change its type, add a new field in one release and stop
   using the old one in a later release (expand, then contract).
 - **Be idempotent.** A migration must change nothing when run a second time.
+  migrune checks this.
 - **Never edit an applied migration.** Once a migration is `Finished` in a
-  database, lint with a connection fails on an edited file. Write a new
-  migration. A migration with only `Errored` entries can be fixed in place.
+  database, plan and apply fail on an edited file. Write a new migration. A
+  migration with only `Errored` entries can be fixed in place.
 - **Never delete or rename an applied migration's file.** Removing it doesn't
-  undo it, and lint with a connection fails until it is back (see
+  undo it, and plan and apply stop until it is back (see
   [troubleshooting](troubleshooting.md#applied-but-missing)).
 - **Keep the file's bytes as committed.** The checksum covers every byte,
   so a checkout that converts line endings, or a formatter that reflows the
@@ -68,12 +69,14 @@ Check every migration before you commit it:
 
 ```sh
 migrune lint --dir migrations
-MIGRUNE_URI='mongodb://…' migrune lint --dir migrations --db app
+MIGRUNE_URI='mongodb://…' migrune plan --dir migrations --db app
 ```
 
 ## Data migrations
 
-All the steps run in file order in one transaction. Each step has:
+All the steps run in file order in one transaction, twice. The migration is
+accepted only if the second run modified, upserted and deleted nothing. Each
+step has:
 
 - `collection`;
 - `operation`: `updateOne`, `updateMany` or `deleteMany`;
@@ -81,14 +84,16 @@ All the steps run in file order in one transaction. Each step has:
 - `update`, for updates only: an update document (`{"$set": …}`) or an update
   pipeline (an array of stages such as `$set`, `$unset`, `$replaceWith`);
 - `options`, optional: `upsert`, `arrayFilters`, `collation`, `hint` and
-  `let` for updates; `collation`, `hint` and `let` for `deleteMany`.
+  `let` for updates; `collation`, `hint` and `let` for `deleteMany`. Any other
+  option fails the migration.
 
-To keep it idempotent:
+To pass the double run:
 
 - **Filter on the target state.** `{"archived": {"$exists": false}}` matches
   nothing once the field is set, which also keeps a re-run cheap.
 - **Use `$set`, not `$inc`, `$push` or `$mul`**, unless the filter excludes
-  the documents already changed.
+  the documents already changed. A failure reads
+  `not idempotent: running the migration again modified N documents`.
 - **Seed reference data with an upsert**: filter on a natural key, put the
   values in `$setOnInsert` and set `"options": {"upsert": true}`. To change
   seeded values later, write a new migration; the `$setOnInsert` one won't
@@ -113,8 +118,13 @@ versions in cache and conflict with live writes. For many documents, split
 the work across several migrations, each filtering on a part of the
 documents.
 
-lint warns about a `deleteMany` or `updateMany` with the filter `{}`
-(`empty-filter`).
+plan runs the migration twice and aborts the transaction, so nothing is
+committed. Its report lists, for each step, what the first run matched,
+modified, upserted or deleted: check those numbers before you approve, since
+a filter typo that matches every document still passes the double run. lint
+warns about a `deleteMany` or `updateMany` with the filter `{}`
+(`empty-filter`). If a data migration fails in apply, nothing of it was
+committed.
 
 ## What doesn't belong in a migration
 

@@ -7,17 +7,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
-
-	"github.com/joaopaulosr95/migrune/internal/migration"
 )
 
-// TestTransientTransactionRetried checks a transaction that fails with a
-// transient write conflict runs again, in a new transaction, and gives up
-// after maxTransactionRetries new attempts (T2).
+// TestTransientTransactionRetried checks a data migration whose transaction
+// fails with a transient write conflict runs again, in a new transaction, and
+// gives up after maxTransactionRetries new attempts (T2).
 func TestTransientTransactionRetried(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -40,7 +38,7 @@ func TestTransientTransactionRetried(t *testing.T) {
 				{Key: "errorLabels", Value: bson.A{labelTransient}},
 			})
 
-			err := flagItems(t, ctx, db)
+			rep, err := execute(t, ctx, db, load(t, fixtureDir(t, "data", setFlag)), Options{}, Config{Mode: ModeApply})
 			if n := failCommandOff(t, client) - fired; n != int64(tc.conflicts) {
 				t.Errorf("fail point fired %d times, want %d", n, tc.conflicts)
 			}
@@ -48,15 +46,15 @@ func TestTransientTransactionRetried(t *testing.T) {
 			if tc.wantErr {
 				wantErr = []string{"WriteConflict", "112"}
 			}
-			checkSetFlagOutcome(t, ctx, db, err, wantErr...)
+			checkSetFlagOutcome(t, ctx, db, rep, err, wantErr...)
 		})
 	}
 }
 
 // TestCommitOutcomeUnknown checks a commit that fails with
 // UnknownTransactionCommitResult is sent again, and when the outcome stays
-// unknown, the changelog entry decides it: there, the transaction committed;
-// missing, it didn't (T2).
+// unknown, the changelog entry decides it: there, the migration is applied;
+// missing, it errored (T2).
 func TestCommitOutcomeUnknown(t *testing.T) {
 	unknown := bson.D{{Key: "errorCode", Value: 50}, {Key: "errorLabels", Value: bson.A{labelUnknownCommit}}}
 	cases := []struct {
@@ -94,7 +92,7 @@ func TestCommitOutcomeUnknown(t *testing.T) {
 			}, tc.fail...)
 			fired := failCommand(t, ctx, client, bson.D{{Key: "times", Value: tc.times}}, data)
 
-			err := flagItems(t, ctx, db)
+			rep, err := execute(t, ctx, db, load(t, fixtureDir(t, "data", setFlag)), Options{}, Config{Mode: ModeApply})
 			if n := failCommandOff(t, client) - fired; n < 1 {
 				t.Errorf("fail point fired %d times, want at least once", n)
 			}
@@ -102,96 +100,26 @@ func TestCommitOutcomeUnknown(t *testing.T) {
 			if !tc.applied {
 				wantErr = []string{"didn't commit"}
 			}
-			checkSetFlagOutcome(t, ctx, db, err, wantErr...)
+			checkSetFlagOutcome(t, ctx, db, rep, err, wantErr...)
 		})
 	}
 }
 
-// setFlag is the migration flagItems records in the changelog.
-const setFlag = "2026-11-05-001-add-archived-flag"
-
-func seedItems(t *testing.T, ctx context.Context, db *mongo.Database) {
-	t.Helper()
-	_, err := db.Collection("items").InsertMany(ctx, []any{
-		bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: "a"}},
-		bson.D{{Key: "_id", Value: 2}, {Key: "name", Value: "b"}, {Key: "flag", Value: true}},
-		bson.D{{Key: "_id", Value: 3}, {Key: "name", Value: "c"}, {Key: "stale", Value: true}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// flagItems starts a run on db and calls flagItemsIn, then releases the
-// lock.
-func flagItems(t *testing.T, ctx context.Context, db *mongo.Database) error {
-	t.Helper()
-	run, err := Start(ctx, db, Options{Logger: testLogger(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = flagItemsIn(run, fixture(t, setFlag))
-	if cerr := run.Close(); cerr != nil {
-		t.Error(cerr)
-	}
-	return err
-}
-
-// flagItemsIn stands in for applying m: in one fenced transaction it
-// flags the items seedItems inserted without a flag and writes m's Finished
-// entry; when that fails, it records m as Errored.
-func flagItemsIn(run *Run, m migration.Migration) error {
-	id := bson.NewObjectID()
-	err := run.transaction(func(sctx context.Context) error {
-		_, err := run.db.Collection("items").UpdateMany(sctx,
-			bson.D{{Key: "flag", Value: bson.D{{Key: "$exists", Value: false}}}},
-			bson.D{{Key: "$set", Value: bson.D{{Key: "flag", Value: false}}}})
-		if err != nil {
-			return err
-		}
-		return run.WriteFinished(sctx, id, m, nil)
-	}, true, &id)
-	if err != nil {
-		return errors.Join(err, run.WriteErrored(m, []StepError{{Message: err.Error()}}))
-	}
-	return nil
-}
-
-// changelog returns the changelog entries, oldest first.
-func changelog(t *testing.T, ctx context.Context, db *mongo.Database) []Entry {
-	t.Helper()
-	cur, err := db.Collection(ChangelogCollection).Find(ctx, bson.D{},
-		options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var entries []Entry
-	if err := cur.All(ctx, &entries); err != nil {
-		t.Fatal(err)
-	}
-	return entries
-}
-
-// entryStatuses renders entries as "id:status".
-func entryStatuses(entries []Entry) []string {
-	var out []string
-	for _, e := range entries {
-		out = append(out, e.MigrationID+":"+string(e.Status))
-	}
-	return out
-}
-
-// checkSetFlagOutcome checks the outcome of flagItems on the items seedItems
-// inserted. With no wantErr, the transaction committed: one Finished entry,
-// and both items without a flag flagged. Otherwise err contains one of
-// wantErr and it didn't: one Errored entry, and no item flagged.
-func checkSetFlagOutcome(t *testing.T, ctx context.Context, db *mongo.Database, err error, wantErr ...string) {
+// checkSetFlagOutcome checks the outcome of an apply of setFlag on the
+// items seedItems inserted. With no wantErr, the migration is applied: one
+// Finished entry, and both items without a flag flagged. Otherwise err
+// contains one of wantErr and the migration errored: one Errored entry, and
+// no item flagged.
+func checkSetFlagOutcome(t *testing.T, ctx context.Context, db *mongo.Database, rep *Report, err error, wantErr ...string) {
 	t.Helper()
 	entries := entryStatuses(changelog(t, ctx, db))
 	flagged := countDocs(t, ctx, db.Collection("items"), bson.D{{Key: "flag", Value: false}})
 	if len(wantErr) > 0 {
 		if err == nil || !slices.ContainsFunc(wantErr, func(w string) bool { return strings.Contains(err.Error(), w) }) {
-			t.Fatalf("flagItems: %v, want an error containing one of %q", err, wantErr)
+			t.Fatalf("apply: %v, want an error containing one of %q", err, wantErr)
+		}
+		if got := statuses(rep); !slices.Equal(got, []string{setFlag + ":errored"}) {
+			t.Errorf("rows %v", got)
 		}
 		if !slices.Equal(entries, []string{setFlag + ":Errored"}) {
 			t.Errorf("changelog %v, want one Errored entry", entries)
@@ -202,12 +130,86 @@ func checkSetFlagOutcome(t *testing.T, ctx context.Context, db *mongo.Database, 
 		return
 	}
 	if err != nil {
-		t.Fatalf("flagItems: %v", err)
+		t.Fatalf("apply: %v", err)
+	}
+	if got := statuses(rep); !slices.Equal(got, []string{setFlag + ":applied"}) {
+		t.Errorf("rows %v", got)
 	}
 	if !slices.Equal(entries, []string{setFlag + ":Finished"}) {
 		t.Errorf("changelog %v, want exactly one Finished entry", entries)
 	}
 	if flagged != 2 {
 		t.Errorf("%d items flagged, want 2", flagged)
+	}
+}
+
+// TestLockStolenBetweenMigrations checks a runner whose lock is taken over
+// after a migration stops the run at its next write to the lock, whichever it
+// is, and writes no changelog entry: the zombie neither applies the next
+// migration nor records it as Errored (correctness #5).
+func TestLockStolenBetweenMigrations(t *testing.T) {
+	cases := []struct {
+		name string
+		// skip is how many of the runner's updates of the lock document go
+		// through before the next one is held, while the lock is taken
+		// over. The first migration makes three: current, the heartbeat
+		// before its transaction, the fence.
+		skip int
+	}{
+		{name: "current of the next migration", skip: 3},
+		{name: "heartbeat before its transaction", skip: 4},
+		{name: "fence of its transaction", skip: 5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := testCtx(t)
+			app := "migrune-zombie-" + rand.Text()[:8]
+			client := appClient(t, app)
+			db := freshDB(t, client)
+			seedItems(t, ctx, db)
+			fired := failCommand(t, ctx, client, bson.D{{Key: "skip", Value: tc.skip}}, bson.D{
+				{Key: "failCommands", Value: bson.A{"update"}},
+				{Key: "namespace", Value: db.Name() + "." + LockCollection},
+				{Key: "appName", Value: app},
+				{Key: "blockConnection", Value: true},
+				{Key: "blockTimeMS", Value: 1500},
+			})
+
+			// A long interval: no timed heartbeat during the test.
+			o := Options{RunnerID: "zombie", HeartbeatInterval: time.Minute, Logger: testLogger(t)}
+			type result struct {
+				rep *Report
+				err error
+			}
+			ms := load(t, fixtureDir(t, "data", setFlag, dropStale))
+			done := make(chan result, 1)
+			go func() {
+				rep, err := Execute(ctx, db, ms, o, Config{Mode: ModeApply})
+				done <- result{rep, err}
+			}()
+			waitFailPoint(t, ctx, client, fired+1)
+			takeOver(t, ctx, testClient(t).Database(db.Name()), "next")
+			res := <-done
+
+			if !errors.Is(res.err, ErrLockLost) {
+				t.Fatalf("apply: %v, want ErrLockLost", res.err)
+			}
+			want := []string{setFlag + ":applied", dropStale + ":errored"}
+			if got := statuses(res.rep); !slices.Equal(got, want) {
+				t.Errorf("rows %v, want %v", got, want)
+			}
+			if row := res.rep.row(dropStale); !strings.Contains(row.Error, "lock lost") {
+				t.Errorf("row error %q, want the lock lost", row.Error)
+			}
+			if got := entryStatuses(changelog(t, ctx, db)); !slices.Equal(got, []string{setFlag + ":Finished"}) {
+				t.Errorf("changelog %v, want only the first migration's Finished entry", got)
+			}
+			if n := countDocs(t, ctx, db.Collection("items"), bson.D{{Key: "stale", Value: true}}); n != 1 {
+				t.Errorf("%d stale items, want 1: the zombie applied the next migration", n)
+			}
+			if doc := readLock(t, ctx, db); doc == nil || doc.Owner != "next" {
+				t.Errorf("lock %+v, want still the new holder's", doc)
+			}
+		})
 	}
 }

@@ -1,0 +1,159 @@
+# Run migrune with an approval gate in GitHub Actions.
+#
+# Copy this file to .github/workflows/migrate.yaml and adjust the env block.
+# On pull requests, the lint job checks the migration files, offline. On
+# every v* tag, the plan job lints them again, since plan and apply don't run
+# lint's rules and a tag can point at a commit no pull request checked, then
+# runs `migrune plan` and uploads the report. The apply job waits for
+# someone to approve the `production` environment, then runs `migrune apply`.
+#
+# Setup, in the repository settings:
+# - Rules > Rulesets: add a tag ruleset targeting v*, enforced, that
+#   restricts creations, updates and deletions to the people allowed to
+#   release (bypass list). Whoever can push a v* tag runs this workflow, as
+#   written at that tag, with the production credentials.
+# - Environments: create `production` with required reviewers, and
+#   `plan-production` without. That review is the approval gate. Under
+#   "Deployment branches and tags", limit both to "Selected branches and
+#   tags" with the tag rule v*, so no other ref, such as a branch carrying
+#   an edited copy of this file, can use their secrets.
+# - Secrets: add MIGRUNE_URI, the connection string, as an environment
+#   secret of both environments, never as a repository secret, which any
+#   branch's workflow could read. plan needs it too, since it takes the
+#   migration lock (a write) and runs migrations in transactions it aborts.
+#
+# See docs/running.md.
+name: migrate
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One tag run at a time. migrune's lock already prevents two runs from
+# working at once, but a queued run would fail on the lock instead of
+# waiting. Pull request runs only lint, in a group of their own.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('migrate-lint-{0}', github.ref) || 'migrate-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pin an exact migrune version.
+  MIGRUNE_IMAGE: ghcr.io/joaopaulosr95/migrune:1.0.0
+  MIGRUNE_DB: app
+  # Inside the container, the repository is mounted at /work.
+  MIGRUNE_DIR: /work/migrations
+
+jobs:
+  lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Offline: pull request runs get no database credentials.
+      - name: Lint
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+            -e MIGRUNE_DIR "$MIGRUNE_IMAGE" lint
+
+  plan:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # No reviewers: this environment only holds the secret and limits it to
+    # v* tags.
+    environment: plan-production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # First, and offline: a migration that fails lint is never planned.
+      - name: Lint
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+            -e MIGRUNE_DIR "$MIGRUNE_IMAGE" lint
+
+      - name: Plan
+        env:
+          MIGRUNE_URI: ${{ secrets.MIGRUNE_URI }}
+        # `-e NAME` without a value passes the variable from this step's
+        # environment, so the URI never appears in a command line.
+        run: |
+          mkdir -p out
+          status=0
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+            -e MIGRUNE_URI -e MIGRUNE_DB -e MIGRUNE_DIR \
+            "$MIGRUNE_IMAGE" plan > out/plan.txt || status=$?
+          cat out/plan.txt
+          {
+            echo '## migrune plan'
+            echo '```'
+            cat out/plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: plan
+          path: out/
+          if-no-files-found: error
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    # Required reviewers on this environment hold the job until someone
+    # approves it, after reading the plan in the run's summary.
+    environment: production
+    permissions:
+      contents: read
+      actions: read # to read who approved the run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # GitHub exposes no variable for the reviewer, so read the run's
+      # approvals. GitHub doesn't expose emails either: use the reviewer's
+      # noreply address. Without an approval, such as when `production` has
+      # no required reviewers, fail rather than record one that never
+      # happened.
+      - name: Find the approver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          approver=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/approvals" \
+            --jq '[.[] | select(.state == "approved")] | last | select(. != null) | "\(.user.login) \(.user.id)"')
+          if [ -z "$approver" ]; then
+            echo "::error::No approval found for this run: give the production environment required reviewers."
+            exit 1
+          fi
+          read -r login id <<< "$approver"
+          echo "MIGRUNE_APPROVED_BY_NAME=${login}" >> "$GITHUB_ENV"
+          echo "MIGRUNE_APPROVED_BY_EMAIL=${id}+${login}@users.noreply.github.com" >> "$GITHUB_ENV"
+
+      - name: Apply
+        env:
+          MIGRUNE_URI: ${{ secrets.MIGRUNE_URI }}
+        run: |
+          mkdir -p out
+          status=0
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+            -e MIGRUNE_URI -e MIGRUNE_DB -e MIGRUNE_DIR \
+            -e MIGRUNE_APPROVED_BY_NAME -e MIGRUNE_APPROVED_BY_EMAIL \
+            "$MIGRUNE_IMAGE" apply > out/apply.txt || status=$?
+          cat out/apply.txt
+          exit "$status"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: apply
+          path: out/apply.txt

@@ -25,7 +25,7 @@ migrune lint [flags]
       --db string           target database name
       --dir string          directory holding the migration files
   -h, --help[=true|false]   help for lint
-  -o, --output string       findings format: text, one per line, or json, one array (default "text")
+  -o, --output string       findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command (default "text")
       --uri string          MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
 ```
 

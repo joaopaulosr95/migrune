@@ -50,6 +50,9 @@ func TestLint(t *testing.T) {
     "rule": "empty-filter",`},
 		{name: "output from env", env: map[string]string{"MIGRUNE_OUTPUT": "json"},
 			args: []string{"lint", "--dir", filepath.Join(fixtures, "rules", "nested-out-merge", "pass")}, stdout: "[]\n"},
+		{name: "table output is text", env: map[string]string{"MIGRUNE_OUTPUT": "table"},
+			args: []string{"lint", "--dir", filepath.Join(fixtures, "rules", "nested-out-merge", "fail")}, failed: true,
+			stdout: "2026-11-01-004-in-update-pipeline.json: error: nested-out-merge:"},
 		{name: "bad output", args: []string{"lint", "--dir", fixtures, "-o", "yaml"}, usage: true, message: `invalid --output "yaml"`},
 	}
 	for _, tc := range cases {

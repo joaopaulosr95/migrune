@@ -28,7 +28,7 @@ tasks:
       - CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/joaopaulosr95/migrune/internal/cmd.version={{.VERSION}}" -o dist/migrune ./cmd/migrune
 
   dev:
-    desc: "Run migrune from source, e.g. task dev -- lint --dir migrations"
+    desc: "Run migrune from source, e.g. task dev -- plan --dir migrations"
     cmds:
       - go run ./cmd/migrune {{.CLI_ARGS}}
 
@@ -76,13 +76,13 @@ tasks:
       - docker compose -f {{.REPLICASET_COMPOSE}} down --volumes
 
   lint:
-    desc: Run go vet, staticcheck and gofmt, actionlint the workflows, and check the CLI docs are up to date
+    desc: Run go vet, staticcheck and gofmt, actionlint the workflows and the GitHub Actions example, and check the CLI docs are up to date
     cmds:
       - go vet ./...
       - staticcheck ./...
       # actionlint runs shellcheck on the run: scripts; both are pinned in
       # mise.toml.
-      - actionlint .github/workflows/*.yml
+      - actionlint examples/ci/github-actions.yaml .github/workflows/*.yml
       - |
         unformatted=$(gofmt -l .)
         if [ -n "$unformatted" ]; then

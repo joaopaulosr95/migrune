@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -23,7 +21,7 @@ func TestExitCode(t *testing.T) {
 	usage := &cmd.UsageError{Err: errors.New("unknown flag: --nope")}
 	failure := errors.New("migration 2026-01-01-001-example failed")
 	held := &runner.LockHeldError{Owner: "ci-42"}
-	interrupted := fmt.Errorf("run: %w", &runner.InterruptedError{Cause: errors.New("terminated signal received")})
+	interrupted := fmt.Errorf("apply: %w", &runner.InterruptedError{Cause: errors.New("terminated signal received")})
 	cases := []struct {
 		name string
 		err  error
@@ -32,11 +30,12 @@ func TestExitCode(t *testing.T) {
 	}{
 		{name: "success", want: 0},
 		{name: "failure", err: failure, want: 1},
+		{name: "reported failure", err: &cmd.ReportedError{Err: failure}, want: 1},
 		{name: "usage error", err: usage, want: 2},
-		{name: "wrapped usage error", err: fmt.Errorf("lint: %w", usage), want: 2},
+		{name: "wrapped usage error", err: fmt.Errorf("plan: %w", usage), want: 2},
 		{name: "lock held", err: held, want: 3},
 		{name: "lock held after a wait", err: fmt.Errorf("%w; gave up after waiting 1m0s", held), want: 3},
-		{name: "lock lost", err: runner.ErrLockLost, want: 1},
+		{name: "lock lost", err: &cmd.ReportedError{Err: &runner.MigrationError{ID: "x", Err: runner.ErrLockLost}}, want: 1},
 		{name: "SIGTERM while waiting for the lock", err: held, sig: syscall.SIGTERM, want: 143},
 		{name: "SIGINT", sig: syscall.SIGINT, want: 130},
 		{name: "SIGTERM", sig: syscall.SIGTERM, want: 143},
@@ -90,6 +89,26 @@ func TestWatchSignals(t *testing.T) {
 				t.Fatal("no exit after the second signal")
 			}
 		})
+	}
+}
+
+func TestSameFile(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if !sameFile(w, w) {
+		t.Error("sameFile(w, w) = false, want true")
+	}
+	f, err := os.Create(t.TempDir() + "/report.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if sameFile(f, w) {
+		t.Error("sameFile(file, pipe) = true, want false")
 	}
 }
 
@@ -149,9 +168,9 @@ func TestFinalError(t *testing.T) {
 		json bool
 	}{
 		{name: "text failure", args: []string{"lint", "--dir", missing}, code: 1, msg: "migrations directory"},
-		{name: "text usage error", args: []string{"lint"}, code: 2, msg: "--dir is required"},
+		{name: "text usage error", args: []string{"plan"}, code: 2, msg: "--dir is required"},
 		{name: "json failure", args: []string{"lint", "--dir", missing, "--log-format", "json"}, code: 1, msg: "migrations directory", json: true},
-		{name: "json usage error", args: []string{"lint"}, env: "json", code: 2, msg: "--dir is required", json: true},
+		{name: "json usage error", args: []string{"plan"}, env: "json", code: 2, msg: "--dir is required", json: true},
 		{name: "json unknown flag", args: []string{"lint", "--nope"}, env: "json", code: 2, msg: "unknown flag: --nope", json: true},
 	}
 	for _, tc := range cases {
@@ -201,37 +220,4 @@ func TestFinalError(t *testing.T) {
 			}
 		})
 	}
-}
-
-var (
-	buildOnce sync.Once
-	// binDir holds the migrune binary the tests build; TestMain removes
-	// it.
-	binDir   string
-	buildErr error
-)
-
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if binDir != "" {
-		_ = os.RemoveAll(binDir)
-	}
-	os.Exit(code)
-}
-
-// buildMigrune returns the migrune binary, built once for all the tests.
-func buildMigrune(t *testing.T) string {
-	t.Helper()
-	buildOnce.Do(func() {
-		if binDir, buildErr = os.MkdirTemp("", "migrune-test-"); buildErr != nil {
-			return
-		}
-		if out, err := exec.Command("go", "build", "-o", filepath.Join(binDir, "migrune"), ".").CombinedOutput(); err != nil {
-			buildErr = fmt.Errorf("%w\n%s", err, out)
-		}
-	})
-	if buildErr != nil {
-		t.Fatalf("build migrune: %v", buildErr)
-	}
-	return filepath.Join(binDir, "migrune")
 }

@@ -1,0 +1,112 @@
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/joaopaulosr95/migrune/internal/runner"
+)
+
+// writeReport renders a plan or apply report as a table or as JSON.
+func writeReport(w io.Writer, rep *runner.Report, output string) error {
+	if output == "json" {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(rep)
+	}
+	return writeTable(w, rep)
+}
+
+func writeTable(w io.Writer, rep *runner.Report) error {
+	ew := &errWriter{w: w}
+	if rep.Command == string(runner.ModePlan) {
+		fmt.Fprintln(ew, "Plan: each status is what apply would do. Nothing was committed.")
+	}
+	if rep.NewDatabase {
+		fmt.Fprintf(ew, "Database: %s (new: it had no collections)\n", rep.Database)
+	} else {
+		fmt.Fprintf(ew, "Database: %s\n", rep.Database)
+	}
+	fmt.Fprintln(ew)
+	if len(rep.Migrations) == 0 {
+		fmt.Fprintln(ew, "No pending migrations.")
+	} else {
+		var table bytes.Buffer
+		tw := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "MIGRATION\tKIND\tSTATUS\tDURATION\tERROR")
+		for _, row := range rep.Migrations {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", row.ID, row.Kind, row.Status, duration(row.DurationMs), row.Error)
+		}
+		_ = tw.Flush()
+		// The first line is the header, then one per row. Rows without an
+		// error end in padding. A row's details go under it, outside the
+		// tabwriter so they don't widen the columns.
+		i := -1
+		for line := range strings.Lines(table.String()) {
+			fmt.Fprintln(ew, strings.TrimRight(line, " \n"))
+			if i >= 0 {
+				writeRowDetails(ew, rep.Migrations[i])
+			}
+			i++
+		}
+	}
+	if len(rep.AppliedButMissing) > 0 {
+		fmt.Fprintln(ew)
+		fmt.Fprintln(ew, "Applied but missing (Finished in the changelog, no file):")
+		for _, a := range rep.AppliedButMissing {
+			fmt.Fprintf(ew, "  %s: %s\n", a.ID, a.MissingContext())
+		}
+	}
+	t := rep.Totals
+	fmt.Fprintln(ew)
+	fmt.Fprintf(ew, "Total: %d %s: %d applied, %d errored, %d interrupted, %d skipped in %s\n",
+		t.Migrations, plural(t.Migrations, "migration"), t.Applied, t.Errored, t.Interrupted, t.Skipped, duration(t.DurationMs))
+	if rep.Error != "" {
+		// A run can fail several checks at once, one per line.
+		fmt.Fprintln(ew)
+		prefix := "Error: "
+		for _, line := range strings.Split(rep.Error, "\n") {
+			fmt.Fprintln(ew, prefix+line)
+			prefix = "  "
+		}
+	}
+	return ew.err
+}
+
+// writeRowDetails writes the lines under a row: for a data migration, one
+// per step with its counts.
+func writeRowDetails(w io.Writer, row runner.Row) {
+	for _, s := range row.Steps {
+		fmt.Fprintf(w, "  /steps/%d %s on %s: %s\n", s.Index, s.Operation, s.Collection, s.Counts())
+	}
+}
+
+func duration(ms int64) string { return (time.Duration(ms) * time.Millisecond).String() }
+
+// errWriter keeps the first write error, so the table can be written without
+// checking every line.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	if e.err != nil {
+		return 0, e.err
+	}
+	n, err := e.w.Write(p)
+	e.err = err
+	return n, err
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}

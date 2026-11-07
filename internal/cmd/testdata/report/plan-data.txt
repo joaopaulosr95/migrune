@@ -1,0 +1,11 @@
+Plan: each status is what apply would do. Nothing was committed.
+Database: app
+
+MIGRATION                     KIND  STATUS   DURATION  ERROR
+2026-11-01-003-seed-settings  data  applied  9ms
+  /steps/0 updateOne on settings: matched 0, modified 0, upserted 1
+2026-11-01-004-drop-stale     data  applied  14ms
+  /steps/0 deleteMany on items: deleted 1
+  /steps/1 updateMany on items: matched 2, modified 2, upserted 0
+
+Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 30ms

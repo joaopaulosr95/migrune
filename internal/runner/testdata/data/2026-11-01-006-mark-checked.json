@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-006-mark-checked",
+  "description": "Mark every item as checked",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "checked": { "$ne": true } },
+      "update": { "$set": { "checked": true } }
+    }
+  ]
+}

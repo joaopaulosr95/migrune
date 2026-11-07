@@ -37,7 +37,7 @@ const (
 // transaction starts, since heartbeats wait while it is open: the lock's full
 // expiry, at least its TTL, is left for the transaction. The fence is its
 // first operation, so a runner that lost the lock can't commit. When commit
-// is false, or fn fails, the transaction is aborted on a cleanup
+// is false (plan), or fn fails, the transaction is aborted on a cleanup
 // context, so an interruption still aborts it at once.
 //
 // A transaction that fails with a TransientTransactionError (a write

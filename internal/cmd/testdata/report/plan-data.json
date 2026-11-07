@@ -1,0 +1,57 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-003-seed-settings",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 9,
+      "steps": [
+        {
+          "index": 0,
+          "operation": "updateOne",
+          "collection": "settings",
+          "matched": 0,
+          "modified": 0,
+          "upserted": 1
+        }
+      ]
+    },
+    {
+      "id": "2026-11-01-004-drop-stale",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 14,
+      "steps": [
+        {
+          "index": 0,
+          "operation": "deleteMany",
+          "collection": "items",
+          "deleted": 1
+        },
+        {
+          "index": 1,
+          "operation": "updateMany",
+          "collection": "items",
+          "matched": 2,
+          "modified": 2,
+          "upserted": 0
+        }
+      ]
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 2,
+    "applied": 2,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 30
+  }
+}

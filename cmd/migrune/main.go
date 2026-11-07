@@ -37,8 +37,9 @@ func run() int {
 
 	out, err := cmd.Execute(ctx, os.Args[1:], os.Stdout, os.Stderr)
 
-	// A signal counts only when it interrupted the command: one that lands
-	// after its outcome was decided leaves the exit code to the outcome.
+	// A signal counts only when it interrupted the run: one that lands
+	// after the run, while the report is written, leaves the exit code to
+	// the outcome.
 	var sig os.Signal
 	if out.Interrupted {
 		// The context is only cancelled by a signal, which was also sent
@@ -46,7 +47,10 @@ func run() int {
 		sig = <-first
 	}
 	code := exitCode(err, sig)
-	if err != nil {
+	// When stdout and stderr are the same file, as in a terminal, the report
+	// has already shown the error.
+	var reported *cmd.ReportedError
+	if err != nil && !(errors.As(err, &reported) && sameFile(os.Stdout, os.Stderr)) {
 		printError(os.Stderr, err, code, out.JSONLogs)
 	}
 	return code
@@ -80,6 +84,15 @@ func watchSignals(sigs <-chan os.Signal, exit func(int)) <-chan os.Signal {
 		exit(exitCode(nil, sig))
 	}()
 	return first
+}
+
+func sameFile(a, b *os.File) bool {
+	ai, err := a.Stat()
+	if err != nil {
+		return false
+	}
+	bi, err := b.Stat()
+	return err == nil && os.SameFile(ai, bi)
 }
 
 // exitCode maps the outcome of a run to the process exit code: 128 + the
