@@ -7,12 +7,14 @@ import (
 	"io"
 
 	"github.com/joaopaulosr95/migrune/internal/lint"
+	"github.com/joaopaulosr95/migrune/internal/migration"
+	"github.com/joaopaulosr95/migrune/internal/runner"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type lintOptions struct {
-	dir    string
+	conn   connFlags
 	output string
 }
 
@@ -21,7 +23,10 @@ func (a *app) newLintCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "lint",
 		Short: "Check migration files",
-		Long: `Check migration files offline.
+		Long: `Check migration files offline. With --uri and --db it also compares each
+file's checksum with the changelog of the target database, read-only: a
+migration whose file changed after it was applied is an error, and so is an
+applied migration whose file is missing.
 
 Each finding is printed to stdout on its own line as
 "<file>: <severity>: <rule>: <message>", where severity is error or warning.
@@ -32,19 +37,34 @@ alone exit 0.`,
 		RunE: a.run(func(cmd *cobra.Command, _ []string) error { return a.lint(cmd, o) }),
 	}
 	fs := c.Flags()
-	fs.StringVar(&o.dir, "dir", "", "directory holding the migration files")
+	o.conn.register(fs)
 	findingsOutputFlag(fs, &o.output)
 	return c
 }
 
 func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
-	if o.dir == "" {
+	if o.conn.dir == "" {
 		return &UsageError{Err: errors.New("--dir is required")}
+	}
+	if o.conn.uri != "" && o.conn.db == "" {
+		return &UsageError{Err: errors.New("--db is required with --uri")}
 	}
 	if err := checkFindingsOutput(o.output); err != nil {
 		return err
 	}
-	findings, err := lint.Run(o.dir)
+	// The online check runs only with both --uri and --db.
+	var applied map[string]migration.Applied
+	if o.conn.uri != "" {
+		db, disconnect, err := a.connect(cmd.Context(), o.conn)
+		if err != nil {
+			return err
+		}
+		defer disconnect()
+		if applied, err = runner.Finished(cmd.Context(), db); err != nil {
+			return err
+		}
+	}
+	findings, err := lint.Run(o.conn.dir, applied)
 	if err != nil {
 		return err
 	}

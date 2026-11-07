@@ -30,9 +30,17 @@ images that start on its runners (see
 ```sh
 task replicaset:up     # start it and wait for a primary
 export MIGRUNE_TEST_URI='mongodb://127.0.0.1:27017,127.0.0.1:27018,127.0.0.1:27019/?replicaSet=rs0'
-go test ./...
+go test -p 1 ./...     # one package at a time: tests share server-wide fail points
 task replicaset:down   # stop it and discard its data
 ```
+
+Integration test packages must run one at a time (`-p 1`): some tests change
+server-wide state (fail points, a step-down) that would break another
+package's tests. Each test
+process registers in the `migrune_inttest` database; one that finds another
+process registered fails its integration tests with a message saying so.
+A new package with integration tests calls `inttest.Exclusive` before it
+touches the server, and `inttest.Release` from its `TestMain`.
 
 ### MongoDB doesn't start on Linux 6.19 or later
 
@@ -51,6 +59,24 @@ host.
 
 If you change a command or flag, run `task docs` and commit the regenerated
 `docs/reference/cli/`.
+
+## Changelog and lock formats
+
+Changelog entries and lock documents carry a format version, `v`
+(`runner.EntryVersion`, `runner.LockVersion`), and every command that
+connects refuses a database holding a newer one (see
+[format versions](docs/reference/changelog-and-lock.md#format-versions)).
+`TestFormatGolden` in `internal/runner` pins their shape in
+`internal/runner/testdata/format/`. When it fails, decide whether `v` must go
+up, then rerun it with `go test ./internal/runner -run TestFormatGolden -update`:
+
+- adding an optional field that older runners can safely ignore keeps `v`;
+- changing a field's meaning, making a field required, or changing how reads
+  filter entries or lock documents raises `v`, which is a major release.
+
+`v` doesn't cover the migration file schema. Its guard is that the fixtures in
+`internal/migration/testdata/valid/` are never edited, only added to, so a
+file that loaded before keeps loading.
 
 ## Commits and pull requests
 

@@ -43,7 +43,9 @@ tasks:
     env:
       MIGRUNE_TEST_URI: "{{.TEST_URI}}"
     cmds:
-      - go test -count=1 ./...
+      # One package at a time: tests configure server-wide fail points
+      # (failCommand) and step the primary down.
+      - go test -count=1 -p 1 ./...
 
   test:int:all:
     desc: Run test:int on every tested MongoDB image in turn, stopping at the first failure

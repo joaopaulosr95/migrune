@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-02-001-drop-stale",
+  "description": "Delete stale items",
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": { "stale": true } }]
+}

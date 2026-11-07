@@ -12,12 +12,14 @@ import (
 	"syscall"
 
 	"github.com/joaopaulosr95/migrune/internal/cmd"
+	"github.com/joaopaulosr95/migrune/internal/runner"
 )
 
 const (
-	exitOK      = 0
-	exitFailure = 1
-	exitUsage   = 2
+	exitOK       = 0
+	exitFailure  = 1
+	exitUsage    = 2
+	exitLockHeld = 3
 )
 
 func main() {
@@ -82,7 +84,8 @@ func watchSignals(sigs <-chan os.Signal, exit func(int)) <-chan os.Signal {
 
 // exitCode maps the outcome of a run to the process exit code: 128 + the
 // signal number when sig interrupted the run (sig is nil otherwise), 2 for
-// usage and configuration errors, 1 for any other failure and 0 on success.
+// usage and configuration errors, 3 when another runner holds the migration
+// lock, 1 for any other failure and 0 on success.
 func exitCode(err error, sig os.Signal) int {
 	if s, ok := sig.(syscall.Signal); ok {
 		return 128 + int(s)
@@ -93,6 +96,8 @@ func exitCode(err error, sig os.Signal) int {
 		return exitOK
 	case errors.As(err, &usage):
 		return exitUsage
+	case errors.Is(err, runner.ErrLockHeld):
+		return exitLockHeld
 	default:
 		return exitFailure
 	}

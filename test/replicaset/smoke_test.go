@@ -14,7 +14,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+
+	"github.com/joaopaulosr95/migrune/internal/inttest"
 )
+
+// TestMain releases this test process's hold on the test replica set.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	inttest.Release()
+	os.Exit(code)
+}
 
 func TestReplicaSetSmoke(t *testing.T) {
 	if testing.Short() {
@@ -24,6 +33,7 @@ func TestReplicaSetSmoke(t *testing.T) {
 	if uri == "" {
 		t.Skip("integration test: MIGRUNE_TEST_URI is not set; run `task test:int`")
 	}
+	inttest.Exclusive(t, uri)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

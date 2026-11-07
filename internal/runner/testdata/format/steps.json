@@ -1,0 +1,19 @@
+{
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateOne",
+      "filter": { "_id": 1 },
+      "update": { "$set": { "archived": false } },
+      "options": { "upsert": true }
+    },
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "archived": { "$exists": false } },
+      "update": [{ "$set": { "archived": false } }],
+      "options": { "arrayFilters": [{ "x.done": true }], "hint": { "archived": 1 } }
+    },
+    { "collection": "projects", "operation": "deleteMany", "filter": { "stale": true } }
+  ]
+}

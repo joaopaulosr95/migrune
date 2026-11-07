@@ -43,6 +43,8 @@ const (
 	RuleNested          = "nested-out-merge"
 	RuleServerJS        = "server-js"
 	RuleReserved        = "reserved-collection"
+	RuleChecksum        = "checksum"
+	RuleAppliedMissing  = "applied-missing"
 )
 
 // Finding is one problem found by lint.
@@ -60,16 +62,22 @@ func (f Finding) String() string {
 
 // Run lints every *.json file in dir (subdirectories are not read), and warns
 // on the entries migrune ignores although they may be meant as
-// migrations (migration.IgnoredEntry). Findings are sorted by
+// migrations (migration.IgnoredEntry).
+// When applied is not nil, it maps the id of every migration Finished
+// in the target database to what its latest Finished entry recorded, and a
+// file whose checksum differs is an error, as is an applied id with no
+// file in dir. Findings are sorted by
 // file. Run returns an error only when dir or a file in it can't be read.
-func Run(dir string) ([]Finding, error) {
+func Run(dir string, applied map[string]migration.Applied) ([]Finding, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read migrations directory: %w", err)
 	}
 	var (
-		findings []Finding
-		prefixes = map[string][]string{}
+		findings   []Finding
+		migrations []migration.Migration
+		prefixes   = map[string][]string{}
+		stems      = map[string]bool{}
 	)
 	for _, e := range entries {
 		if reason := migration.IgnoredEntry(e); reason != "" {
@@ -81,6 +89,7 @@ func Run(dir string) ([]Finding, error) {
 		}
 		path := filepath.Join(dir, e.Name())
 		stem := strings.TrimSuffix(e.Name(), ".json")
+		stems[stem] = true
 		_, err := migration.FileDate(stem)
 		ok := err == nil
 		badName := checkFileName(stem, ok)
@@ -101,7 +110,8 @@ func Run(dir string) ([]Finding, error) {
 		}
 		fileFindings := checkFile(path, stem, raw)
 		findings = append(findings, fileFindings...)
-		if _, err := migration.LoadFile(path); err != nil {
+		m, err := migration.LoadFile(path)
+		if err != nil {
 			fs := loadFindings(path, err)
 			if badName != "" || slices.ContainsFunc(fileFindings, func(f Finding) bool { return f.Rule == RuleID }) {
 				// The file-name or id finding already says what the id must
@@ -109,9 +119,13 @@ func Run(dir string) ([]Finding, error) {
 				fs = slices.DeleteFunc(fs, func(f Finding) bool { return f.Rule == RuleSchema && strings.HasPrefix(f.Message, "/id: '") })
 			}
 			findings = append(findings, fs...)
+			continue
 		}
+		migrations = append(migrations, m)
 	}
 	findings = append(findings, duplicatePrefixes(prefixes)...)
+	findings = append(findings, compareChecksums(migrations, applied)...)
+	findings = append(findings, appliedMissing(dir, stems, applied)...)
 	slices.SortStableFunc(findings, func(a, b Finding) int { return strings.Compare(a.File, b.File) })
 	return findings, nil
 }
@@ -183,5 +197,39 @@ func duplicatePrefixes(prefixes map[string][]string) []Finding {
 				"prefix %s is also used by %s; rename the migration that was merged last", p, strings.Join(others, ", "))})
 		}
 	}
+	return out
+}
+
+// compareChecksums reports the migrations whose file changed after they were
+// applied. applied maps a migration id to its latest Finished changelog
+// entry; migrations with only Errored entries aren't in it and may be edited.
+func compareChecksums(migrations []migration.Migration, applied map[string]migration.Applied) []Finding {
+	var out []Finding
+	for _, m := range migrations {
+		a, ok := applied[m.ID]
+		if !ok || a.Checksum == m.Checksum {
+			continue
+		}
+		out = append(out, Finding{File: m.Path, Severity: Error, Rule: RuleChecksum, Message: fmt.Sprintf(
+			"the file changed after the migration was applied: the changelog has checksum %s, the file %s. "+
+				"Applied migrations are immutable: revert the edit and write a new migration", a.Checksum, m.Checksum)})
+	}
+	return out
+}
+
+// appliedMissing reports the migrations Finished in applied with no file in
+// dir, stems being the names of the files found there without .json. Each
+// finding is on the file the migration would have, and says what the
+// changelog stored about it.
+func appliedMissing(dir string, stems map[string]bool, applied map[string]migration.Applied) []Finding {
+	var out []Finding
+	for id, a := range applied {
+		if stems[id] {
+			continue
+		}
+		out = append(out, Finding{File: filepath.Join(dir, id+".json"), Severity: Error, Rule: RuleAppliedMissing, Message: a.MissingContext() + ". Restore the file: removing a file doesn't undo its migration; " +
+			"to retire a migration on purpose, delete its changelog entries by hand"})
+	}
+	slices.SortFunc(out, func(a, b Finding) int { return strings.Compare(a.File, b.File) })
 	return out
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
@@ -134,14 +135,14 @@ func TestRules(t *testing.T) {
 	for _, tc := range cases {
 		dir := filepath.Join("testdata", "rules", tc.rule)
 		t.Run(tc.rule+"/pass", func(t *testing.T) {
-			got, err := Run(filepath.Join(dir, "pass"))
+			got, err := Run(filepath.Join(dir, "pass"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			match(t, render(got), nil)
 		})
 		t.Run(tc.rule+"/fail", func(t *testing.T) {
-			got, err := Run(filepath.Join(dir, "fail"))
+			got, err := Run(filepath.Join(dir, "fail"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -152,7 +153,7 @@ func TestRules(t *testing.T) {
 
 // TestValidMigrations lints the valid fixtures of the migration package.
 func TestValidMigrations(t *testing.T) {
-	got, err := Run(filepath.Join("..", "migration", "testdata", "valid"))
+	got, err := Run(filepath.Join("..", "migration", "testdata", "valid"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +162,7 @@ func TestValidMigrations(t *testing.T) {
 
 // TestExampleMigrations keeps the sample migrations in examples/ lint-clean.
 func TestExampleMigrations(t *testing.T) {
-	got, err := Run(filepath.Join("..", "..", "examples", "migrations"))
+	got, err := Run(filepath.Join("..", "..", "examples", "migrations"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +184,7 @@ func TestFileType(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "2026-11-01-002-big.json"), big, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Run(dir)
+	got, err := Run(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,67 @@ func TestFileType(t *testing.T) {
 }
 
 func TestRunMissingDirectory(t *testing.T) {
-	if _, err := Run(filepath.Join("testdata", "does-not-exist")); err == nil {
+	if _, err := Run(filepath.Join("testdata", "does-not-exist"), nil); err == nil {
 		t.Fatal("Run returned no error")
+	}
+}
+
+// TestChecksums checks the online rules: a file whose checksum differs from
+// its latest Finished changelog entry is an error, and so is a Finished
+// migration with no file.
+func TestChecksums(t *testing.T) {
+	dir := filepath.Join("testdata", "checksum")
+	sum := func(id string) string {
+		m, err := migration.LoadFile(filepath.Join(dir, id+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.Checksum
+	}
+	const (
+		flag  = "2026-11-01-001-set-flag"
+		stale = "2026-11-02-001-drop-stale"
+	)
+	edited := strings.Repeat("0", 64)
+	at := time.Date(2026, 1, 4, 10, 12, 0, 0, time.UTC)
+	applied := func(id, sum string) migration.Applied {
+		return migration.Applied{ID: id, Checksum: sum, Description: "Retired " + id, AppliedAt: at, Runner: "ci-7"}
+	}
+	set := func(as ...migration.Applied) map[string]migration.Applied {
+		m := map[string]migration.Applied{}
+		for _, a := range as {
+			m[a.ID] = a
+		}
+		return m
+	}
+	gone := func(id string) string {
+		return id + `.json: error: applied-missing: Finished 2026-01-04T10:12:00Z by ci-7: "Retired ` + id + `"; ` +
+			`the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "` + id + `"). ` +
+			"Restore the file"
+	}
+	cases := []struct {
+		name    string
+		applied map[string]migration.Applied
+		want    []string
+	}{
+		{name: "offline", applied: nil},
+		{name: "nothing applied", applied: set()},
+		{name: "unchanged", applied: set(applied(flag, sum(flag)), applied(stale, sum(stale)))},
+		{name: "applied but missing", applied: set(applied("2026-10-02-001-gone", edited), applied(flag, sum(flag)), applied("2026-10-01-001-gone", edited)),
+			want: []string{gone("2026-10-01-001-gone"), gone("2026-10-02-001-gone")}},
+		{name: "written by hand without runner or date",
+			applied: set(applied(flag, sum(flag)), migration.Applied{ID: "2026-10-03-001-hand", Checksum: edited, Description: "By hand"}),
+			want:    []string{`2026-10-03-001-hand.json: error: applied-missing: Finished unknown by unknown: "By hand"; the file is not in --dir.`}},
+		{name: "edited after apply", applied: set(applied(flag, edited), applied(stale, sum(stale))),
+			want: []string{flag + ".json: error: checksum: the file changed after the migration was applied: the changelog has checksum " + edited}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Run(dir, tc.applied)
+			if err != nil {
+				t.Fatal(err)
+			}
+			match(t, render(got), tc.want)
+		})
 	}
 }

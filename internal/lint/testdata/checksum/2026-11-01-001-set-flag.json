@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-001-set-flag",
+  "description": "Default flag to false",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } }
+    }
+  ]
+}

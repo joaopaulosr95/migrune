@@ -6,6 +6,10 @@
 # host through the published ports. This works the same on Docker Desktop and
 # on Linux.
 #
+# Test commands are enabled so integration tests can set fail points (e.g.
+# block a command to interrupt a run mid-migration). Never do this in
+# production.
+#
 #   docker compose -f test/replicaset/docker-compose.yaml up -d --wait
 #   export MIGRUNE_TEST_URI='mongodb://127.0.0.1:27017,127.0.0.1:27018,127.0.0.1:27019/?replicaSet=rs0'
 #
@@ -23,7 +27,7 @@ x-mongod: &mongod
 services:
   mongo1:
     <<: *mongod
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--setParameter", "enableTestCommands=1"]
     ports:
       - "127.0.0.1:27017:27017"
       - "127.0.0.1:27018:27018"
@@ -54,10 +58,10 @@ services:
 
   mongo2:
     <<: *mongod
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27018", "--setParameter", "enableTestCommands=1"]
     network_mode: service:mongo1
 
   mongo3:
     <<: *mongod
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27019", "--setParameter", "enableTestCommands=1"]
     network_mode: service:mongo1

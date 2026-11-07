@@ -17,13 +17,19 @@ underscores. `--log-level` is `MIGRUNE_LOG_LEVEL`.
   code 2); the message names the variable but never repeats its value, which
   could be a credential.
 - migrune reads no other variable itself: map your CI's variables onto
-  these.
+  these. The MongoDB driver reads the standard `AWS_*` variables for
+  `MONGODB-AWS` authentication.
+
+Pass the connection string as `MIGRUNE_URI`, not `--uri`: process arguments
+show up in `ps` and in CI logs.
 
 | Variable                     | Flag                  | Commands          | Default                  | Description                                                                                         |
 | ---------------------------- | --------------------- | ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
 | `MIGRUNE_LOG_FORMAT`        | `--log-format`        | all               | `text`                   | Log format on stderr: `text` or `json`.                                                             |
 | `MIGRUNE_LOG_LEVEL`         | `--log-level`         | all               | `info`                   | `debug`, `info`, `warn` or `error`.                                                                 |
 | `MIGRUNE_DIR`               | `--dir`               | lint              | none, required           | Directory holding the migration files.                                                              |
+| `MIGRUNE_URI`               | `--uri`               | lint              | none                     | MongoDB connection string. Enables the online checks (with `--db`).                                 |
+| `MIGRUNE_DB`                | `--db`                | lint              | none; required with `--uri` | Target database name.                                                                            |
 | `MIGRUNE_OUTPUT`            | `--output`, `-o`      | lint              | `text`                   | Findings format on stdout: `text` or `json`; see [lint output](lint-rules.md#output).                |
 
 ## Exit codes
@@ -31,8 +37,9 @@ underscores. `--log-level` is `MIGRUNE_LOG_LEVEL`.
 | Code      | Meaning                                                                                                                         |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | 0         | Success. lint found no errors (warnings are allowed).                                                                           |
-| 1         | Failure. lint found an error, or the migrations directory can't be read.                                                       |
-| 2         | Usage or configuration error, found before any work: an unknown command or flag, a missing required flag, an invalid flag or `MIGRUNE_*` value. |
+| 1         | Failure. lint found an error, such as an applied migration that was edited or is missing; the migrations directory can't be read; the server can't be reached or refuses the credentials; the changelog or lock has a [newer format](changelog-and-lock.md#format-versions). |
+| 2         | Usage or configuration error, found before any work: an unknown command or flag, a missing required flag, an invalid flag or `MIGRUNE_*` value, a `--uri` that isn't a MongoDB connection string (the message never repeats it). |
+| 3         | The migration lock is held by another runner, after the lock wait if any. Nothing ran. See [acquire](changelog-and-lock.md#acquire). |
 | 128 + *n* | Interrupted by signal *n*: 130 for SIGINT (Ctrl+C), 143 for SIGTERM. A second signal exits at once with the first signal's code: 143 for a Ctrl+C after a SIGTERM. See [when a signal counts](#when-a-signal-counts). |
 
 On any error, migrune prints `Error: <message>` to stderr; for exit code 2

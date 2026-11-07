@@ -1,13 +1,18 @@
 # migrune
 
 migrune runs MongoDB migrations. Migrations are Extended JSON files kept next
-to your code; migrune checks them (`lint`).
+to your code; migrune checks them (`lint`), and records each applied one in a
+changelog collection, under a lock.
 
 - **Data migrations**: `updateOne`, `updateMany` and `deleteMany` steps in
   one transaction.
-- **Checked before they run**: lint works offline.
+- **Checked before they run**: lint works offline; with a connection, it
+  also fails on applied migrations that were edited or deleted.
+- **Safe to run from CI**: one runner at a time, the changelog written in the
+  migration's own transaction, applied migrations immutable, graceful
+  shutdown.
 
-See [design](docs/design.md) for why migrune works the way it does.
+See [design](docs/design.md) for how each guarantee works and where it stops.
 
 ## Requirements
 
@@ -65,9 +70,15 @@ migrune lint --dir examples/migrations
 
 ```sh
 migrune lint  --dir migrations   # offline checks
+
+export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
+migrune lint  --dir migrations --db app   # also compares checksums with the changelog
 ```
 
-Every flag can also be set as an environment variable, `MIGRUNE_<FLAG>`.
+With `MIGRUNE_URI` set, `lint` needs `--db` too. Every flag can also be set
+as an environment variable, `MIGRUNE_<FLAG>`; pass the connection string
+through `MIGRUNE_URI` rather than `--uri` so credentials stay out of process
+arguments.
 
 A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 
@@ -90,12 +101,16 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 
 - [Writing migrations](docs/writing-migrations.md): data migrations, and the
   checks they must pass.
-- [Design](docs/design.md): what migrune doesn't guarantee, and why it works
-  the way it does.
+- [Troubleshooting](docs/troubleshooting.md): connection and permission
+  errors, a newer changelog or lock format, edited or missing applied
+  migrations.
+- [Design](docs/design.md): the guarantees, and why migrune works the way it
+  does.
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
   the [migration file](docs/reference/migration-file.md),
-  [lint rules](docs/reference/lint-rules.md).
+  [lint rules](docs/reference/lint-rules.md), the
+  [changelog and lock](docs/reference/changelog-and-lock.md).
 
 ## Contributing
 

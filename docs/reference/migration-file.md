@@ -34,7 +34,7 @@ how to write one, and [lint rules](lint-rules.md) lists every check.
 | Field         | Type   | Required | Description                                                         |
 | ------------- | ------ | -------- | ------------------------------------------------------------------- |
 | `id`          | string | yes      | The file name without `.json`. A different value is an error.       |
-| `description` | string | yes      | What the migration does, not empty.                                 |
+| `description` | string | yes      | What the migration does, not empty. Stored in the changelog.        |
 | `steps`       | array  | yes      | The operations, at least one, run in order.                         |
 
 No other field is allowed, and no object may repeat a key: JSON parsers

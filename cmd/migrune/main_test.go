@@ -16,11 +16,14 @@ import (
 	"time"
 
 	"github.com/joaopaulosr95/migrune/internal/cmd"
+	"github.com/joaopaulosr95/migrune/internal/runner"
 )
 
 func TestExitCode(t *testing.T) {
 	usage := &cmd.UsageError{Err: errors.New("unknown flag: --nope")}
 	failure := errors.New("migration 2026-01-01-001-example failed")
+	held := &runner.LockHeldError{Owner: "ci-42"}
+	interrupted := fmt.Errorf("run: %w", &runner.InterruptedError{Cause: errors.New("terminated signal received")})
 	cases := []struct {
 		name string
 		err  error
@@ -31,10 +34,16 @@ func TestExitCode(t *testing.T) {
 		{name: "failure", err: failure, want: 1},
 		{name: "usage error", err: usage, want: 2},
 		{name: "wrapped usage error", err: fmt.Errorf("lint: %w", usage), want: 2},
+		{name: "lock held", err: held, want: 3},
+		{name: "lock held after a wait", err: fmt.Errorf("%w; gave up after waiting 1m0s", held), want: 3},
+		{name: "lock lost", err: runner.ErrLockLost, want: 1},
+		{name: "SIGTERM while waiting for the lock", err: held, sig: syscall.SIGTERM, want: 143},
 		{name: "SIGINT", sig: syscall.SIGINT, want: 130},
 		{name: "SIGTERM", sig: syscall.SIGTERM, want: 143},
 		{name: "SIGTERM wins over failure", err: failure, sig: syscall.SIGTERM, want: 143},
 		{name: "SIGINT wins over usage error", err: usage, sig: syscall.SIGINT, want: 130},
+		{name: "interrupted run on SIGTERM", err: interrupted, sig: syscall.SIGTERM, want: 143},
+		{name: "interrupted run on SIGINT", err: interrupted, sig: syscall.SIGINT, want: 130},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

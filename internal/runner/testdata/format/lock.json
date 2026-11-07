@@ -1,0 +1,24 @@
+{
+  "_id": "migrations",
+  "v": {
+    "$numberInt": "1"
+  },
+  "token": "9f86d081884c7d659a2feaa0c55ad015",
+  "owner": "ci-42-1-AB12CD34",
+  "current": "2026-11-01-001-seed-currencies-and-plans",
+  "acquiredAt": {
+    "$date": {
+      "$numberLong": "1794096602010"
+    }
+  },
+  "lastHeartbeat": {
+    "$date": {
+      "$numberLong": "1794096687010"
+    }
+  },
+  "expiresAt": {
+    "$date": {
+      "$numberLong": "1794096777010"
+    }
+  }
+}

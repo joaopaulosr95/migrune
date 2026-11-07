@@ -8,13 +8,15 @@ assumptions.
 
 ```txt
 cmd/migrune/          package main: signal handling, exit codes, the final error (text or a JSON log record)
-internal/cmd/          cobra commands, env binding, slog setup
+internal/cmd/          cobra commands, env binding, slog setup, connection
 internal/cmd/gendocs/  CLI reference generator (not part of the binary)
+internal/inttest/      keeps integration test packages from sharing the replica set (fails them without -p 1)
 internal/migration/    load, validate (embedded schema.json) and parse migration files
 internal/lint/         offline lint: per-file rules
-test/replicaset/       3-node replica set for integration tests (image from MONGO_IMAGE), smoke test
-docs/                  writing-migrations, design;
-                       reference/ (migration file, lint rules, env and exit codes; cli/ is generated)
+internal/runner/       lock, heartbeat and fence, changelog, format versions (v), graceful shutdown
+test/replicaset/       3-node replica set for integration tests (test commands on, for fail points; image from MONGO_IMAGE), smoke test
+docs/                  writing-migrations, troubleshooting, design;
+                       reference/ (migration file, lint rules, changelog and lock, env and exit codes; cli/ is generated)
 examples/              migrations/ (a data migration)
 .github/workflows/     ci.yml (PRs, reusable), release.yml (main)
 ```
@@ -39,15 +41,20 @@ Done means `task lint test test:int:all` passes.
 
 - Dependencies: cobra/pflag, mongo-driver v2, jsonschema v6, stdlib. Ask before adding any other.
 - Every flag is also `MIGRUNE_<FLAG>`; precedence is flag > env > default. No viper.
-- Logs: `log/slog` to stderr. Findings go to stdout.
-- Exit codes: 0 ok, 1 failure, 2 usage/config (`*cmd.UsageError`), 128+n when a signal
-  interrupted the command (not one after it).
+- Logs: `log/slog` to stderr. Findings go to stdout. Never log or echo the URI.
+- Exit codes: 0 ok, 1 failure, 2 usage/config (`*cmd.UsageError`), 3 lock held
+  (`runner.ErrLockHeld`), 128+n when a signal interrupted the command (not one after it).
 - Tests: table tests, fixtures under `testdata/`, no mocks of the mongo driver.
   Integration tests skip under `-short` or without `MIGRUNE_TEST_URI`, and use a fresh database each.
 - Commits and PR titles: Conventional Commits.
 - A breaking change to a stable interface (commands, flags, exit codes, migration schema,
-  JSON output, images) is a major release.
+  changelog/lock formats, JSON output, images) is a major release.
 - Docs describe the code as built. When behaviour, a flag or the output changes, update
   `docs/reference/` and the guide that covers it (and `task docs` for the CLI pages) in the
   same change. Explain each fact in one place and link to it; don't repeat it across pages.
 - `examples/migrations/` must pass `migrune lint`.
+- Changelog and lock formats: `TestFormatGolden` (`internal/runner/testdata/format/`) pins them.
+  An optional field older runners can ignore keeps `v`; a changed meaning, a newly required
+  field or a changed read filter raises `v`, which is a major release (CONTRIBUTING,
+  "Changelog and lock formats"). Existing fixtures in `internal/migration/testdata/valid/`
+  are never edited, only added to.

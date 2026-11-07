@@ -44,6 +44,12 @@ they aren't idempotent.
   rename a field or change its type, add a new field in one release and stop
   using the old one in a later release (expand, then contract).
 - **Be idempotent.** A migration must change nothing when run a second time.
+- **Never edit an applied migration.** Once a migration is `Finished` in a
+  database, lint with a connection fails on an edited file. Write a new
+  migration. A migration with only `Errored` entries can be fixed in place.
+- **Never delete or rename an applied migration's file.** Removing it doesn't
+  undo it, and lint with a connection fails until it is back (see
+  [troubleshooting](troubleshooting.md#applied-but-missing)).
 - **Keep the file's bytes as committed.** The checksum covers every byte,
   so a checkout that converts line endings, or a formatter that reflows the
   file or adds a final newline, makes an applied migration look edited in
@@ -62,6 +68,7 @@ Check every migration before you commit it:
 
 ```sh
 migrune lint --dir migrations
+MIGRUNE_URI='mongodb://…' migrune lint --dir migrations --db app
 ```
 
 ## Data migrations

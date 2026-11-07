@@ -4,6 +4,10 @@
 directory, offline. Subdirectories are not read; lint warns about them
 (`ignored-entry`).
 
+With `--uri` and `--db`, lint also reads the target database's changelog,
+read-only, and runs the `checksum` and `applied-missing` rules. `--uri` without `--db` is a usage
+error; `--db` alone keeps lint offline.
+
 ## Output
 
 Each finding is printed to stdout on its own line:
@@ -53,3 +57,21 @@ exit 0. A usage or configuration problem, such as a missing `--dir`, exits 2 (se
 | `nested-out-merge`    | error    | `$out` or `$merge` appears in a nested pipeline: `$lookup.pipeline`, `$unionWith.pipeline` or a `$facet` output, at any depth |
 | `server-js`           | error    | a step uses `$where`, `$function` or `$accumulator`, at any depth: they run JavaScript on the server, which migrune can't check, which is slow, often disabled, and deprecated from MongoDB 8.0 |
 | `reserved-collection` | error    | a pipeline reads or writes a [reserved collection](migration-file.md#reserved-collections) (`migrations_changelog`, `migrations_lock` or `system.*`): the `from` of `$lookup` or `$graphLookup`, the collection of `$unionWith`, or the target of `$out`, at any depth. A reserved step `collection` is a `schema` finding |
+| `checksum`            | error    | online only: the migration is `Finished` in the target database and its file changed since; edit a migration with only `Errored` entries instead, or write a new one |
+| `applied-missing`     | error    | online only: a migration is `Finished` in the target database but its file isn't in the directory. The finding is on the file it would have, `<dir>/<id>.json`, and gives what its latest `Finished` entry stored: when and by which runner it was applied, and its description. To retire a migration on purpose, delete its changelog entries by hand |
+
+An `applied-missing` finding looks like this, on one line:
+
+```txt
+migrations/2026-10-01-001-gone.json: error: applied-missing: Finished 2026-01-04T10:12:00Z by ci-7: "Backfill the flag"; the file is not in --dir. The full migration is stored in migrations_changelog (migrationId: "2026-10-01-001-gone"). Restore the file: removing a file doesn't undo its migration; to retire a migration on purpose, delete its changelog entries by hand
+```
+
+To fix it, see [troubleshooting](../troubleshooting.md#applied-but-missing).
+
+Each problem is reported once: the rules above check only what the schema
+can't express. A step whose operation is unknown gets one `schema` finding
+on its `operation`, not one per field the operation doesn't take. A bad `id`
+gets one finding: `file-name` when the file name is bad too, otherwise `id`
+when it differs from the file name, and only then `schema` for breaking the
+id pattern.
+

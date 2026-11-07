@@ -91,7 +91,7 @@ func newApp(stdout, stderr io.Writer) *app {
 
 Every flag can also be set through an environment variable named
 MIGRUNE_<FLAG>, in upper case with dashes replaced by underscores
-(for example MIGRUNE_DIR or MIGRUNE_LOG_LEVEL). A flag given on the
+(for example MIGRUNE_URI or MIGRUNE_LOG_LEVEL). A flag given on the
 command line wins over the environment variable, which wins over the default.`,
 		Version:           Version(),
 		SilenceErrors:     true,
