@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-001-bad-oid",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": {
+        "_id": {
+          "$oid": "not-an-object-id"
+        }
+      }
+    }
+  ]
+}

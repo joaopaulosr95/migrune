@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-001-valid-oid",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": {
+        "_id": {
+          "$oid": "64b7f0c2a1b2c3d4e5f60718"
+        }
+      }
+    }
+  ]
+}

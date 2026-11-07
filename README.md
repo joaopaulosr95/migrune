@@ -1,10 +1,11 @@
 # migrune
 
 migrune runs MongoDB migrations. Migrations are Extended JSON files kept next
-to your code.
+to your code; migrune checks them (`lint`).
 
 - **Data migrations**: `updateOne`, `updateMany` and `deleteMany` steps in
   one transaction.
+- **Checked before they run**: lint works offline.
 
 See [design](docs/design.md) for why migrune works the way it does.
 
@@ -52,7 +53,19 @@ docker run --rm ghcr.io/joaopaulosr95/migrune:latest --help
 
 Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI.
 
+## Try it
+
+[`examples/migrations/`](examples/migrations/) has a sample migration:
+
+```sh
+migrune lint --dir examples/migrations
+```
+
 ## Usage
+
+```sh
+migrune lint  --dir migrations   # offline checks
+```
 
 Every flag can also be set as an environment variable, `MIGRUNE_<FLAG>`.
 
@@ -81,7 +94,8 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
   the way it does.
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
-  the [migration file](docs/reference/migration-file.md).
+  the [migration file](docs/reference/migration-file.md),
+  [lint rules](docs/reference/lint-rules.md).
 
 ## Contributing
 

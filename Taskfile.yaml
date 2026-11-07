@@ -28,7 +28,7 @@ tasks:
       - CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/joaopaulosr95/migrune/internal/cmd.version={{.VERSION}}" -o dist/migrune ./cmd/migrune
 
   dev:
-    desc: "Run migrune from source, e.g. task dev -- --version"
+    desc: "Run migrune from source, e.g. task dev -- lint --dir migrations"
     cmds:
       - go run ./cmd/migrune {{.CLI_ARGS}}
 

@@ -1,0 +1,2 @@
+# These fixtures test line endings and byte order marks: keep their bytes.
+*.json -text

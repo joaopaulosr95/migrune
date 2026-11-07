@@ -30,7 +30,7 @@ func TestExitCode(t *testing.T) {
 		{name: "success", want: 0},
 		{name: "failure", err: failure, want: 1},
 		{name: "usage error", err: usage, want: 2},
-		{name: "wrapped usage error", err: fmt.Errorf("flags: %w", usage), want: 2},
+		{name: "wrapped usage error", err: fmt.Errorf("lint: %w", usage), want: 2},
 		{name: "SIGINT", sig: syscall.SIGINT, want: 130},
 		{name: "SIGTERM", sig: syscall.SIGTERM, want: 143},
 		{name: "SIGTERM wins over failure", err: failure, sig: syscall.SIGTERM, want: 143},
@@ -128,6 +128,7 @@ func TestPrintError(t *testing.T) {
 // by the flag or the environment, and nothing else on stderr.
 func TestFinalError(t *testing.T) {
 	bin := buildMigrune(t)
+	missing := t.TempDir() + "/missing"
 	cases := []struct {
 		name string
 		args []string
@@ -138,9 +139,11 @@ func TestFinalError(t *testing.T) {
 		msg  string
 		json bool
 	}{
-		{name: "text usage error", args: []string{"--nope"}, code: 2, msg: "unknown flag: --nope"},
-		{name: "json usage error", args: []string{"--log-format", "json", "--nope"}, code: 2, msg: "unknown flag: --nope", json: true},
-		{name: "json unknown flag", args: []string{"--nope"}, env: "json", code: 2, msg: "unknown flag: --nope", json: true},
+		{name: "text failure", args: []string{"lint", "--dir", missing}, code: 1, msg: "migrations directory"},
+		{name: "text usage error", args: []string{"lint"}, code: 2, msg: "--dir is required"},
+		{name: "json failure", args: []string{"lint", "--dir", missing, "--log-format", "json"}, code: 1, msg: "migrations directory", json: true},
+		{name: "json usage error", args: []string{"lint"}, env: "json", code: 2, msg: "--dir is required", json: true},
+		{name: "json unknown flag", args: []string{"lint", "--nope"}, env: "json", code: 2, msg: "unknown flag: --nope", json: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,18 +1,18 @@
 # Migration file
 
-A migration is one JSON file in the migrations directory. This page
+A migration is one JSON file in the migrations directory (`--dir`). This page
 describes the format; [writing migrations](../writing-migrations.md) explains
-how to write one.
+how to write one, and [lint rules](lint-rules.md) lists every check.
 
 ## Which files are read
 
-- Every `*.json` file directly in the directory. Subdirectories and other files
-  are ignored. migrune warns about a subdirectory, and about a
+- Every `*.json` file directly in `--dir`. Subdirectories and other files
+  are ignored. lint warns about a subdirectory, and about a
   file whose extension is close to `.json`, such as `.JSON`, `.json5` or
-  `.jsonc`: it may be a migration that would never run.
+  `.jsonc` (`ignored-entry`): it may be a migration that would never run.
 - Each must be a regular file of at most 1 MiB (1,048,576 bytes). A
-  symbolic link or a larger file fails to load: the checksum then always
-  covers the file in the directory.
+  symbolic link or a larger file fails to load (`regular-file`,
+  `file-size`): the checksum then always covers the file in the directory.
 - The file name, without `.json`, is the migration **id**:
   `YYYY-MM-DD-NNN-slug`. The date must be a real date, `NNN` is three
   digits, and the slug is lower-case letters and digits in words separated
@@ -20,9 +20,12 @@ how to write one.
 - Migrations run in id order, so the date and `NNN` order them.
 - A file's date only orders it: a file dated after today runs like any
   other.
+- The `YYYY-MM-DD-NNN` prefix must be unique in the directory
+  (`duplicate-prefix`).
 - The **checksum** of a migration is the SHA-256, in lowercase hex, of the
-  file's bytes. Any byte counts, whitespace and line endings included, and
-  a file with a byte order mark fails to load. Keep
+  file's bytes. Any byte counts, whitespace and line endings included, so
+  lint requires LF line endings and no UTF-8 byte order mark
+  (`line-endings`), and a file with a byte order mark fails to load. Keep
   git and formatters from rewriting migration files: see
   [writing migrations](../writing-migrations.md#rules-for-every-migration).
 
@@ -36,7 +39,7 @@ how to write one.
 
 No other field is allowed, and no object may repeat a key: JSON parsers
 disagree on which value wins, so the file fails to load, naming the key's
-JSON pointer. Values anywhere in the file are
+JSON pointer (`duplicate-key`). Values anywhere in the file are
 [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/),
 canonical or relaxed: `{"$oid": "..."}`, `{"$date": "..."}`,
 `{"$numberLong": "..."}`, `{"$numberDecimal": "..."}` and so on. A malformed
@@ -61,7 +64,7 @@ copy them elsewhere. This applies wherever a collection is named:
 - the `from` of `$lookup` and `$graphLookup`, the collection of `$unionWith`
   (its string form or its `coll`), and the target of any `$out`, at any
   depth of a pipeline, `$facet` and nested pipelines included: the
-  file fails to load.
+  file fails to load, and lint reports it (`reserved-collection`).
 
 ## Data steps
 
@@ -90,8 +93,10 @@ migrune validates every file against a [JSON Schema](https://json-schema.org/dra
 Point your editor at it for completion and inline errors. It owns
 everything it can express: the fields of each step, the allowed operations,
 and no `$out` or `$merge` stage in an update
-pipeline. The checks a schema can't express, such as Extended JSON values,
-the file name's date and the reserved collections a pipeline reads or
-writes, are made in code whenever the files are loaded.
+pipeline, so each problem is reported once, as a `schema` finding in lint.
+The checks a schema can't express, such as nested pipelines, Extended JSON
+values, the file name and the prefix, are [lint](lint-rules.md) code;
+the reserved collections a pipeline reads or writes are also checked
+whenever the files are loaded.
 
 [`examples/migrations/`](../../examples/migrations/) has an example migration.

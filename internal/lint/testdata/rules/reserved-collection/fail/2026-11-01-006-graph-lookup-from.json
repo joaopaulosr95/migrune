@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-006-graph-lookup-from",
+  "description": "Walk the users of the database",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$graphLookup": { "from": "system.users", "startWith": "$owner", "connectFromField": "user", "connectToField": "user", "as": "users" } }
+      ]
+    }
+  ]
+}

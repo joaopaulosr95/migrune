@@ -1,0 +1,9 @@
+{
+  "id": "2026-11-01-001-filtered",
+  "description": "Filtered deletes and updates, and an updateOne seed with an empty filter",
+  "steps": [
+    { "collection": "sessions", "operation": "deleteMany", "filter": { "expired": true } },
+    { "collection": "items", "operation": "updateMany", "filter": { "flag": { "$exists": false } }, "update": { "$set": { "flag": false } } },
+    { "collection": "settings", "operation": "updateOne", "filter": {}, "update": { "$setOnInsert": { "theme": "light" } }, "options": { "upsert": true } }
+  ]
+}

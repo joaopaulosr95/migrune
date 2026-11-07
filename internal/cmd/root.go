@@ -32,6 +32,11 @@ type app struct {
 	logFormat string
 	logLevel  string
 
+	// running is set once a command body starts. Any error returned before
+	// that point comes from cobra or from the pre-run setup, so it is a usage
+	// or configuration error.
+	running bool
+
 	// interrupted records whether the context was cancelled by the time
 	// the command's outcome was decided. See settle.
 	interrupted bool
@@ -49,8 +54,9 @@ type Outcome struct {
 	JSONLogs bool
 }
 
-// Execute runs migrune with the given arguments. It returns nil on success
-// and a *UsageError for usage and configuration problems.
+// Execute runs migrune with the given arguments. It returns nil on success,
+// a *UsageError for usage and configuration problems, and any other error when
+// a command fails.
 func Execute(ctx context.Context, args []string, stdout, stderr io.Writer) (Outcome, error) {
 	a := newApp(stdout, stderr)
 	err := a.execute(ctx, args)
@@ -85,7 +91,7 @@ func newApp(stdout, stderr io.Writer) *app {
 
 Every flag can also be set through an environment variable named
 MIGRUNE_<FLAG>, in upper case with dashes replaced by underscores
-(for example MIGRUNE_LOG_LEVEL). A flag given on the
+(for example MIGRUNE_DIR or MIGRUNE_LOG_LEVEL). A flag given on the
 command line wins over the environment variable, which wins over the default.`,
 		Version:           Version(),
 		SilenceErrors:     true,
@@ -99,6 +105,7 @@ command line wins over the environment variable, which wins over the default.`,
 	pf.StringVar(&a.logFormat, "log-format", "text", "log format: text or json")
 	pf.StringVar(&a.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 
+	root.AddCommand(a.newLintCmd())
 	// cobra adds these when it executes; adding them now puts them in the
 	// generated CLI reference too.
 	root.InitDefaultCompletionCmd()
@@ -114,10 +121,8 @@ func (a *app) execute(ctx context.Context, args []string) error {
 	if err == nil {
 		return nil
 	}
-	// Every error comes from cobra or from the pre-run setup, so it is a
-	// usage or configuration error.
 	var usage *UsageError
-	if !errors.As(err, &usage) {
+	if !a.running && !errors.As(err, &usage) {
 		return &UsageError{Err: err}
 	}
 	return err
@@ -140,6 +145,15 @@ func (a *app) preRun(cmd *cobra.Command, _ []string) error {
 	}
 	a.log = log
 	return nil
+}
+
+// run wraps a command body so that errors it returns are classified as
+// command failures rather than usage errors.
+func (a *app) run(fn func(cmd *cobra.Command, args []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		a.running = true
+		return fn(cmd, args)
+	}
 }
 
 func newLogger(w io.Writer, format, level string) (*slog.Logger, error) {

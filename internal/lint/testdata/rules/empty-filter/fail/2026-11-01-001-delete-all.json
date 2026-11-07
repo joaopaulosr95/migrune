@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-01-001-delete-all",
+  "description": "Delete every session",
+  "steps": [{ "collection": "sessions", "operation": "deleteMany", "filter": {} }]
+}

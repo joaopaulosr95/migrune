@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-01-002-update-all",
+  "description": "Reset every flag, after a filtered step",
+  "steps": [
+    { "collection": "items", "operation": "updateMany", "filter": { "flag": { "$exists": false } }, "update": { "$set": { "flag": false } } },
+    { "collection": "items", "operation": "updateMany", "filter": {}, "update": { "$set": { "flag": false } } }
+  ]
+}

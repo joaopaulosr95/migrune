@@ -1,0 +1,26 @@
+{
+  "id": "2026-11-01-009-merge-in-update",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "label": { "$exists": false } },
+      "update": [
+        {
+          "$set": {
+            "a": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "projects",
+            "on": "_id",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

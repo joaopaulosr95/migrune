@@ -1,0 +1,21 @@
+{
+  "id": "2026-11-01-003-out-in-update",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "label": { "$exists": false } },
+      "update": [
+        {
+          "$set": {
+            "a": 1
+          }
+        },
+        {
+          "$out": "x"
+        }
+      ]
+    }
+  ]
+}

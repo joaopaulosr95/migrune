@@ -1,0 +1,30 @@
+{
+  "id": "2026-11-01-002-function-update",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "slug": {
+          "$exists": false
+        }
+      },
+      "update": [
+        {
+          "$set": {
+            "slug": {
+              "$function": {
+                "body": "function(n) { return n.toLowerCase() }",
+                "args": [
+                  "$name"
+                ],
+                "lang": "js"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

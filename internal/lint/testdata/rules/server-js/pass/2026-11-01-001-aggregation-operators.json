@@ -1,0 +1,25 @@
+{
+  "id": "2026-11-01-001-aggregation-operators",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "slug": {
+          "$exists": false
+        }
+      },
+      "update": [
+        {
+          "$set": {
+            "slug": {
+              "$toLower": "$name"
+            },
+            "where": "$function"
+          }
+        }
+      ]
+    }
+  ]
+}

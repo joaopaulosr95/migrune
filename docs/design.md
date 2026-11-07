@@ -8,8 +8,8 @@ way it does.
 - **Compatibility with your code.** Every migration must work with the code
   running before and after the deploy; reviews and expand/contract ensure
   that, not migrune.
-- **Correct values.** migrune checks a migration's shape, not that it
-  computes the right values.
+- **Correct values.** lint checks a migration's shape, not that it computes
+  the right values.
 - **Changes migrune can't express.** Dropping or renaming collections,
   creating collections with options or views, and inserting documents happen
   out of band. Record them in a migration's description or in your deploy
@@ -22,8 +22,8 @@ way it does.
 Most MongoDB migration tools run code. migrune runs declarative Extended JSON
 steps, each naming a collection, an operation and its native arguments.
 
-- **Files are checked offline.** A file can be validated without running
-  it, in a pull request with no database and no credentials.
+- **Lint works offline.** A file can be validated without running it, in a
+  pull request with no database and no credentials.
 - **Reviewers approve data, not code.** A reviewer sees exactly the filter,
   update and pipeline that will run with write access to production, with no
   hidden helper.
@@ -46,7 +46,7 @@ itself; the server does that when the migration runs.
 ## Why there are no rollbacks
 
 Migrations are forward-only. To undo one, write a new migration that does the
-opposite; it is checked and reviewed like any other.
+opposite; it goes through lint like any other.
 
 Down migrations promise more than they deliver. They can't restore what a
 `$unset`, a `deleteMany` or a lossy conversion destroyed; they are rarely

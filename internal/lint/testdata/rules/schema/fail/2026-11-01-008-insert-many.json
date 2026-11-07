@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-008-insert-many",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "settings",
+      "operation": "insertMany",
+      "documents": [
+        {
+          "theme": "light"
+        }
+      ]
+    }
+  ]
+}

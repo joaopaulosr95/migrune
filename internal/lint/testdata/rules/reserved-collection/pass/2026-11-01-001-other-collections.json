@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-001-other-collections",
+  "description": "Read other collections, whose names only look like reserved ones",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$lookup": { "from": "migrations_changelog_archive", "pipeline": [], "as": "archive" } },
+        { "$unionWith": { "coll": "systems", "pipeline": [] } },
+        { "$facet": { "x": [{ "$graphLookup": { "from": "owners.system", "startWith": "$o", "connectFromField": "a", "connectToField": "b", "as": "c" } }] } }
+      ]
+    }
+  ]
+}

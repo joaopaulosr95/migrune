@@ -1,0 +1,187 @@
+// Package lint checks migration files offline.
+//
+// Every file in the migrations directory is checked on its own (file name,
+// schema, Extended JSON, pipeline rules), then the files are checked together:
+// prefix uniqueness.
+package lint
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/joaopaulosr95/migrune/internal/migration"
+)
+
+// Severity tells whether a finding fails the lint.
+type Severity string
+
+const (
+	// Error fails the lint.
+	Error Severity = "error"
+	// Warning is reported but doesn't fail the lint.
+	Warning Severity = "warning"
+)
+
+// Rules reported by lint. docs/reference/lint-rules.md describes each one.
+const (
+	RuleFileName        = "file-name"
+	RuleIgnoredEntry    = "ignored-entry"
+	RuleJSON            = "json"
+	RuleLineEndings     = "line-endings"
+	RuleExtendedJSON    = "extended-json"
+	RuleSchema          = "schema"
+	RuleID              = "id"
+	RuleDuplicatePrefix = "duplicate-prefix"
+	RuleDuplicateKey    = "duplicate-key"
+	RuleRegularFile     = "regular-file"
+	RuleFileSize        = "file-size"
+	RuleEmptyFilter     = "empty-filter"
+	RuleNested          = "nested-out-merge"
+	RuleServerJS        = "server-js"
+	RuleReserved        = "reserved-collection"
+)
+
+// Finding is one problem found by lint.
+type Finding struct {
+	File     string   `json:"file"`
+	Severity Severity `json:"severity"`
+	Rule     string   `json:"rule"`
+	Message  string   `json:"message"`
+}
+
+// String renders the finding as "<file>: <severity>: <rule>: <message>".
+func (f Finding) String() string {
+	return fmt.Sprintf("%s: %s: %s: %s", f.File, f.Severity, f.Rule, f.Message)
+}
+
+// Run lints every *.json file in dir (subdirectories are not read), and warns
+// on the entries migrune ignores although they may be meant as
+// migrations (migration.IgnoredEntry). Findings are sorted by
+// file. Run returns an error only when dir or a file in it can't be read.
+func Run(dir string) ([]Finding, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read migrations directory: %w", err)
+	}
+	var (
+		findings []Finding
+		prefixes = map[string][]string{}
+	)
+	for _, e := range entries {
+		if reason := migration.IgnoredEntry(e); reason != "" {
+			findings = append(findings, Finding{File: filepath.Join(dir, e.Name()), Severity: Warning, Rule: RuleIgnoredEntry, Message: "not read by lint: " + reason})
+			continue
+		}
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		stem := strings.TrimSuffix(e.Name(), ".json")
+		_, err := migration.FileDate(stem)
+		ok := err == nil
+		badName := checkFileName(stem, ok)
+		if badName != "" {
+			findings = append(findings, Finding{File: path, Severity: Error, Rule: RuleFileName, Message: badName})
+		}
+		if migration.IDPattern.MatchString(stem) {
+			p := stem[:len("YYYY-MM-DD-NNN")]
+			prefixes[p] = append(prefixes[p], path)
+		}
+		raw, err := migration.ReadFile(path)
+		if errors.Is(err, migration.ErrNotRegular) || errors.Is(err, migration.ErrTooLarge) {
+			findings = append(findings, loadFindings(path, err)...)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		fileFindings := checkFile(path, stem, raw)
+		findings = append(findings, fileFindings...)
+		if _, err := migration.LoadFile(path); err != nil {
+			fs := loadFindings(path, err)
+			if badName != "" || slices.ContainsFunc(fileFindings, func(f Finding) bool { return f.Rule == RuleID }) {
+				// The file-name or id finding already says what the id must
+				// be; the schema's id pattern finding would say it twice.
+				fs = slices.DeleteFunc(fs, func(f Finding) bool { return f.Rule == RuleSchema && strings.HasPrefix(f.Message, "/id: '") })
+			}
+			findings = append(findings, fs...)
+		}
+	}
+	findings = append(findings, duplicatePrefixes(prefixes)...)
+	slices.SortStableFunc(findings, func(a, b Finding) int { return strings.Compare(a.File, b.File) })
+	return findings, nil
+}
+
+func checkFileName(stem string, validDate bool) string {
+	if !migration.IDPattern.MatchString(stem) {
+		return "file name must be YYYY-MM-DD-NNN-slug.json, with a slug of lowercase letters and digits in dash-separated words"
+	}
+	if !validDate {
+		return fmt.Sprintf("file name date %s is not a valid date", stem[:len(migration.DateLayout)])
+	}
+	return ""
+}
+
+// loadFindings turns an error from migration.LoadFile into findings.
+func loadFindings(path string, err error) []Finding {
+	var se *migration.SchemaError
+	if errors.As(err, &se) {
+		var out []Finding
+		for _, v := range se.Violations {
+			ptr := v.Pointer
+			if ptr == "" {
+				ptr = "(root)"
+			}
+			out = append(out, Finding{File: path, Severity: Error, Rule: RuleSchema, Message: ptr + ": " + v.Message})
+		}
+		return out
+	}
+	var re *migration.ReservedCollectionError
+	if errors.As(err, &re) {
+		var out []Finding
+		for _, v := range re.Violations {
+			out = append(out, Finding{File: path, Severity: Error, Rule: RuleReserved, Message: v.Pointer + ": " + v.Message})
+		}
+		return out
+	}
+	rule := RuleSchema
+	switch {
+	case errors.Is(err, migration.ErrBOM):
+		return []Finding{{File: path, Severity: Error, Rule: RuleLineEndings, Message: "the file starts with a UTF-8 byte order mark (BOM): " + checksumAdvice}}
+	case errors.Is(err, migration.ErrInvalidJSON):
+		rule = RuleJSON
+	case errors.Is(err, migration.ErrInvalidExtendedJSON):
+		rule = RuleExtendedJSON
+	case errors.Is(err, migration.ErrDuplicateKey):
+		rule = RuleDuplicateKey
+	case errors.Is(err, migration.ErrNotRegular):
+		rule = RuleRegularFile
+	case errors.Is(err, migration.ErrTooLarge):
+		rule = RuleFileSize
+	}
+	return []Finding{{File: path, Severity: Error, Rule: rule, Message: strings.TrimPrefix(err.Error(), path+": ")}}
+}
+
+func duplicatePrefixes(prefixes map[string][]string) []Finding {
+	var out []Finding
+	for p, paths := range prefixes {
+		if len(paths) < 2 {
+			continue
+		}
+		for _, path := range paths {
+			var others []string
+			for _, o := range paths {
+				if o != path {
+					others = append(others, filepath.Base(o))
+				}
+			}
+			out = append(out, Finding{File: path, Severity: Error, Rule: RuleDuplicatePrefix, Message: fmt.Sprintf(
+				"prefix %s is also used by %s; rename the migration that was merged last", p, strings.Join(others, ", "))})
+		}
+	}
+	return out
+}

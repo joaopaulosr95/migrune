@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ type file struct {
 
 // DateLayout is the layout of the date a migration id starts with.
 const DateLayout = "2006-01-02"
+
+// IDPattern is the migration file schema's pattern for ids, which are also
+// file name stems.
+var IDPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d{3}-[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Dir is what LoadDir found in a migrations directory.
 type Dir struct {

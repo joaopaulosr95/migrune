@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-01-001-same-key-in-other-objects",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "projects", "operation": "updateMany", "filter": { "x": 1 }, "update": { "$set": { "x": 2 } } },
+    { "collection": "projects", "operation": "updateMany", "filter": { "x": 2 }, "update": [{ "$set": { "x": 3 } }, { "$set": { "x": 4 } }] }
+  ]
+}

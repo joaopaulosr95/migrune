@@ -1,0 +1,22 @@
+{
+  "id": "2026-11-01-004-in-update-pipeline",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": { "label": { "$exists": false } },
+      "update": [
+        {
+          "$facet": {
+            "x": [
+              {
+                "$out": "y"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

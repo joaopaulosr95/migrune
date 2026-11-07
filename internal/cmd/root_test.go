@@ -6,9 +6,15 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+// passDir holds migrations that lint without findings.
+var passDir = filepath.Join("..", "lint", "testdata", "rules", "nested-out-merge", "pass")
 
 func TestEnvPrecedence(t *testing.T) {
 	cases := []struct {
@@ -17,17 +23,18 @@ func TestEnvPrecedence(t *testing.T) {
 		env   map[string]string
 		flag  string
 		want  string
-		usage bool // whether preRun must return a *UsageError
+		usage bool // whether Execute must return a *UsageError
 	}{
-		{name: "default", flag: "log-level", want: "info"},
-		{name: "env over default", env: map[string]string{"MIGRUNE_LOG_FORMAT": "json"}, flag: "log-format", want: "json"},
-		{name: "flag over env", args: []string{"--log-format", "text"}, env: map[string]string{"MIGRUNE_LOG_FORMAT": "json"}, flag: "log-format", want: "text"},
-		{name: "flag from env", env: map[string]string{"MIGRUNE_LOG_LEVEL": "debug"}, flag: "log-level", want: "debug"},
-		{name: "log level flag over env", args: []string{"--log-level", "warn"}, env: map[string]string{"MIGRUNE_LOG_LEVEL": "debug"}, flag: "log-level", want: "warn"},
-		{name: "flag default", flag: "log-format", want: "text"},
-		{name: "invalid log level from env", env: map[string]string{"MIGRUNE_LOG_LEVEL": "loud"}, usage: true},
-		{name: "invalid log format from env", env: map[string]string{"MIGRUNE_LOG_FORMAT": "xml"}, usage: true},
-		{name: "invalid log level", args: []string{"--log-level", "loud"}, usage: true},
+		{name: "default", args: []string{"lint"}, flag: "output", want: "text"},
+		{name: "env over default", args: []string{"lint"}, env: map[string]string{"MIGRUNE_OUTPUT": "json"}, flag: "output", want: "json"},
+		{name: "flag over env", args: []string{"lint", "--output", "text"}, env: map[string]string{"MIGRUNE_OUTPUT": "json"}, flag: "output", want: "text"},
+		{name: "shorthand flag over env", args: []string{"lint", "-o", "text"}, env: map[string]string{"MIGRUNE_OUTPUT": "json"}, flag: "output", want: "text"},
+		{name: "subcommand flag from env", args: []string{"lint"}, env: map[string]string{"MIGRUNE_DIR": "migrations"}, flag: "dir", want: "migrations"},
+		{name: "subcommand flag over env", args: []string{"lint", "--dir", "db/migrations"}, env: map[string]string{"MIGRUNE_DIR": "migrations"}, flag: "dir", want: "db/migrations"},
+		{name: "inherited flag from env", args: []string{"lint"}, env: map[string]string{"MIGRUNE_LOG_LEVEL": "debug"}, flag: "log-level", want: "debug"},
+		{name: "inherited flag over env", args: []string{"lint", "--log-level", "warn"}, env: map[string]string{"MIGRUNE_LOG_LEVEL": "debug"}, flag: "log-level", want: "warn"},
+		{name: "inherited flag default", args: []string{"lint"}, flag: "log-format", want: "text"},
+		{name: "invalid log level from env", args: []string{"lint"}, env: map[string]string{"MIGRUNE_LOG_LEVEL": "loud"}, usage: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -35,13 +42,14 @@ func TestEnvPrecedence(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			a := newApp(&bytes.Buffer{}, &bytes.Buffer{})
-			// Only flag parsing, env binding and the logger setup are under
-			// test: parse the flags and run the pre-run setup.
-			c := a.root
-			if err := c.ParseFlags(tc.args); err != nil {
+			// Only flag parsing and env binding are under test: replace
+			// lint with a command that does nothing.
+			c, _, err := a.root.Find([]string{"lint"})
+			if err != nil {
 				t.Fatal(err)
 			}
-			err := a.preRun(c, nil)
+			c.RunE = func(*cobra.Command, []string) error { return nil }
+			err = a.execute(context.Background(), tc.args)
 			var usage *UsageError
 			if tc.usage {
 				if !errors.As(err, &usage) {
@@ -50,7 +58,7 @@ func TestEnvPrecedence(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("preRun: %v", err)
+				t.Fatalf("execute: %v", err)
 			}
 			if got := c.Flags().Lookup(tc.flag).Value.String(); got != tc.want {
 				t.Errorf("--%s = %q, want %q", tc.flag, got, tc.want)
@@ -67,9 +75,12 @@ func TestExecuteErrors(t *testing.T) {
 	}{
 		{name: "help", args: []string{"--help"}},
 		{name: "no command", args: nil},
-		{name: "version", args: []string{"--version"}},
-		{name: "unknown flag", args: []string{"--nope"}, usage: true},
-		{name: "missing flag value", args: []string{"--log-level"}, usage: true},
+		{name: "command", args: []string{"lint", "--dir", passDir}},
+		{name: "missing flag", args: []string{"lint"}, usage: true},
+		{name: "unknown command", args: []string{"migrate"}, usage: true},
+		{name: "unknown flag", args: []string{"lint", "--nope"}, usage: true},
+		{name: "unexpected argument", args: []string{"lint", "extra"}, usage: true},
+		{name: "invalid log format", args: []string{"lint", "--log-format", "xml"}, usage: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,10 +106,10 @@ func TestExecuteInterrupted(t *testing.T) {
 		cancelled bool
 		usage     bool
 	}{
-		{name: "success", args: []string{"--version"}},
-		{name: "success, cancelled", args: []string{"--version"}, cancelled: true},
-		{name: "usage error", args: []string{"--nope"}, usage: true},
-		{name: "usage error, cancelled", args: []string{"--nope"}, cancelled: true, usage: true},
+		{name: "success", args: []string{"lint", "--dir", passDir}},
+		{name: "success, cancelled", args: []string{"lint", "--dir", passDir}, cancelled: true},
+		{name: "usage error", args: []string{"lint"}, usage: true},
+		{name: "usage error, cancelled", args: []string{"lint"}, cancelled: true, usage: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,21 +136,16 @@ func TestLogFormat(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "text", want: `level=INFO msg=ready count=1`},
-		{name: "json", args: []string{"--log-format", "json"}, want: `"level":"INFO","msg":"ready","count":1`},
-		{name: "level filters", args: []string{"--log-level", "warn"}, want: ""},
+		{name: "text", args: []string{"lint", "--dir", passDir}, want: `level=INFO msg="lint passed" warnings=0`},
+		{name: "json", args: []string{"lint", "--dir", passDir, "--log-format", "json"}, want: `"level":"INFO","msg":"lint passed","warnings":0`},
+		{name: "level filters", args: []string{"lint", "--dir", passDir, "--log-level", "warn"}, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			a := newApp(&stdout, &stderr)
-			if err := a.root.ParseFlags(tc.args); err != nil {
+			if _, err := Execute(context.Background(), tc.args, &stdout, &stderr); err != nil {
 				t.Fatal(err)
 			}
-			if err := a.preRun(a.root, nil); err != nil {
-				t.Fatal(err)
-			}
-			a.log.Info("ready", "count", 1)
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want logs on stderr only", stdout.String())
 			}
@@ -160,14 +166,16 @@ func TestExecuteJSONLogs(t *testing.T) {
 		env  string
 		want bool
 	}{
-		{name: "default", args: []string{"--version"}},
-		{name: "flag", args: []string{"--version", "--log-format", "json"}, want: true},
-		{name: "env", args: []string{"--version"}, env: "json", want: true},
-		{name: "flag wins over env", args: []string{"--version", "--log-format", "text"}, env: "json"},
-		{name: "unknown flag, env", args: []string{"--nope"}, env: "json", want: true},
-		{name: "unknown flag after the flag", args: []string{"--log-format", "json", "--nope"}, want: true},
-		{name: "invalid log format", args: []string{"--version", "--log-format", "xml"}},
-		{name: "invalid log format in env", args: []string{"--version"}, env: "xml"},
+		{name: "default", args: []string{"lint", "--dir", passDir}},
+		{name: "flag", args: []string{"lint", "--dir", passDir, "--log-format", "json"}, want: true},
+		{name: "env", args: []string{"lint", "--dir", passDir}, env: "json", want: true},
+		{name: "flag wins over env", args: []string{"lint", "--dir", passDir, "--log-format", "text"}, env: "json"},
+		{name: "usage error", args: []string{"lint", "--log-format", "json"}, want: true},
+		{name: "unknown flag, env", args: []string{"lint", "--nope"}, env: "json", want: true},
+		{name: "unknown flag after the flag", args: []string{"lint", "--log-format", "json", "--nope"}, want: true},
+		{name: "invalid log level, env", args: []string{"lint", "--dir", passDir, "--log-level", "loud"}, env: "json", want: true},
+		{name: "invalid log format", args: []string{"lint", "--dir", passDir, "--log-format", "xml"}},
+		{name: "invalid log format in env", args: []string{"lint", "--dir", passDir}, env: "xml"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

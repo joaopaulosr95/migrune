@@ -1,0 +1,11 @@
+{
+  "id": "2026-11-01-002-under_score",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "deleteMany",
+      "filter": { "archived": true }
+    }
+  ]
+}

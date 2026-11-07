@@ -11,9 +11,10 @@ cmd/migrune/          package main: signal handling, exit codes, the final error
 internal/cmd/          cobra commands, env binding, slog setup
 internal/cmd/gendocs/  CLI reference generator (not part of the binary)
 internal/migration/    load, validate (embedded schema.json) and parse migration files
+internal/lint/         offline lint: per-file rules
 test/replicaset/       3-node replica set for integration tests (image from MONGO_IMAGE), smoke test
 docs/                  writing-migrations, design;
-                       reference/ (migration file, env and exit codes; cli/ is generated)
+                       reference/ (migration file, lint rules, env and exit codes; cli/ is generated)
 examples/              migrations/ (a data migration)
 .github/workflows/     ci.yml (PRs, reusable), release.yml (main)
 ```
@@ -38,7 +39,7 @@ Done means `task lint test test:int:all` passes.
 
 - Dependencies: cobra/pflag, mongo-driver v2, jsonschema v6, stdlib. Ask before adding any other.
 - Every flag is also `MIGRUNE_<FLAG>`; precedence is flag > env > default. No viper.
-- Logs: `log/slog` to stderr.
+- Logs: `log/slog` to stderr. Findings go to stdout.
 - Exit codes: 0 ok, 1 failure, 2 usage/config (`*cmd.UsageError`), 128+n when a signal
   interrupted the command (not one after it).
 - Tests: table tests, fixtures under `testdata/`, no mocks of the mongo driver.
@@ -49,3 +50,4 @@ Done means `task lint test test:int:all` passes.
 - Docs describe the code as built. When behaviour, a flag or the output changes, update
   `docs/reference/` and the guide that covers it (and `task docs` for the CLI pages) in the
   same change. Explain each fact in one place and link to it; don't repeat it across pages.
+- `examples/migrations/` must pass `migrune lint`.

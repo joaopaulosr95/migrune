@@ -1,0 +1,34 @@
+{
+  "id": "2026-11-01-003-accumulator-and-where",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "$and": [
+          {
+            "$where": "true"
+          }
+        ]
+      },
+      "update": [
+        {
+          "$set": {
+            "n": {
+              "$accumulator": {
+                "init": "function() { return 0 }",
+                "accumulate": "function(s, n) { return s + n }",
+                "accumulateArgs": [
+                  "$n"
+                ],
+                "merge": "function(a, b) { return a + b }",
+                "lang": "js"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

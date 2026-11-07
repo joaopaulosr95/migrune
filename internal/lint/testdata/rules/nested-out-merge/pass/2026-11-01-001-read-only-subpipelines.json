@@ -1,0 +1,64 @@
+{
+  "id": "2026-11-01-001-read-only-subpipelines",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "projects",
+      "operation": "updateMany",
+      "filter": {
+        "a": 1
+      },
+      "update": [
+        {
+          "$lookup": {
+            "from": "owners",
+            "let": {
+              "id": "$ownerId"
+            },
+            "pipeline": [
+              {
+                "$match": {
+                  "$expr": {
+                    "$eq": [
+                      "$_id",
+                      "$$id"
+                    ]
+                  }
+                }
+              }
+            ],
+            "as": "o"
+          }
+        },
+        {
+          "$facet": {
+            "names": [
+              {
+                "$project": {
+                  "name": 1
+                }
+              }
+            ],
+            "count": [
+              {
+                "$count": "n"
+              }
+            ]
+          }
+        },
+        {
+          "$unionWith": {
+            "coll": "archived",
+            "pipeline": [
+              {
+                "$match": {
+                  "a": 1
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

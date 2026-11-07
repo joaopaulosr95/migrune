@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-01-001-where-filter",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "deleteMany",
+      "filter": {
+        "$where": "this.expiresAt < new Date()"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-009-facet-lookup",
+  "description": "Read the lock inside a facet",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "sku": { "$exists": true } },
+      "update": [
+        { "$facet": { "locks": [{ "$lookup": { "from": "migrations_lock", "pipeline": [], "as": "lock" } }] } },
+        { "$unwind": "$locks" },
+        { "$replaceWith": "$locks" }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,8 @@
 
 A migration is a JSON file in your migrations directory. This page covers how
 to write one and make it pass migrune's checks. The exact format
-is in the [migration file reference](reference/migration-file.md).
+is in the [migration file reference](reference/migration-file.md), and every
+lint rule is in [lint rules](reference/lint-rules.md).
 
 ## The file
 
@@ -47,7 +48,8 @@ they aren't idempotent.
   so a checkout that converts line endings, or a formatter that reflows the
   file or adds a final newline, makes an applied migration look edited in
   every database. Save migrations as UTF-8 without a byte order mark, with
-  LF line endings. Tell git not to convert them, in `.gitattributes`:
+  LF line endings (lint's `line-endings` rule checks both). Tell git not to
+  convert them, in `.gitattributes`:
 
   ```txt
   migrations/*.json -text
@@ -55,6 +57,12 @@ they aren't idempotent.
 
   and leave the directory out of formatters, for example in
   `.prettierignore`, and of editor settings that rewrite files on save.
+
+Check every migration before you commit it:
+
+```sh
+migrune lint --dir migrations
+```
 
 ## Data migrations
 
@@ -97,6 +105,9 @@ Keep it small. MongoDB aborts transactions after 60 seconds by default
 versions in cache and conflict with live writes. For many documents, split
 the work across several migrations, each filtering on a part of the
 documents.
+
+lint warns about a `deleteMany` or `updateMany` with the filter `{}`
+(`empty-filter`).
 
 ## What doesn't belong in a migration
 
