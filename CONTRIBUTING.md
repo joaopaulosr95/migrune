@@ -2,7 +2,8 @@
 
 ## Setup
 
-Install the pinned Go, Task, staticcheck, actionlint and shellcheck versions with [mise](https://mise.jdx.dev):
+Install the pinned Go, Task, staticcheck, actionlint, shellcheck and
+govulncheck versions with [mise](https://mise.jdx.dev):
 
 ```sh
 task setup   # or: mise install
@@ -13,8 +14,13 @@ task setup   # or: mise install
 Before opening a PR or pushing to `main`:
 
 ```sh
-task lint test test:int:all
+task lint test vulncheck test:int:all
 ```
+
+`task vulncheck` runs `govulncheck ./...`. It's a task of its own, not part
+of `task lint`, because it downloads the Go vulnerability database. CI runs
+it too. A new advisory can make it fail with no change to the code; the fix
+is then usually a bump of Go or of a module.
 
 `task test:int` needs Docker. It starts the 3-node replica set in
 `test/replicaset/`, waits for a primary and runs every test with
@@ -88,7 +94,7 @@ on it in one of two ways:
   on `main`.
 - **A commit pushed straight to `main`**, by a maintainer: rebase it on the
   latest `main` first, so it fast-forwards, and run
-  `task lint test test:int:all` before pushing, since nothing reviews it.
+  `task lint test vulncheck test:int:all` before pushing, since nothing reviews it.
 
 Either way, the message on `main` must be a
 [Conventional Commit](https://www.conventionalcommits.org), such as
@@ -105,14 +111,26 @@ as already released and publishes no images for it.
 A commit marked breaking (`feat!:`, or a `BREAKING CHANGE:` footer) cuts a
 major release. semantic-release writes the
 release notes from the commits. When users need more, such as upgrade notes
-for a major release, edit them once the Release workflow has finished
-(`gh release edit vX.Y.Z --notes-file notes.md`).
+for a major release, edit them once the Release workflow has finished, the
+image job included (`gh release edit vX.Y.Z --notes-file notes.md`).
 Re-running the workflow doesn't overwrite them.
 
 Before pushing a release:
 
-- `task lint test test:int:all` passed on the commit being released, on all
+- `task lint test vulncheck test:int:all` passed on the commit being released, on all
   four images (CI runs only three).
-- The examples pin the latest release.
+- The examples pin the latest release (Renovate opens the pull request).
 - For a release with breaking changes or a MongoDB major dropped, the notes
   say so.
+
+semantic-release and its plugins are installed with `npm ci` from
+`.github/release/package-lock.json`, which Renovate keeps up to date.
+
+The Release workflow's `image` job builds and pushes the version's images and
+their [attestations](docs/running.md#get-the-binary). If it fails after the
+release was cut, publish them again: run the Release workflow by hand
+(Actions, Release, "Run workflow", or
+`gh workflow run release.yml -f tag=v1.2.3`) with the release's tag. It
+runs only the `image` job, on that tag's checkout, and pushes the same tags
+as a release does, `latest` included, so it refuses any tag but the latest
+release.

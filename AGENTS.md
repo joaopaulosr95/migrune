@@ -20,7 +20,8 @@ docs/                  getting-started, writing-migrations, running, troubleshoo
                        reference/ (migration file, lint rules, report, changelog and lock, env and exit codes; cli/ is generated)
 examples/              docker-compose.yaml (1-node replica set + migrune apply), migrations/ (one per kind),
                        ci/ (GitHub Actions and GitLab CI plan/approve/apply snippets)
-.github/workflows/     ci.yml (PRs, reusable), release.yml (main)
+.github/workflows/     ci.yml (PRs, reusable), release.yml (main; workflow_dispatch republishes a tag's images)
+.github/release/       semantic-release and its plugins (package-lock.json), run by release.yml
 ```
 
 ## Tasks
@@ -35,9 +36,10 @@ examples/              docker-compose.yaml (1-node replica set + migrune apply),
   stops at the first failure, leaves `mongo:9` running. CI runs a subset
   (see the matrix in `.github/workflows/ci.yml`).
 - `task lint`: go vet, staticcheck, gofmt, actionlint on the workflows and the GitHub Actions example, CLI docs up to date.
+- `task vulncheck`: govulncheck on the code and its modules (needs network access).
 - `task docs`: regenerate `docs/reference/cli/`.
 
-Done means `task lint test test:int:all` passes.
+Done means `task lint test vulncheck test:int:all` passes.
 
 ## Conventions
 

@@ -67,7 +67,9 @@ With Docker:
 docker run --rm ghcr.io/joaopaulosr95/migrune:latest --help
 ```
 
-Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI.
+Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI. Each version
+also has a `-debug` image (`:1.0.0-debug`) with a busybox shell, for CI
+systems that run job scripts inside the image, such as GitLab CI.
 
 ## Try it
 

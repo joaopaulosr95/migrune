@@ -91,12 +91,38 @@ the workflow can't read it.
   `docker run`, as in the GitHub example. Mount the repository and pass
   variables with `-e NAME` (no value), so they come from the job's
   environment.
-- **Go**: `go install github.com/joaopaulosr95/migrune/cmd/migrune@<version>`,
-  as in the GitLab example. The image is distroless, with no shell, so it
-  can't be a job image in CI systems that run scripts inside it.
+- **Job image**: CI systems that run job scripts inside the image, such as
+  GitLab CI, need a shell, which the default image lacks. Use
+  `ghcr.io/joaopaulosr95/migrune:<version>-debug`, which adds a busybox
+  shell, and clear its entrypoint (`entrypoint: [""]`), as in the GitLab
+  example.
+- **Go**: `go install github.com/joaopaulosr95/migrune/cmd/migrune@<version>`.
 
 Pin an exact version and upgrade on purpose. After a failure, see
 [troubleshooting](troubleshooting.md).
+
+A tag can be moved; a digest can't. To pin the image itself, add the digest
+of the version's image index, which
+`docker buildx imagetools inspect ghcr.io/joaopaulosr95/migrune:<version>`
+prints:
+
+```txt
+ghcr.io/joaopaulosr95/migrune:<version>@sha256:<digest>
+```
+
+Images, default and `-debug`, have a GitHub build-provenance
+attestation, signed by migrune's Release workflow, that records the
+repository, the workflow run and the commit it was built from. Check it with
+the GitHub CLI before you pin a digest:
+
+```sh
+gh attestation verify \
+  oci://ghcr.io/joaopaulosr95/migrune:<version>@sha256:<digest> \
+  --repo joaopaulosr95/migrune
+```
+
+It exits non-zero unless an attestation from that repository matches the
+digest.
 
 ## Large collections
 

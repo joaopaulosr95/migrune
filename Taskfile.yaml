@@ -96,6 +96,11 @@ tasks:
           echo "CLI docs are out of date: run 'task docs'"; exit 1
         fi
 
+  vulncheck:
+    desc: Check the code and its modules against the Go vulnerability database (needs network access)
+    cmds:
+      - govulncheck ./...
+
   docs:
     desc: Generate the CLI reference into docs/reference/cli/
     cmds:

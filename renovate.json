@@ -1,0 +1,62 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "schedule:weekly",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "enabledManagers": ["github-actions", "dockerfile", "mise", "gomod", "npm", "custom.regex"],
+  "minimumReleaseAge": "3 days",
+  "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The migrune release the examples and the README pin: ghcr.io/joaopaulosr95/migrune:X.Y.Z image tags (also -debug, and with a digest), and the README's `@vX.Y.Z`, `:X.Y.Z` and `:X.Y.Z-debug`.",
+      "managerFilePatterns": ["/^examples/ci/[^/]+$/", "/^examples/docker-compose\\.yaml$/", "/^README\\.md$/"],
+      "matchStrings": [
+        "ghcr\\.io/joaopaulosr95/migrune:(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "`[:@]v?(?<currentValue>\\d+\\.\\d+\\.\\d+)(?:-debug)?`"
+      ],
+      "depNameTemplate": "joaopaulosr95/migrune",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "migrune's own releases, pinned in the examples and the README: one update for all the pins.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["joaopaulosr95/migrune"],
+      "groupName": "migrune pins"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "Docker base images"
+    },
+    {
+      "matchManagers": ["mise"],
+      "groupName": "mise tools"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "groupName": "Go modules"
+    },
+    {
+      "description": "semantic-release and its plugins, in .github/release/, for the Release workflow.",
+      "matchManagers": ["npm"],
+      "groupName": "semantic-release"
+    },
+    {
+      "description": "The preset stays on 9.x: 10.x needs conventional-changelog-writer 9, and release-notes-generator 14.1.1 still ships writer 8. Lift this once release-notes-generator ships writer 9.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["conventional-changelog-conventionalcommits"],
+      "allowedVersions": "<10"
+    }
+  ]
+}

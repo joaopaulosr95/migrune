@@ -7,7 +7,8 @@
 #
 # migrune is built from the repository's Dockerfile. In your own project, use
 # the published image instead, pinned to an exact version, for example
-# ghcr.io/joaopaulosr95/migrune:1.0.0.
+# ghcr.io/joaopaulosr95/migrune:1.0.0, or by digest to rule out a moved tag:
+# ghcr.io/joaopaulosr95/migrune:1.0.0@sha256:<digest>.
 #
 # MongoDB transactions need a replica set, so mongod runs as a one-member
 # replica set. The member advertises mongo:27017, which only resolves inside

@@ -3,10 +3,18 @@ name: Release
 on:
   push:
     branches: [main]
+  # Republishes the images of an existing release, such as after the image
+  # job failed: runs only the image job, on the tag given (see CONTRIBUTING,
+  # "Releases").
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish the images of, such as v1.2.3. It must be the latest release.
+        required: true
+        type: string
 
-permissions:
-  contents: write
-  packages: write
+# Each job asks for only what it needs.
+permissions: {}
 
 concurrency:
   group: release
@@ -14,54 +22,104 @@ concurrency:
 
 jobs:
   ci:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
       pull-requests: read
 
+  # Cuts the version: the tag and the GitHub release. It can't push images.
+  # Skipped, with ci, on workflow_dispatch.
   release:
     needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.semrel.outputs.new_release_published }}
+      version: ${{ steps.semrel.outputs.new_release_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - id: semrel
-        uses: cycjimmy/semantic-release-action@ad51787758d9654d5a75150a89a6fa9b3ccef95e # v8.1.4
+      # No cache: this job can write to the repository.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          semantic_version: 25.0.9
-          extra_plugins: |
-            @semantic-release/commit-analyzer@13.0.1
-            @semantic-release/release-notes-generator@14.1.1
-            @semantic-release/github@12.0.10
-            conventional-changelog-conventionalcommits@9.3.1
+          node-version: 24
+          package-manager-cache: false
+
+      # semantic-release and its plugins, at the versions in
+      # .github/release/package-lock.json, without install scripts.
+      - name: Install semantic-release
+        run: npm ci --prefix .github/release --ignore-scripts --no-audit --no-fund
+
+      - id: semrel
+        name: Release
+        run: node .github/release/release.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - if: steps.semrel.outputs.new_release_published == 'true'
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+  # Builds and pushes the images of the version just cut, or of the tag given
+  # to workflow_dispatch, and attests their provenance. It can't write to the
+  # repository.
+  image:
+    needs: release
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release.outputs.published == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      packages: write
+      id-token: write # to sign the provenance attestations
+      attestations: write # to store them
+    env:
+      IMAGE: ghcr.io/joaopaulosr95/migrune
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('v{0}', needs.release.outputs.version) }}
+    steps:
+      # The images get the floating tags (1.2, 1, latest) too, so only the
+      # latest release can be published: an older one would move them back.
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::The tag must be a release tag, such as v1.2.3."
+            exit 1
+          fi
+          latest=$(git ls-remote --tags --refs "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" 'v*' |
+            sed 's|.*refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          if [ "$TAG" != "$latest" ]; then
+            echo "::error::The tag isn't the latest release (${latest:-none})."
+            exit 1
+          fi
+          {
+            echo "VERSION=${TAG#v}"
+            echo "MAJOR=${BASH_REMATCH[1]}"
+            echo "MINOR=${BASH_REMATCH[2]}"
+            echo "PATCH=${BASH_REMATCH[3]}"
+          } >> "$GITHUB_ENV"
 
-      - if: steps.semrel.outputs.new_release_published == 'true'
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - if: steps.semrel.outputs.new_release_published == 'true'
+      - id: default
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        env:
-          IMAGE: ghcr.io/joaopaulosr95/migrune
-          MAJOR: ${{ steps.semrel.outputs.new_release_major_version }}
-          MINOR: ${{ steps.semrel.outputs.new_release_minor_version }}
-          PATCH: ${{ steps.semrel.outputs.new_release_patch_version }}
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ steps.semrel.outputs.new_release_version }}
+          provenance: mode=max
+          sbom: true
+          build-args: VERSION=${{ env.VERSION }}
           tags: |
             ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}
             ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}
@@ -69,5 +127,37 @@ jobs:
             ${{ env.IMAGE }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.semrel.outputs.new_release_version }}
+            org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.licenses=MIT
+
+      - id: debug
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: debug
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: VERSION=${{ env.VERSION }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}-debug
+            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}-debug
+            ${{ env.IMAGE }}:${{ env.MAJOR }}-debug
+            ${{ env.IMAGE }}:debug
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.licenses=MIT
+
+      # GitHub build-provenance attestations of each image index, which
+      # gh attestation verify checks (docs/running.md, "Get the binary").
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.default.outputs.digest }}
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.debug.outputs.digest }}

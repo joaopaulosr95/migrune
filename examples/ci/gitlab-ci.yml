@@ -22,8 +22,9 @@
 # - Protected environments: protect `production` and choose who may deploy
 #   to it, and add deployment approvals if you want a second person.
 #
-# The migrune image is distroless and has no shell, so it can't be a job
-# image: the jobs install the pinned version with `go install` instead.
+# GitLab runs job scripts with a shell inside the job image, and the default
+# migrune image has none. The -debug image adds a busybox shell; its
+# entrypoint is cleared so GitLab can start that shell.
 #
 # See docs/running.md.
 stages:
@@ -32,15 +33,16 @@ stages:
   - apply
 
 variables:
-  # Pin an exact migrune version.
-  MIGRUNE_VERSION: v1.0.0
   MIGRUNE_DB: app
   MIGRUNE_DIR: migrations
 
 .migrune:
-  image: golang:1.27.4
-  before_script:
-    - go install "github.com/joaopaulosr95/migrune/cmd/migrune@${MIGRUNE_VERSION}"
+  image:
+    # Pin an exact migrune version. A tag can be moved; to pin the image
+    # itself, add its digest, which `docker buildx imagetools inspect`
+    # prints: ghcr.io/joaopaulosr95/migrune:1.0.0-debug@sha256:<digest>.
+    name: ghcr.io/joaopaulosr95/migrune:1.0.0-debug
+    entrypoint: [""]
 
 # Offline: merge request pipelines get no database credentials.
 migrate:lint:
