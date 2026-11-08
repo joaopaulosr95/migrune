@@ -12,8 +12,8 @@ collection.
   migration twice in a transaction and aborts it, so non-idempotent
   migrations fail before anyone approves them.
 - **Safe to run from CI**: one runner at a time, the changelog written in the
-  migration's own transaction, applied migrations immutable, graceful
-  shutdown.
+  migration's own transaction, apply tied to the approved plan by a digest,
+  applied migrations immutable, graceful shutdown.
 
 See [design](docs/design.md) for how each guarantee works and where it stops.
 
@@ -90,8 +90,8 @@ migrune lint  --dir migrations   # offline checks
 
 export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
 migrune lint  --dir migrations --db app   # also compares checksums with the changelog
-migrune plan  --dir migrations --db app
-migrune apply --dir migrations --db app
+migrune plan  --dir migrations --db app --digest-out plan.digest
+migrune apply --dir migrations --db app --digest-in plan.digest
 ```
 
 With `MIGRUNE_URI` set, `lint` needs `--db` too. Every flag can also be set
@@ -127,14 +127,14 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
   locally.
 - [Troubleshooting](docs/troubleshooting.md): connection and permission
   errors, errored or interrupted runs, a held or lost lock, edited or missing
-  applied migrations.
+  applied migrations, plan digests.
 - [Design](docs/design.md): the guarantees, and why migrune works the way it
   does.
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
   the [migration file](docs/reference/migration-file.md),
   [lint rules and expected indexes](docs/reference/lint-rules.md), the
-  [report](docs/reference/report.md), the
+  [report and plan digest](docs/reference/report.md), the
   [changelog and lock](docs/reference/changelog-and-lock.md).
 
 ## Contributing

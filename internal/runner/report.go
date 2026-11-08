@@ -40,9 +40,16 @@ type Report struct {
 	// ApprovedBy is who approved an apply run, as given; absent in plan and
 	// when neither name nor email was given.
 	ApprovedBy *ApprovedBy `json:"approvedBy,omitempty"`
-	// NewDatabase is set when the target database had no collections when
-	// the run started: a mistyped --db targets a new, empty database.
+	// NewDatabase is set when the target database had no collections but
+	// migrune's (an earlier plan leaves the lock and an empty changelog
+	// collection) and no changelog entry when the run started: a mistyped
+	// --db targets a new, empty database.
 	NewDatabase bool `json:"newDatabase"`
+	// Digest is the digest of DigestInput. plan writes both with
+	// --digest-out. Absent when the run stopped before reading the
+	// changelog.
+	Digest      string       `json:"digest,omitempty"`
+	DigestInput *DigestInput `json:"-"`
 	// Migrations has one row per migration considered, in id order.
 	Migrations []Row `json:"migrations"`
 	// AppliedButMissing lists the migrations Finished in the changelog whose

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
@@ -33,11 +32,18 @@ type Config struct {
 	// Mutable re-runs Finished migrations whose file changed instead of
 	// failing. Meant for local use only.
 	Mutable bool
+	// Digest, when set, is the plan's digest input (ReadDigestFile): the
+	// run's own must give the same digest, or Execute runs nothing and
+	// returns a *DigestMismatchError.
+	Digest *DigestInput
+	// ReplicaSet names the deployment in the digest: the replica set name
+	// hello reports.
+	ReplicaSet string
 	// SampleValues puts the before and after values of the differing
 	// fields in merge samples, in the logs and the report, each cut to
 	// MaxSampleValueChars characters. Without it, samples show only field
 	// names, BSON types and nested paths, so production data stays out of
-	// CI logs.
+	// CI logs. It isn't part of the digest.
 	SampleValues bool
 }
 
@@ -63,13 +69,31 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 		return nil, fmt.Errorf("unknown mode %q", c.Mode)
 	}
 	start := time.Now()
-	newDB, err := isNewDatabase(ctx, db)
+	// Read before the lock, the same way by plan and apply.
+	onlyOwn, deployment, err := readTarget(ctx, db)
 	if err != nil {
 		return nil, interruption(ctx, err)
 	}
+	hasEntries, err := changelogHasEntries(ctx, db)
+	if err != nil {
+		return nil, interruption(ctx, err)
+	}
+	// New: no collection but migrune's, and no changelog entry.
+	newDB := onlyOwn && !hasEntries
 	if newDB && o.Logger != nil {
 		o.Logger.Warn("the target database has no collections: this run treats it as a new database; "+
 			"check --db is the database you meant", "db", db.Name())
+	}
+	// The changelog collection's UUID is the digest's deployment, so it has
+	// to exist from the first plan on: otherwise two deployments' first
+	// plans, with the same names, would give the same digest.
+	if deployment == DeploymentNone {
+		if err := createChangelog(ctx, db); err != nil {
+			return nil, interruption(ctx, err)
+		}
+		if deployment, err = ChangelogDeployment(ctx, db); err != nil {
+			return nil, interruption(ctx, err)
+		}
 	}
 	run, err := Start(ctx, db, o)
 	if err != nil {
@@ -88,20 +112,10 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	if c.Mode == ModeApply && o.ApprovedBy != (ApprovedBy{}) {
 		rep.ApprovedBy = &o.ApprovedBy
 	}
-	err = run.execute(migrations, c, rep)
+	err = run.execute(migrations, c, deployment, rep)
 	err = withRelease(err, run.Close(), run.log)
 	rep.finish(time.Since(start), err)
 	return rep, err
-}
-
-// isNewDatabase reports whether db has no collection but the lock's, which
-// an earlier plan leaves behind.
-func isNewDatabase(ctx context.Context, db *mongo.Database) (bool, error) {
-	names, err := db.ListCollectionNames(ctx, bson.D{{Key: "name", Value: bson.D{{Key: "$ne", Value: LockCollection}}}})
-	if err != nil {
-		return false, fmt.Errorf("list the collections of %s: %w", db.Name(), err)
-	}
-	return len(names) == 0, nil
 }
 
 // withRelease combines a run's outcome err with the error of releasing its
@@ -119,13 +133,15 @@ func withRelease(err, release error, log *slog.Logger) error {
 	}
 }
 
-func (r *Run) execute(migrations []migration.Migration, c Config, rep *Report) error {
+func (r *Run) execute(migrations []migration.Migration, c Config, deployment string, rep *Report) error {
 	finished, err := Finished(r.ctx, r.db)
 	if err != nil {
 		return r.cause(err)
 	}
 	set := classify(migrations, finished, c.Mutable)
 	rep.AppliedButMissing = append(rep.AppliedButMissing, set.missing...)
+	rep.DigestInput = NewDigestInput(r.db.Name(), c.ReplicaSet, deployment, set.pending)
+	rep.Digest = rep.DigestInput.Sum()
 
 	for _, m := range set.pending {
 		rep.Migrations = append(rep.Migrations, Row{ID: m.ID, Kind: m.Kind, Status: RowSkipped})
@@ -137,6 +153,9 @@ func (r *Run) execute(migrations []migration.Migration, c Config, rep *Report) e
 	}
 	slices.SortFunc(rep.Migrations, func(a, b Row) int { return strings.Compare(a.ID, b.ID) })
 
+	if c.Digest != nil && c.Digest.Sum() != rep.Digest {
+		return &DigestMismatchError{Plan: c.Digest, Run: rep.DigestInput}
+	}
 	// Both checks run before any migration, so the report shows every
 	// problem at once.
 	var checks []error

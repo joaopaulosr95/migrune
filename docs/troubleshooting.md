@@ -130,7 +130,7 @@ under the same id**, and run again.
    ```
 
    Then lint, plan and apply as usual. In CI that means a new commit and a new
-   pipeline, so the plan covers the fixed file. The old `Errored` entry
+   pipeline, so the plan digest covers the fixed file. The old `Errored` entry
    stays as a record; the new `Finished` entry marks the migration applied.
 
 If the migration shouldn't run at all, delete its file instead: a migration
@@ -148,6 +148,7 @@ migrune stops gracefully and exits 130 or 143:
 - no changelog entry is written, so the migration stays pending; but a
   data migration whose commit was already sent lets it finish, for up to 30
   seconds, and is reported as `applied` if it committed;
+- plan writes no digest, so a partial plan can't be approved;
 - the lock is released if this runner still owns it, within 5 seconds;
 - the report is still printed.
 
@@ -253,12 +254,65 @@ Error: applied migrations are immutable, but the file of <id> changed since it w
 Revert the edit (any byte counts, whitespace included) and put the change in
 a new migration. Locally, see [`--mutable`](running.md#locally-with---mutable).
 
+## The digest didn't match
+
+`apply --digest-in` runs nothing, reports every row as `skipped` and exits 1
+when its run differs from what plan saw: a migration was added, edited or
+applied in between, or apply targets another deployment, database or replica
+set. The error names each difference, the deployment first:
+
+```txt
+Error: this run doesn't match the plan: the plan was made against another deployment (this run's migrations_changelog collection is 7c9e6679-7425-40de-944b-e07fc1f90ae7, the plan's was 0f8fad5b-d9cb-469f-a165-70867728950e); the database is "app", the plan's was "app-staging"; pending since the plan: 2026-11-03-001-copy-label (plan digest 5d1f…, this run's digest 9a0c…); run plan again against this database and get it approved
+```
+
+`the plan was made against another deployment` means the target's
+`migrations_changelog` collection isn't the one plan saw (its UUID is in the
+[digest](reference/report.md#plan-digest)): apply reaches another deployment
+with the same database and replica set names, or the collection was dropped
+and recreated since the plan.
+
+Run plan again against the database apply targets, and approve the new
+plan.
+
+## apply needs a digest
+
+apply exits 2, running nothing, without a plan digest or with contradictory digest flags:
+
+```txt
+Error: apply needs --digest-in (the file plan --digest-out wrote); use --no-digest for local runs
+Error: --mutable needs --no-digest: plan has no --mutable, so no plan digest covers re-running an edited migration; --mutable is for local use only
+Error: --no-digest can't be used with --digest-in
+```
+
+In CI, pass the digest file of the plan job with `--digest-in` (see
+[running in CI](running.md#in-ci-with-an-approval-gate)). Against your own
+database, pass `--no-digest`, and not `--digest-in` with it.
+
+## The digest file is invalid
+
+`apply --digest-in` reads the file before it connects, and exits 2, running
+nothing, when it isn't a plan digest as plan wrote it:
+
+```txt
+Error: --digest-in: not a plan digest file: want the file migrune plan --digest-out wrote, unchanged
+Error: --digest-in: not a plan digest file: want the file migrune plan --digest-out wrote, unchanged: its digest doesn't match its contents
+Error: --digest-in: open plan.digest: no such file or directory
+```
+
+The file was edited, cut short, or isn't the one plan wrote: a different
+artifact, a file whose line endings a checkout or upload changed, or a plan
+job that failed, which writes no digest. Pass the file from the plan job's
+artifacts unchanged; to check one, see
+[plan digest](reference/report.md#plan-digest). If plan didn't pass, fix
+what it reported and plan again.
+
 ## Applied but missing
 
 A migration is applied but missing when the changelog has a `Finished` entry
 for it and its file isn't in `--dir`. plan and apply exit 1 before running
-anything, report every pending migration as `skipped` and list the missing
-ones. With a connection, lint reports `applied-missing` too.
+anything, report every pending migration as `skipped`, list the missing ones,
+and plan writes no digest. With a connection, lint reports `applied-missing`
+too.
 
 ```txt
 Applied but missing (Finished in the changelog, no file):

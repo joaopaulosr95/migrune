@@ -1,6 +1,6 @@
 // Package runner runs migrations against a database: plan and apply (pending
 // set, double-run data migrations, index migrations, merge migrations with
-// their diff count, report), the
+// their diff count, digest, report), the
 // global lock with its heartbeat and fence, the changelog and
 // graceful shutdown.
 package runner

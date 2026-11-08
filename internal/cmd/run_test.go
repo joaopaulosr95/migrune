@@ -33,6 +33,10 @@ const (
 
 func TestPlanApplyUsage(t *testing.T) {
 	dir := migrationsDir(t, setFlag)
+	digest := filepath.Join(t.TempDir(), "bad.digest")
+	if err := os.WriteFile(digest, []byte("not a digest\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	conn := []string{"--dir", dir, "--uri", "mongodb://127.0.0.1:1", "--db", "app"}
 	cases := []struct {
 		name    string
@@ -50,7 +54,11 @@ func TestPlanApplyUsage(t *testing.T) {
 		{name: "negative lock wait", args: append([]string{"apply", "--lock-wait", "-1s"}, conn...), message: "invalid --lock-wait -1s"},
 		{name: "unparsable lock wait", args: append([]string{"plan", "--lock-wait", "forever"}, conn...), message: "lock-wait"},
 		{name: "unparsable lock ttl", args: append([]string{"plan", "--lock-ttl", "soon"}, conn...), message: "lock-ttl"},
-		{name: "invalid uri", args: []string{"apply", "--dir", dir, "--uri", "mongodb://ada:s3cret@host/?authMechanismProperties=AWS_SESSION_TOKEN:tok3n&connectTimeoutMS=soon", "--db", "app"},
+		{name: "bad digest file", args: append([]string{"apply", "--digest-in", digest}, conn...), message: "--digest-in: not a plan digest"},
+		{name: "missing digest file", args: append([]string{"apply", "--digest-in", digest + ".missing"}, conn...), message: "--digest-in: open"},
+		{name: "apply without a digest", args: append([]string{"apply"}, conn...), message: "apply needs --digest-in"},
+		{name: "mutable without --no-digest", args: append([]string{"apply", "--mutable"}, conn...), message: "--mutable needs --no-digest"},
+		{name: "invalid uri", args: []string{"apply", "--no-digest", "--dir", dir, "--uri", "mongodb://ada:s3cret@host/?authMechanismProperties=AWS_SESSION_TOKEN:tok3n&connectTimeoutMS=soon", "--db", "app"},
 			message: "--uri is not a valid MongoDB connection string"},
 	}
 	for _, tc := range cases {
@@ -89,7 +97,7 @@ func TestReservedCollection(t *testing.T) {
 					t.Fatal(err)
 				}
 				var stdout, stderr bytes.Buffer
-				_, err = Execute(context.Background(), []string{command, "--dir", dir, "--uri", "mongodb://127.0.0.1:1", "--db", "app"}, &stdout, &stderr)
+				_, err = Execute(context.Background(), append(localArgs(command), "--dir", dir, "--uri", "mongodb://127.0.0.1:1", "--db", "app"), &stdout, &stderr)
 				if err == nil || !strings.Contains(err.Error(), "reserved") || errors.As(err, new(*UsageError)) {
 					t.Fatalf("got %v, want a failure naming the reserved collection", err)
 				}
@@ -119,6 +127,7 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 3, Applied: 1, Errored: 1, Skipped: 1, DurationMs: 1530},
 		Error:             "migration 2026-11-01-002-inc-counter failed: not idempotent",
+		Digest:            "f5db59303fc5cbe2a1554003b52fff9a9837b972373428d889dc3c0726d274bc",
 		ApprovedBy:        &runner.ApprovedBy{Name: "Ada Lovelace", Email: "ada@example.com"},
 	}
 	at := time.Date(2026, 1, 4, 10, 12, 0, 0, time.UTC)
@@ -309,6 +318,7 @@ func TestWriteReport(t *testing.T) {
 		Runner:            "ci-42",
 		Database:          "appp",
 		NewDatabase:       true,
+		Digest:            "1d1ed6ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b",
 		Migrations:        []runner.Row{{ID: setFlag, Kind: "data", Status: runner.RowApplied, DurationMs: 5}},
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 9},
@@ -444,6 +454,15 @@ func migrune(t *testing.T, uri string, db *mongo.Database, args ...string) (stdo
 	return out.String(), err
 }
 
+// localArgs returns the first arguments of a local run of command: apply
+// runs with --no-digest.
+func localArgs(command string) []string {
+	if command == "apply" {
+		return []string{command, "--no-digest"}
+	}
+	return []string{command}
+}
+
 // hasRow reports whether a table report has a data migration row for id with
 // status.
 func hasRow(table, id, status string) bool {
@@ -482,18 +501,22 @@ func entries(t *testing.T, db *mongo.Database) []runner.Entry {
 	return out
 }
 
-// TestPlanThenApply runs the approval flow: plan, then apply, which records
-// the approver and runner.
+// TestPlanThenApply runs the approval flow: plan writes a digest, apply checks
+// it and records the approver and runner.
 func TestPlanThenApply(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := migrationsDir(t, setFlag, seed)
+	digest := filepath.Join(t.TempDir(), "plan.digest")
 
-	out, err := migrune(t, uri, db, "plan", "--dir", dir)
+	out, err := migrune(t, uri, db, "plan", "--dir", dir, "--digest-out", digest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "Nothing was committed") || !hasRow(out, setFlag, "applied") {
 		t.Errorf("plan table:\n%s", out)
+	}
+	if _, err := runner.ReadDigestFile(digest); err != nil {
+		t.Fatalf("plan digest: %v", err)
 	}
 	if n := len(entries(t, db)); n != 0 {
 		t.Fatalf("plan wrote %d changelog entries", n)
@@ -501,7 +524,7 @@ func TestPlanThenApply(t *testing.T) {
 
 	t.Setenv("MIGRUNE_RUNNER_ID", "ci-job-7")
 	t.Setenv("MIGRUNE_APPROVED_BY_EMAIL", "ada@example.com")
-	_, err = migrune(t, uri, db, "apply", "--dir", dir, "--approved-by-name", "Ada Lovelace")
+	_, err = migrune(t, uri, db, "apply", "--dir", dir, "--digest-in", digest, "--approved-by-name", "Ada Lovelace")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,6 +537,34 @@ func TestPlanThenApply(t *testing.T) {
 			e.ApprovedBy != (runner.ApprovedBy{Name: "Ada Lovelace", Email: "ada@example.com"}) {
 			t.Errorf("entry %s: status %s runner %q approvedBy %+v", e.MigrationID, e.Status, e.Runner, e.ApprovedBy)
 		}
+	}
+}
+
+// TestDigest checks plan writes no digest when a migration fails, and apply
+// refuses a plan made for another database.
+func TestDigest(t *testing.T) {
+	uri, db := testTarget(t)
+	seedItems(t, db)
+	dir := migrationsDir(t, incCounter)
+	digest := filepath.Join(t.TempDir(), "plan.digest")
+
+	if _, err := migrune(t, uri, db, "plan", "--dir", dir, "--digest-out", digest); err == nil {
+		t.Fatal("plan of a non-idempotent migration succeeded")
+	}
+	if _, err := os.Stat(digest); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed plan wrote a digest: %v", err)
+	}
+
+	// A plan made for another database doesn't approve this one.
+	dir = migrationsDir(t, setFlag)
+	_, staging := testTarget(t)
+	if _, err := migrune(t, uri, staging, "plan", "--dir", dir, "--digest-out", digest); err != nil {
+		t.Fatal(err)
+	}
+	_, err := migrune(t, uri, db, "apply", "--dir", dir, "--digest-in", digest)
+	var mismatch *runner.DigestMismatchError
+	if !errors.As(err, &mismatch) || errors.As(err, new(*UsageError)) || !strings.Contains(err.Error(), `the database is "`+db.Name()+`", the plan's was "`+staging.Name()+`"`) {
+		t.Fatalf("apply: %v, want a digest mismatch naming the database", err)
 	}
 }
 
@@ -567,13 +618,13 @@ func TestSampleValues(t *testing.T) {
 
 // TestAppliedButMissing checks plan fails before running anything when a
 // Finished migration's file is gone: the JSON report skips every row and
-// names the ids, the changelog is left alone, and the
+// names the ids, plan writes no digest, the changelog is left alone, and the
 // error isn't a usage error. The runner's TestAppliedButMissing covers apply
 // and --mutable.
 func TestAppliedButMissing(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := migrationsDir(t, setFlag)
-	if _, err := migrune(t, uri, db, "apply", "--dir", dir); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(dir, setFlag+".json")); err != nil {
@@ -582,8 +633,9 @@ func TestAppliedButMissing(t *testing.T) {
 	addMigration(t, dir, runnerFixtures("data"), seed)
 	before := entries(t, db)
 	want := appliedContext(t, before, setFlag)
+	digest := filepath.Join(t.TempDir(), "plan.digest")
 
-	out, err := migrune(t, uri, db, "plan", "--dir", dir, "-o", "json")
+	out, err := migrune(t, uri, db, "plan", "--digest-out", digest, "--dir", dir, "-o", "json")
 	var missing *runner.AppliedMissingError
 	if !errors.As(err, &missing) || errors.As(err, new(*UsageError)) {
 		t.Fatalf("plan: %v, want an applied-but-missing failure naming %s", err, setFlag)
@@ -597,6 +649,9 @@ func TestAppliedButMissing(t *testing.T) {
 	}
 	if len(rep.AppliedButMissing) != 1 || !sameApplied(rep.AppliedButMissing[0], want) || rep.Error != err.Error() {
 		t.Errorf("appliedButMissing %+v error %q, want [%+v]", rep.AppliedButMissing, rep.Error, want)
+	}
+	if _, err := os.Stat(digest); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("plan wrote a digest: %v", err)
 	}
 	if after := entries(t, db); len(after) != len(before) {
 		t.Errorf("%d changelog entries, had %d", len(after), len(before))
@@ -639,7 +694,7 @@ func TestApplyDatedAhead(t *testing.T) {
 	addMigration(t, dir, filepath.Join("testdata", "dated-ahead"), later)
 
 	for _, command := range []string{"plan", "apply"} {
-		out, err := migrune(t, uri, db, command, "--dir", dir, "-o", "json")
+		out, err := migrune(t, uri, db, append(localArgs(command), "--dir", dir, "-o", "json")...)
 		if err != nil {
 			t.Fatalf("%s: %v", command, err)
 		}
@@ -663,7 +718,7 @@ func TestReportJSON(t *testing.T) {
 	uri, db := testTarget(t)
 	seedItems(t, db)
 	dir := migrationsDir(t, setFlag, incCounter, seed)
-	out, err := migrune(t, uri, db, "apply", "--dir", dir, "-o", "json")
+	out, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir, "-o", "json")
 	if err == nil {
 		t.Fatal("apply succeeded, want incCounter to fail")
 	}
@@ -671,7 +726,7 @@ func TestReportJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &rep); err != nil {
 		t.Fatalf("report isn't JSON: %v\n%s", err, out)
 	}
-	if got := sortedKeys(rep); !slices.Equal(got, []string{"appliedButMissing", "command", "database", "error",
+	if got := sortedKeys(rep); !slices.Equal(got, []string{"appliedButMissing", "command", "database", "digest", "error",
 		"migrations", "newDatabase", "runner", "startedAt", "totals", "version"}) {
 		t.Errorf("report keys %v", got)
 	}
@@ -724,7 +779,7 @@ func sortedKeys[V any](m map[string]V) []string {
 func TestOnlineLint(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := migrationsDir(t, setFlag, seed)
-	if _, err := migrune(t, uri, db, "apply", "--dir", dir); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := migrune(t, uri, db, "lint", "--dir", dir); err != nil || out != "" {
@@ -804,7 +859,7 @@ func TestLockHeld(t *testing.T) {
 			}
 
 			start := time.Now()
-			out, err := migrune(t, uri, db, append([]string{"apply", "--dir", migrationsDir(t, setFlag)}, tc.args...)...)
+			out, err := migrune(t, uri, db, append([]string{"apply", "--no-digest", "--dir", migrationsDir(t, setFlag)}, tc.args...)...)
 			if !tc.wantErr {
 				if err != nil || !hasRow(out, setFlag, "applied") {
 					t.Fatalf("apply: %v\n%s", err, out)

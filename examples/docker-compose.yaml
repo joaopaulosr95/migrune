@@ -60,7 +60,9 @@ services:
       MIGRUNE_DIR: /migrations
     volumes:
       - ./migrations:/migrations:ro
-    command: ["apply"]
+    # --no-digest: a local apply, not tied to a plan digest. In CI, apply
+    # takes the digest plan wrote with --digest-in instead.
+    command: ["apply", "--no-digest"]
 
 volumes:
   mongo-data:

@@ -70,7 +70,7 @@ func TestLaggingSecondary(t *testing.T) {
 	t.Setenv("MIGRUNE_URI", lagURI)
 	t.Setenv("MIGRUNE_DB", db.Name())
 	var out, logs bytes.Buffer
-	_, err = Execute(ctx, []string{"apply", "--dir", "testdata/primary"}, &out, &logs)
+	_, err = Execute(ctx, []string{"apply", "--no-digest", "--dir", "testdata/primary"}, &out, &logs)
 	t.Logf("stdout:\n%s\nstderr:\n%s", out.String(), logs.String())
 	if err != nil {
 		t.Fatalf("apply: %v", err)

@@ -4,9 +4,11 @@
 # request pipelines, migrate:lint checks the migration files, offline. On
 # every v* tag pipeline, migrate:plan lints them again, since plan and apply
 # don't run lint's rules and a tag can point at a commit no merge request
-# checked, then runs `migrune plan` and keeps the report as an artifact.
-# migrate:apply is a manual job: whoever starts it, after reading the plan,
-# approves the run, and it runs `migrune apply`. Make your deploy job
+# checked, then runs `migrune plan` and keeps the report and the plan digest
+# as artifacts. migrate:apply is a manual job: whoever starts
+# it, after reading the plan, approves the run, and it runs
+# `migrune apply --digest-in`, which runs nothing unless the pending
+# migrations are still the ones that were planned. Make your deploy job
 # `needs:` migrate:apply.
 #
 # Setup, in the project settings:
@@ -69,19 +71,21 @@ migrate:plan:
   script:
     - migrune lint
     - status=0
-    - migrune plan > plan.txt || status=$?
+    - migrune plan --digest-out plan.digest > plan.txt || status=$?
     - cat plan.txt
     - exit "$status"
   artifacts:
     when: always
     paths:
+      - plan.digest
       - plan.txt
 
 migrate:apply:
   extends: .migrune
   stage: apply
   needs:
-    - migrate:plan
+    - job: migrate:plan
+      artifacts: true
   # A manual job in rules blocks the pipeline (allow_failure: false) until
   # someone runs it.
   rules:
@@ -98,7 +102,7 @@ migrate:apply:
     MIGRUNE_APPROVED_BY_EMAIL: $GITLAB_USER_EMAIL
   script:
     - status=0
-    - migrune apply > apply.txt || status=$?
+    - migrune apply --digest-in plan.digest > apply.txt || status=$?
     - cat apply.txt
     - exit "$status"
   artifacts:

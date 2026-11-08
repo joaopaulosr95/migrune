@@ -42,7 +42,14 @@ anyway.
 ## Changelog: `migrations_changelog`
 
 apply writes an entry when a migration finishes or fails. plan and lint never
-write to it.
+write an entry.
+
+plan and apply create the collection, empty, when it doesn't exist, before
+they take the lock: its UUID is the [plan digest](report.md#plan-digest)'s
+deployment, so it must exist from the first plan on. An apply refused for a
+[digest](report.md#plan-digest) mismatch writes no changelog entry and runs
+no migration: it writes only what plan would, the lock, taken and released,
+and the empty collection if it was missing.
 
 - **`Finished`**: written when the migration succeeds. For a data migration,
   inside its transaction, together with its data changes, so the entry and
@@ -55,7 +62,7 @@ write to it.
   lock was lost.
 - An interrupted run (SIGINT, SIGTERM) or a run that lost its lock writes no
   entry. Checks that fail before any migration runs (an edited or missing
-  applied migration) write none either.
+  applied migration, a digest mismatch) write none either.
 
 A migration is **pending** while it has no `Finished` entry: `Errored`
 entries don't count. When a migration has several `Finished` entries (it was

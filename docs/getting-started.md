@@ -84,7 +84,7 @@ here, but against a database that should exist, a sign of a mistyped `--db`.
 ## 4. Apply
 
 ```sh
-docker compose run --rm migrune apply
+docker compose run --rm migrune apply --no-digest
 ```
 
 ```txt
@@ -105,6 +105,11 @@ MIGRATION                                 KIND   STATUS   DURATION  ERROR
 
 Total: 3 migrations: 3 applied, 0 errored, 0 interrupted, 0 skipped in 206ms
 ```
+
+`--no-digest` is for local runs like this one: by default apply needs the
+digest file plan writes with `--digest-out`, so it runs exactly what was
+planned and approved. In CI, apply runs with the plan's digest (see
+[running in CI](running.md#in-ci-with-an-approval-gate)).
 
 This time the seeds were committed first, so the merge found two plans to
 change, and nothing left to change after `$merge` (`diffCountAfter 0`). Each
@@ -183,7 +188,7 @@ rm migrations/2026-11-07-002-raise-prices.json
 ## 6. Apply your migration
 
 ```sh
-docker compose run --rm migrune apply
+docker compose run --rm migrune apply --no-digest
 ```
 
 ```txt
@@ -225,7 +230,7 @@ the migration as applied. Editing an applied file now makes plan and apply
 fail: write a new migration instead. Running apply again does nothing:
 
 ```sh
-docker compose run --rm migrune apply
+docker compose run --rm migrune apply --no-digest
 ```
 
 ```txt

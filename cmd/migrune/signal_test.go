@@ -37,7 +37,8 @@ const (
 // TestSIGTERMDuringDataMigration sends SIGTERM to a migrune process while a
 // data migration's transaction is open. The transaction is aborted,
 // the migration stays pending, the next one is skipped, the lock is
-// released, the report says interrupted and the exit code is 143.
+// released, the report says interrupted, plan writes no digest and the exit
+// code is 143.
 func TestSIGTERMDuringDataMigration(t *testing.T) {
 	bin, uri, client := sigtermSetup(t)
 
@@ -61,8 +62,16 @@ func TestSIGTERMDuringDataMigration(t *testing.T) {
 			})
 			t.Cleanup(func() { failPoint(t, context.Background(), client, "off", nil) })
 
+			digest := filepath.Join(t.TempDir(), "plan.digest")
+			args := []string{command, "--dir", dir, "-o", "json"}
+			if command == "apply" {
+				args = append(args, "--no-digest")
+			}
+			if command == "plan" {
+				args = append(args, "--digest-out", digest)
+			}
 			var stdout, stderr bytes.Buffer
-			cmd := exec.Command(bin, command, "--dir", dir, "-o", "json")
+			cmd := exec.Command(bin, args...)
 			cmd.Env = append(os.Environ(), "MIGRUNE_URI="+withAppName(uri, app), "MIGRUNE_DB="+db.Name())
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 			if err := cmd.Start(); err != nil {
@@ -111,6 +120,9 @@ func TestSIGTERMDuringDataMigration(t *testing.T) {
 			if n := count(t, ctx, db.Collection(runner.LockCollection), bson.D{}); n != 0 {
 				t.Errorf("lock not released")
 			}
+			if _, err := os.Stat(digest); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("interrupted plan wrote a digest: %v", err)
+			}
 		})
 	}
 }
@@ -139,7 +151,7 @@ func TestSIGTERMDuringCommit(t *testing.T) {
 	t.Cleanup(func() { failPoint(t, context.Background(), client, "off", nil) })
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, "apply", "--dir", dir, "-o", "json")
+	cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
 	cmd.Env = append(os.Environ(), "MIGRUNE_URI="+withAppName(uri, app), "MIGRUNE_DB="+db.Name())
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
@@ -212,7 +224,7 @@ func TestSIGTERMDuringIndexBuild(t *testing.T) {
 	dir := fixtureDir(t, "index", nameIndex)
 	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 		var stdout, stderr bytes.Buffer
-		cmd := exec.Command(bin, "apply", "--dir", dir, "-o", "json")
+		cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
 		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Start(); err != nil {
@@ -322,7 +334,7 @@ func TestSIGTERMDuringMerge(t *testing.T) {
 	dir := fixtureDir(t, "merge", copyLabel)
 	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 		var stdout, stderr bytes.Buffer
-		cmd := exec.Command(bin, "apply", "--dir", dir, "-o", "json")
+		cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
 		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Start(); err != nil {
@@ -407,8 +419,9 @@ const conflict = "2026-11-02-004-conflict"
 
 // TestSignalAfterRun sends SIGTERM to migrune once its run is over, while
 // it is blocked writing the report to a full stdout pipe. The signal doesn't
-// change the outcome: the exit code is 0 after a run that succeeded, or the
-// failure's code after a run that failed. Nothing is reported interrupted.
+// change the outcome: the exit code is 0 after a run that succeeded, and
+// plan still writes its digest, or the failure's code after a run that
+// failed. Nothing is reported interrupted.
 func TestSignalAfterRun(t *testing.T) {
 	bin, uri, client := sigtermSetup(t)
 	cases := []struct {
@@ -439,10 +452,18 @@ func TestSignalAfterRun(t *testing.T) {
 				}
 			}
 			dir := fixtureDir(t, tc.sub, tc.id)
+			digest := filepath.Join(t.TempDir(), "plan.digest")
+			args := []string{tc.command, "--dir", dir, "-o", "json"}
+			if tc.command == "apply" {
+				args = append(args, "--no-digest")
+			}
+			if tc.command == "plan" {
+				args = append(args, "--digest-out", digest)
+			}
 
 			stdout, w := fullPipe(t)
 			var stderr syncBuffer
-			cmd := exec.Command(bin, tc.command, "--dir", dir, "-o", "json")
+			cmd := exec.Command(bin, args...)
 			cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
 			cmd.Stdout, cmd.Stderr = w, &stderr
 			if err := cmd.Start(); err != nil {
@@ -488,6 +509,12 @@ func TestSignalAfterRun(t *testing.T) {
 			}
 			if strings.Contains(stderr.String(), "migration interrupted") {
 				t.Error("the logs claim an interruption")
+			}
+			if tc.command == "plan" {
+				_, err := os.Stat(digest)
+				if written := err == nil; written != (tc.want == 0) {
+					t.Errorf("digest written: %v (%v), want %v", written, err, tc.want == 0)
+				}
 			}
 		})
 	}

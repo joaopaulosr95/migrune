@@ -4,8 +4,10 @@
 # On pull requests, the lint job checks the migration files, offline. On
 # every v* tag, the plan job lints them again, since plan and apply don't run
 # lint's rules and a tag can point at a commit no pull request checked, then
-# runs `migrune plan` and uploads the report. The apply job waits for
-# someone to approve the `production` environment, then runs `migrune apply`.
+# runs `migrune plan` and uploads the report and the plan digest. The apply
+# job waits for someone to approve the `production` environment, then runs
+# `migrune apply --digest-in`, which runs nothing unless the pending
+# migrations are still the ones that were planned.
 #
 # Setup, in the repository settings:
 # - Rules > Rulesets: add a tag ruleset targeting v*, enforced, that
@@ -91,7 +93,7 @@ jobs:
           status=0
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
             -e MIGRUNE_URI -e MIGRUNE_DB -e MIGRUNE_DIR \
-            "$MIGRUNE_IMAGE" plan > out/plan.txt || status=$?
+            "$MIGRUNE_IMAGE" plan --digest-out out/plan.digest > out/plan.txt || status=$?
           cat out/plan.txt
           {
             echo '## migrune plan'
@@ -122,6 +124,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plan
+          path: out
+
       # GitHub exposes no variable for the reviewer, so read the run's
       # approvals. GitHub doesn't expose emails either: use the reviewer's
       # noreply address. Without an approval, such as when `production` has
@@ -145,12 +152,11 @@ jobs:
         env:
           MIGRUNE_URI: ${{ secrets.MIGRUNE_URI }}
         run: |
-          mkdir -p out
           status=0
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
             -e MIGRUNE_URI -e MIGRUNE_DB -e MIGRUNE_DIR \
             -e MIGRUNE_APPROVED_BY_NAME -e MIGRUNE_APPROVED_BY_EMAIL \
-            "$MIGRUNE_IMAGE" apply > out/apply.txt || status=$?
+            "$MIGRUNE_IMAGE" apply --digest-in out/plan.digest > out/apply.txt || status=$?
           cat out/apply.txt
           exit "$status"
 

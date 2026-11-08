@@ -5,7 +5,7 @@ one row per migration considered, plus totals. Logs go to stderr, so the
 report can be captured on its own:
 
 ```sh
-migrune apply --dir migrations --db app -o json > report.json
+migrune apply --dir migrations --db app --digest-in plan.digest -o json > report.json
 ```
 
 The report is also written when the run fails or is interrupted; the
@@ -28,17 +28,20 @@ by another runner.
 - A `Finished` migration whose file is no longer in `--dir` ("applied but
   missing", e.g. after a revert) fails the run before anything runs, with or
   without `--mutable`: every pending migration is `skipped`, the missing ones
-  are listed in `appliedButMissing` and nothing is written to the changelog.
-  See [troubleshooting](../troubleshooting.md#applied-but-missing).
+  are listed in `appliedButMissing`, plan writes no digest and nothing is
+  written to the changelog. See
+  [troubleshooting](../troubleshooting.md#applied-but-missing).
+- When `apply --digest-in` doesn't match the pending set (see
+  [Plan digest](#plan-digest)), nothing runs and every row is `skipped`.
 
 Migrations already applied with an unchanged file are left out.
 
 ### New databases
 
-When the target database has no collections, apart from `migrations_lock`,
-which an earlier plan leaves behind, plan and apply log a warning, set
-`newDatabase` to `true` and say `(new: it had no collections)` after the
-database name in the table.
+When the target database has no collections, apart from migrune's own,
+`migrations_lock` and an empty `migrations_changelog`, which an earlier plan
+leaves behind, plan and apply log a warning, set `newDatabase` to `true` and
+say `(new: it had no collections)` after the database name in the table.
 Migrations against a new database are expected on a first deploy; anywhere
 else, check `--db` for a typo before approving.
 
@@ -97,6 +100,7 @@ as the data, such as locally.
   "runner": "ci-42",
   "approvedBy": { "name": "Ada Lovelace", "email": "ada@example.com" },
   "newDatabase": false,
+  "digest": "f5db59303fc5cbe2a1554003b52fff9a9837b972373428d889dc3c0726d274bc",
   "migrations": [
     {
       "id": "2026-11-01-001-set-flag",
@@ -145,7 +149,8 @@ as the data, such as locally.
 | `startedAt`               | string           | When the run started, RFC 3339 in UTC to the millisecond, e.g. `2026-11-08T10:30:00.125Z`.                   |
 | `runner`                  | string           | The runner id the run held the lock under, as in the logs and the changelog.                                 |
 | `approvedBy`              | object, optional | apply only: `name` and `email`, as given by `--approved-by-name` and `--approved-by-email`, and recorded in the changelog. Absent in plan and when neither is set. |
-| `newDatabase`             | boolean          | `true` when the target database had no collections, apart from `migrations_lock`, when the run started. See [new databases](#new-databases). |
+| `newDatabase`             | boolean          | `true` when the target database had no collections, apart from `migrations_lock` and an empty `migrations_changelog`, when the run started. See [new databases](#new-databases). |
+| `digest`                  | string, optional | The run's [plan digest](#plan-digest): in plan, what `--digest-out` writes; in apply, what `--digest-in` must match. Absent when the run failed before reading the changelog. |
 | `migrations`              | array            | One row per migration considered, in id order. Empty when nothing is pending.                                |
 | `migrations[].id`         | string           | The migration id: the file name without `.json`.                                                             |
 | `migrations[].kind`       | string           | `data`, `index` or `merge`.                                                                                  |
@@ -423,4 +428,58 @@ are quoted and escaped so each stays on one line. The JSON shape:
     "runner": "ci-7"
   }
 ]
+```
+
+## Plan digest
+
+`plan --digest-out` writes the plan digest to a file, and `apply --digest-in`
+runs nothing unless its own digest is the same. The digest is the SHA-256, in
+lowercase hex, of this input, each line ending in a newline:
+
+```txt
+migrune-digest-v1
+database <name>
+replicaSet <name>
+deployment <uuid>
+migration <id> <checksum>
+```
+
+- `migrune-digest-v1` versions the input: a later change to what the digest
+  covers gets a new version. apply refuses a file of another version as a
+  usage error (exit 2): re-run plan with the migrune that applies.
+- `database` is `--db`.
+- `replicaSet` is the replica set name the server's `hello` reports. migrune
+  refuses a mongos, so there is always one.
+- `deployment` is the UUID of the target database's `migrations_changelog`
+  collection, from `listCollections`, in lowercase hex with hyphens. plan
+  and apply create the collection when it's missing (see
+  [changelog](changelog-and-lock.md#changelog-migrations_changelog)), so a
+  first plan has one too. The server gives a collection a new UUID when it creates it, so two
+  deployments whose database and replica set names are the same have
+  different digests. plan and apply read it the same way, before taking the
+  lock. A snapshot clone keeps the UUID, so a plan against a clone matches
+  the original: harmless, since both hold the same changelog.
+- One `migration` line per pending migration, sorted by id, with the
+  SHA-256 of its file.
+
+So apply against another deployment, database or replica set, with a
+migration added, edited or applied since, fails before running anything, and
+its error names each part that differs, the deployment first.
+
+The file holds the digest on its first line, followed by the input:
+
+```txt
+df1e3c5a831e9ec5ad4a8258bf79647d2243754b830c3132c6cb21b1d3a1613d
+migrune-digest-v1
+database app
+replicaSet rs0
+deployment 0f8fad5b-d9cb-469f-a165-70867728950e
+migration 2026-11-01-001-a aaaa
+```
+
+apply refuses a file whose digest isn't the SHA-256 of the rest, such as one
+edited or cut short, as a usage error (exit 2). To check a file by hand:
+
+```sh
+tail -n +2 plan.digest | shasum -a 256
 ```

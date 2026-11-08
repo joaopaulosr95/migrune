@@ -5,6 +5,7 @@
   "startedAt": "2026-11-08T10:30:00.125Z",
   "runner": "ci-42",
   "newDatabase": true,
+  "digest": "1d1ed6ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b",
   "migrations": [
     {
       "id": "2026-11-01-001-set-flag",

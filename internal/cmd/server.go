@@ -77,17 +77,17 @@ func uriError(err error) error {
 // before it reads or writes anything else. The
 // returned function disconnects, on its own short context so it works after
 // an interruption. It logs the hosts and the database, never the URI.
-func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, func(), error) {
+func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, server, func(), error) {
 	opts, ignoredMode, err := clientOptions(c.uri)
 	if err != nil {
-		return nil, nil, err
+		return nil, server{}, nil, err
 	}
 	if ignoredMode != "" {
 		a.log.Warn("migrune reads from the primary; the URI's readPreference " + ignoredMode + " is ignored")
 	}
 	client, err := mongo.Connect(opts)
 	if err != nil {
-		return nil, nil, errInvalidURI
+		return nil, server{}, nil, errInvalidURI
 	}
 	a.log.Info("connecting", "hosts", strings.Join(opts.Hosts, ","), "db", c.db)
 	disconnect := func() {
@@ -95,10 +95,10 @@ func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, func()
 		defer cancel()
 		_ = client.Disconnect(ctx)
 	}
-	warnings, err := checkServer(ctx, client)
+	srv, warnings, err := checkServer(ctx, client)
 	if err != nil {
 		disconnect()
-		return nil, nil, scrubSecrets(err, uriSecrets(c.uri, opts))
+		return nil, server{}, nil, scrubSecrets(err, uriSecrets(c.uri, opts))
 	}
 	for _, w := range warnings {
 		a.log.Warn(w)
@@ -106,9 +106,9 @@ func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, func()
 	db := client.Database(c.db)
 	if err := runner.CheckFormats(ctx, db); err != nil {
 		disconnect()
-		return nil, nil, err
+		return nil, server{}, nil, err
 	}
-	return db, disconnect, nil
+	return db, srv, disconnect, nil
 }
 
 // scrubSecrets replaces each of secrets in err's message with REDACTED,
@@ -170,46 +170,53 @@ func uriSecrets(uri string, opts *options.ClientOptions) []string {
 	return secrets
 }
 
+// server is what checkServer learned about the deployment.
+type server struct {
+	// SetName is the replica set name.
+	SetName string
+}
+
 // checkServer fails unless the server runs a supported MongoDB version, as a
 // replica set. Its errors, connection and authentication
 // failures included, keep the driver's cause. The warnings, to log, are
 // checkServerVersion's.
-func checkServer(ctx context.Context, client *mongo.Client) ([]string, error) {
+func checkServer(ctx context.Context, client *mongo.Client) (server, []string, error) {
 	var hello struct {
 		SetName string `bson:"setName"`
 		Msg     string `bson:"msg"`
 	}
 	if err := client.Database("admin").RunCommand(ctx, bson.D{{Key: "hello", Value: 1}}).Decode(&hello); err != nil {
-		return nil, fmt.Errorf("connect to MongoDB: %w", err)
+		return server{}, nil, fmt.Errorf("connect to MongoDB: %w", err)
 	}
-	if err := checkTopology(hello.SetName, hello.Msg); err != nil {
-		return nil, err
+	srv, err := checkTopology(hello.SetName, hello.Msg)
+	if err != nil {
+		return server{}, nil, err
 	}
 	var warnings []string
 	var info struct {
 		Version string `bson:"version"`
 	}
 	if err := client.Database("admin").RunCommand(ctx, bson.D{{Key: "buildInfo", Value: 1}}).Decode(&info); err != nil {
-		return nil, fmt.Errorf("read the MongoDB server version: %w", err)
+		return server{}, nil, fmt.Errorf("read the MongoDB server version: %w", err)
 	}
 	warning, err := checkServerVersion(info.Version)
 	if warning != "" {
 		warnings = append(warnings, warning)
 	}
-	return warnings, err
+	return srv, warnings, err
 }
 
 // checkTopology fails unless hello's setName shows a replica set member:
 // migrune's transactions need one. A mongos (msg "isdbgrid") is refused:
 // sharded clusters aren't supported.
-func checkTopology(setName, msg string) error {
+func checkTopology(setName, msg string) (server, error) {
 	switch {
 	case setName != "":
-		return nil
+		return server{SetName: setName}, nil
 	case msg == "isdbgrid":
-		return errors.New("connected to a mongos: sharded clusters aren't supported; migrune needs a replica set")
+		return server{}, errors.New("connected to a mongos: sharded clusters aren't supported; migrune needs a replica set")
 	default:
-		return errors.New("migrune needs a replica set; " +
+		return server{}, errors.New("migrune needs a replica set; " +
 			"for local development, start mongod with --replSet and run rs.initiate() once")
 	}
 }

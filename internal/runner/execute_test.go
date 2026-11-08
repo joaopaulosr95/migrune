@@ -113,6 +113,15 @@ func TestExecuteDataMigrations(t *testing.T) {
 				rep.Totals != (Totals{Migrations: 3, Applied: 3, DurationMs: rep.Totals.DurationMs}) {
 				t.Errorf("report %+v", rep)
 			}
+			// The changelog collection didn't exist before the run: the run
+			// created it.
+			created, err := ChangelogDeployment(ctx, db)
+			if err != nil || created == DeploymentNone {
+				t.Fatalf("deployment after the run: %q, %v", created, err)
+			}
+			if want := NewDigestInput(db.Name(), "", created, ms).Sum(); rep.Digest != want {
+				t.Errorf("digest %s, want %s", rep.Digest, want)
+			}
 			// The first run's counts, the same whether committed or not.
 			wantSteps := map[string][]string{
 				setFlag:   {"0 updateMany items: matched 2, modified 2, upserted 0"},
@@ -155,8 +164,8 @@ func TestExecuteDataMigrations(t *testing.T) {
 				}
 				// Nothing is pending any more.
 				rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModePlan})
-				if err != nil || len(rep.Migrations) != 0 {
-					t.Errorf("plan after apply: %v, rows %v", err, statuses(rep))
+				if err != nil || len(rep.Migrations) != 0 || rep.Digest != NewDigestInput(db.Name(), "", created, nil).Sum() {
+					t.Errorf("plan after apply: %v, rows %v, digest %s", err, statuses(rep), rep.Digest)
 				}
 			}
 		})
@@ -516,6 +525,87 @@ func TestNewDatabase(t *testing.T) {
 	rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModePlan})
 	if err != nil || rep.NewDatabase {
 		t.Fatalf("plan on a database with collections: %v, newDatabase %v", err, rep.NewDatabase)
+	}
+}
+
+// TestDigestCheck checks apply runs nothing when the pending set doesn't match
+// the plan's digest.
+func TestDigestCheck(t *testing.T) {
+	ctx := testCtx(t)
+	db := testDB(t)
+	dir := fixtureDir(t, "data", setFlag)
+	planned, err := execute(t, ctx, db, load(t, dir), Options{}, Config{Mode: ModePlan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addFixture(t, dir, "data", seed)
+	ms := load(t, dir)
+
+	rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, Digest: planned.DigestInput})
+	var dm *DigestMismatchError
+	deployment := planned.DigestInput.Deployment
+	if !errors.As(err, &dm) || dm.Plan != planned.DigestInput || dm.Run.Sum() != NewDigestInput(db.Name(), "", deployment, ms).Sum() ||
+		!slices.Equal(dm.Differences(), []string{"pending since the plan: " + seed}) {
+		t.Fatalf("apply: %v, want a DigestMismatchError naming %s", err, seed)
+	}
+	if got := statuses(rep); !slices.Equal(got, []string{setFlag + ":skipped", seed + ":skipped"}) {
+		t.Errorf("rows %v, want all skipped", got)
+	}
+	if n := countDocs(t, ctx, db.Collection(ChangelogCollection), bson.D{}); n != 0 {
+		t.Errorf("%d changelog entries, want none", n)
+	}
+
+	// The refused apply left the changelog collection plan created.
+	if got, err := ChangelogDeployment(ctx, db); err != nil || got != deployment {
+		t.Fatalf("deployment after the refused apply: %q, %v, want %s", got, err, deployment)
+	}
+	if _, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, Digest: NewDigestInput(db.Name(), "", deployment, ms)}); err != nil {
+		t.Fatalf("apply with the matching digest: %v", err)
+	}
+}
+
+// TestDigestDeployment checks the digest names the deployment, the UUID of
+// the changelog collection, which plan creates, so even the first plan has
+// one. Two deployments' first plans, with the same database and replica set
+// names (one deployment, whose database is dropped in between, stands for
+// both here), get different digests, and apply refuses the other's,
+// naming the deployment first.
+func TestDigestDeployment(t *testing.T) {
+	ctx := testCtx(t)
+	db := testDB(t)
+	ms := load(t, fixtureDir(t, "data", setFlag))
+	plan := func() *DigestInput {
+		t.Helper()
+		rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModePlan, ReplicaSet: "rs0"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep.DigestInput
+	}
+	first := plan()
+	if !deploymentPattern.MatchString(first.Deployment) || !strings.Contains(first.Text(), "\ndeployment "+first.Deployment+"\n") {
+		t.Fatalf("first plan's digest:\n%s", first.Text())
+	}
+	if deployment, err := ChangelogDeployment(ctx, db); err != nil || deployment != first.Deployment {
+		t.Fatalf("deployment after plan: %q, %v, want %s", deployment, err, first.Deployment)
+	}
+	if again := plan(); again.Sum() != first.Sum() {
+		t.Errorf("the same deployment gives another digest:\n%s\nthen:\n%s", first.Text(), again.Text())
+	}
+	if err := db.Drop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	second := plan()
+	if second.Deployment == first.Deployment || second.Database != first.Database || second.ReplicaSet != first.ReplicaSet ||
+		second.Sum() == first.Sum() {
+		t.Fatalf("another deployment's first plan, same names: digest\n%s\nthen:\n%s", first.Text(), second.Text())
+	}
+
+	_, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, ReplicaSet: "rs0", Digest: first})
+	var dm *DigestMismatchError
+	if !errors.As(err, &dm) || !slices.Equal(dm.Differences(), []string{"the plan was made against another deployment " +
+		"(this run's migrations_changelog collection is " + second.Deployment + ", the plan's was " + first.Deployment + ")"}) {
+		t.Fatalf("apply with the old plan's digest: %v, want a deployment mismatch", err)
 	}
 }
 

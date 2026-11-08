@@ -64,7 +64,7 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 	// The online check runs only with both --uri and --db.
 	var applied map[string]migration.Applied
 	if o.conn.uri != "" {
-		db, disconnect, err := a.connect(cmd.Context(), o.conn)
+		db, _, disconnect, err := a.connect(cmd.Context(), o.conn)
 		if err != nil {
 			return err
 		}

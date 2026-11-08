@@ -2,7 +2,6 @@ package runner
 
 import (
 	"errors"
-	"flag"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,8 +12,6 @@ import (
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
-
-var updateGolden = flag.Bool("update", false, "rewrite the golden files (changelog and lock formats) with the current output")
 
 // TestFormatGolden pins the shape of the changelog entry and the lock
 // document: a fully populated Entry as it reads, the $set stage writeEntry

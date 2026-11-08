@@ -18,17 +18,18 @@ func (e *ReportedError) Unwrap() error { return e.Err }
 
 // runMigrations loads the migrations, runs them against the target database and
 // prints the report, even when the run failed.
-func (a *app) runMigrations(cmd *cobra.Command, conn connFlags, output string, o runner.Options, c runner.Config) error {
+func (a *app) runMigrations(cmd *cobra.Command, conn connFlags, output string, o runner.Options, c runner.Config) (*runner.Report, error) {
 	dir, err := migration.LoadDir(conn.dir, a.log)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	db, disconnect, err := a.connect(cmd.Context(), conn)
+	db, srv, disconnect, err := a.connect(cmd.Context(), conn)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer disconnect()
 	o.Logger = a.log
+	c.ReplicaSet = srv.SetName
 	rep, err := runner.Execute(cmd.Context(), db, dir.Migrations, o, c)
 	// The run is over: a signal from now on doesn't interrupt it.
 	a.settle(cmd.Context())
@@ -40,5 +41,5 @@ func (a *app) runMigrations(cmd *cobra.Command, conn connFlags, output string, o
 			err = &ReportedError{Err: err}
 		}
 	}
-	return err
+	return rep, err
 }

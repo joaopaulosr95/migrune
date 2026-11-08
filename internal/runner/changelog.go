@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -17,6 +18,73 @@ import (
 
 // ChangelogCollection holds one entry per migration outcome.
 const ChangelogCollection = migration.ChangelogCollection
+
+// ChangelogDeployment returns the digest's deployment for db: the UUID of
+// its migrations_changelog collection, from listCollections, as a lowercase
+// hyphenated hex string, or DeploymentNone when the collection doesn't
+// exist. The server gives a collection a new UUID when it's created, so two
+// deployments with the same database and replica set names have different
+// ones; a snapshot clone keeps it. When the collection is missing, plan and
+// apply create it (createChangelog) and read the UUID again, so their digests
+// never say none.
+func ChangelogDeployment(ctx context.Context, db *mongo.Database) (string, error) {
+	_, deployment, err := readTarget(ctx, db)
+	return deployment, err
+}
+
+// readTarget reads, with one listCollections, whether db has no collection
+// but migrune's own, the lock and the changelog collections, which an
+// earlier plan leaves behind, and its deployment (ChangelogDeployment).
+func readTarget(ctx context.Context, db *mongo.Database) (onlyOwn bool, deployment string, err error) {
+	specs, err := db.ListCollectionSpecifications(ctx, bson.D{{Key: "name", Value: bson.D{{Key: "$ne", Value: LockCollection}}}})
+	if err != nil {
+		return false, "", fmt.Errorf("list the collections of %s: %w", db.Name(), err)
+	}
+	onlyOwn = true
+	deployment = DeploymentNone
+	for _, spec := range specs {
+		if spec.Name != ChangelogCollection {
+			onlyOwn = false
+			continue
+		}
+		u := spec.UUID
+		if u == nil || u.Subtype != bson.TypeBinaryUUID || len(u.Data) != 16 {
+			return false, "", fmt.Errorf("the %s collection of %s has no UUID in listCollections", ChangelogCollection, db.Name())
+		}
+		x := hex.EncodeToString(u.Data)
+		deployment = x[0:8] + "-" + x[8:12] + "-" + x[12:16] + "-" + x[16:20] + "-" + x[20:32]
+	}
+	return onlyOwn, deployment, nil
+}
+
+// createChangelog creates the changelog collection of db, with write
+// concern majority so its UUID, the digest's deployment, can't roll back.
+// It does nothing when the collection exists.
+func createChangelog(ctx context.Context, db *mongo.Database) error {
+	err := db.Client().Database(db.Name(), options.Database().SetWriteConcern(writeconcern.Majority())).
+		CreateCollection(ctx, ChangelogCollection)
+	if err != nil && !isCode(err, codeNamespaceExists) {
+		return fmt.Errorf("create the %s collection: %w", ChangelogCollection, err)
+	}
+	return nil
+}
+
+// codeNamespaceExists is the server's NamespaceExists error code: create on
+// a collection that exists.
+const codeNamespaceExists = 48
+
+// changelogHasEntries reports whether the changelog of db has any entry.
+// A missing changelog collection has none.
+func changelogHasEntries(ctx context.Context, db *mongo.Database) (bool, error) {
+	err := changelogCollection(db).FindOne(ctx, bson.D{}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read the changelog: %w", err)
+	}
+	return true, nil
+}
 
 // Status is the outcome a changelog entry records. There is no running status:
 // what is running lives in the lock document.

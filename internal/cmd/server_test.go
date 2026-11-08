@@ -115,24 +115,25 @@ func TestCheckTopology(t *testing.T) {
 		name    string
 		setName string
 		msg     string
+		want    server
 		err     string
 	}{
-		{name: "replica set member", setName: "rs0"},
+		{name: "replica set member", setName: "rs0", want: server{SetName: "rs0"}},
 		{name: "mongos", msg: "isdbgrid", err: "connected to a mongos: sharded clusters aren't supported; migrune needs a replica set"},
 		{name: "standalone", err: standalone},
 		{name: "other msg", msg: "something", err: standalone},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := checkTopology(tc.setName, tc.msg)
+			got, err := checkTopology(tc.setName, tc.msg)
 			if tc.err != "" {
 				if err == nil || err.Error() != tc.err {
 					t.Fatalf("got %v, want %q", err, tc.err)
 				}
 				return
 			}
-			if err != nil {
-				t.Errorf("checkTopology(%q, %q) = %v", tc.setName, tc.msg, err)
+			if err != nil || got != tc.want {
+				t.Errorf("checkTopology(%q, %q) = %+v, %v; want %+v", tc.setName, tc.msg, got, err, tc.want)
 			}
 		})
 	}

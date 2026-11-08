@@ -58,12 +58,20 @@ successful heartbeat is too old to be sure the lock is still its own. The
 live runner's transaction never outlives its lock. Details in
 [changelog and lock](reference/changelog-and-lock.md).
 
-**Problems show up before approval.** plan runs everything for real and throws
+**What is approved is what runs.** plan runs everything for real and throws
 the result away (data migrations run twice and abort, indexes are diffed
 against `listIndexes`, merges run without `$merge`), so it catches
 non-idempotent data migrations, type changes, duplicate merge keys and index
 conflicts against the actual data. It can't prove a merge converges: that
-shows only once apply has written (`diffCountAfter`).
+shows only once apply has written (`diffCountAfter`). It then
+writes a digest of the target database and replica set names, the
+deployment (the UUID of its `migrations_changelog` collection), the pending
+ids and checksums. apply requires it (`--digest-in`, unless `--no-digest`
+for a local run) and runs nothing if its own digest differs, so a plan made
+on staging can't approve production, even when their names are the same.
+A snapshot clone of a database keeps the collection's UUID, so a plan
+against the clone matches the original; that is harmless, as the clone holds
+the same changelog.
 
 **Failures stop the run; interruptions are clean.** A transaction that
 fails with a transient error (a write conflict, an election) runs again, up
@@ -99,7 +107,10 @@ and lock expiry already handle.
   [large collections](running.md#large-collections).
 - **Who approved a run.** `approvedBy` (`--approved-by-name`,
   `--approved-by-email`) is an unverified label: migrune records what the
-  apply job passes. Who may start apply is your CI's gate (see
+  apply job passes. The plan digest is an integrity check, not an
+  authorization: it proves apply runs what plan saw, as long as the digest
+  file apply reads is the plan job's own, kept in an artifact store the
+  pipeline trusts. Who may start apply is your CI's gate (see
   [running in CI](running.md#in-ci-with-an-approval-gate)).
 - **Work on the server after the runner loses it.** An index build or merge
   already sent keeps running on the server if the runner loses its network
@@ -199,7 +210,7 @@ change: check current versions before deciding.
 | Record written with the data    | No: a version number and a dirty flag                | No: written after `up` resolves                  | Yes, for transactional files                                              | Yes: the `Finished` entry is in the migration's transaction                |
 | Lock                            | Advisory lock collection                             | Lock collection, optional TTL                    | None; two parallel runs end in a write conflict                           | Global lock with heartbeat, server-time expiry and an in-transaction fence |
 | On failure                      | Version marked dirty; a human forces it              | Stops                                            | Transactional: rolled back. Otherwise a failed row blocks until `repair` | Stops, records `Errored`; the file can be fixed in place                   |
-| Dry run                         | None                                                 | None                                             | None for MongoDB (`info` lists what's pending)                            | `plan` runs everything and aborts                                          |
+| Dry run                         | None                                                 | None                                             | None for MongoDB (`info` lists what's pending)                            | `plan` runs everything and aborts; `apply` is tied to the plan's digest    |
 | Indexes                         | Any command, unchecked                               | Any code, unchecked                              | `createIndexes` with transactions off                                     | Own kind; lint replays them and checks expected indexes                    |
 | Cross-collection logic          | `aggregate` through `runCommand`, unchecked          | Any code                                         | `$merge` failed with an error although the data was written               | Merge kind: pipeline ending in `$merge`, `$out` banned, diff counted       |
 | Audit history                   | Current version only                                 | File name, date, optional hash                   | Version, checksum, date, duration, success                                | Outcome, step results, runner, approver and the migration as applied       |

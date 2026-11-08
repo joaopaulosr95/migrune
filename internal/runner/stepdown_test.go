@@ -61,7 +61,7 @@ func TestDataMigrationSurvivesStepDown(t *testing.T) {
 	defer func() { _ = run.Close() }()
 	rep := &Report{}
 	done := make(chan error, 1)
-	go func() { done <- run.execute(ms, Config{Mode: ModeApply}, rep) }()
+	go func() { done <- run.execute(ms, Config{Mode: ModeApply}, DeploymentNone, rep) }()
 	waitFailPoint(t, ctx, client, fired+1)
 	// The step-down closes the connection, so the command may fail even
 	// though it worked.

@@ -171,6 +171,10 @@ func TestFinalError(t *testing.T) {
 		{name: "text usage error", args: []string{"plan"}, code: 2, msg: "--dir is required"},
 		{name: "json failure", args: []string{"lint", "--dir", missing, "--log-format", "json"}, code: 1, msg: "migrations directory", json: true},
 		{name: "json usage error", args: []string{"plan"}, env: "json", code: 2, msg: "--dir is required", json: true},
+		{name: "apply without a digest", args: []string{"apply", "--dir", missing, "--uri", "mongodb://127.0.0.1:1", "--db", "app"},
+			code: 2, msg: "apply needs --digest-in (the file plan --digest-out wrote); use --no-digest for local runs"},
+		{name: "apply with --no-digest", args: []string{"apply", "--no-digest", "--dir", missing, "--uri", "mongodb://127.0.0.1:1", "--db", "app"},
+			code: 1, msg: "migrations directory"},
 		{name: "json unknown flag", args: []string{"lint", "--nope"}, env: "json", code: 2, msg: "unknown flag: --nope", json: true},
 	}
 	for _, tc := range cases {

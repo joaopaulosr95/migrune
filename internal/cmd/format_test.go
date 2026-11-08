@@ -51,7 +51,7 @@ func TestNewerFormat(t *testing.T) {
 					t.Fatal(err)
 				}
 				before := dumpDB(t, db)
-				out, err := migrune(t, uri, db, command, "--dir", migrationsDir(t, setFlag))
+				out, err := migrune(t, uri, db, append(localArgs(command), "--dir", migrationsDir(t, setFlag))...)
 				var format *runner.FormatError
 				if !errors.As(err, &format) || err.Error() != tc.want {
 					t.Fatalf("%s: %v, want %q", command, err, tc.want)
@@ -109,7 +109,7 @@ func TestOlderFormat(t *testing.T) {
 	if out, err := migrune(t, uri, db, "lint", "--dir", dir); err != nil {
 		t.Errorf("lint: %v\n%s", err, out)
 	}
-	out, err := migrune(t, uri, db, "apply", "--dir", dir)
+	out, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir)
 	if err != nil || !hasRow(out, seed, "applied") || hasRow(out, setFlag, "applied") {
 		t.Fatalf("apply: %v\n%s", err, out)
 	}

@@ -12,8 +12,8 @@ migrune has three commands:
 ```sh
 export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
 migrune lint  --dir migrations --db app
-migrune plan  --dir migrations --db app
-migrune apply --dir migrations --db app
+migrune plan  --dir migrations --db app --digest-out plan.digest
+migrune apply --dir migrations --db app --digest-in plan.digest
 ```
 
 Every flag is also an environment variable (`--db` is `MIGRUNE_DB`); see
@@ -25,21 +25,33 @@ gives a [machine-readable report](reference/report.md).
 
 Run two jobs per environment: **plan**, which runs on its own and publishes
 the plan, and **apply**, which waits for someone to approve it and applies
-the migrations. Make the deploy job depend on apply, so a failed
+exactly what was planned. Make the deploy job depend on apply, so a failed
 migration blocks the deploy. Ready-to-adapt files:
 [GitHub Actions](../examples/ci/github-actions.yaml) and
 [GitLab CI](../examples/ci/gitlab-ci.yml).
 
-1. **plan** runs `migrune plan`. Keep its report as a job artifact.
+1. **plan** runs `migrune plan --digest-out plan.digest`. Once every
+   migration passed, it writes the **plan digest**, a hash of the target
+   database and replica set names, the deployment (the UUID of its
+   `migrations_changelog` collection), the pending migration ids and their
+   file checksums. Keep the report and the digest as job artifacts.
 2. A person reads the report and approves the apply job.
-3. **apply** runs `migrune apply`, against the same database. It applies the
-   migrations pending when it starts, checking each one again as it runs it.
+3. **apply** runs `migrune apply --digest-in plan.digest`. It computes the
+   digest of its own run first; if a migration was added, edited or applied
+   in between, or apply targets another deployment, database or replica set
+   than plan did, the digests differ, apply runs nothing and exits 1, naming
+   what differs: plan again (see [the digest](reference/report.md#plan-digest)).
 
-Both jobs need the same migrune version and the same commit, so apply runs
-the files plan ran. The approval is your CI's: who may start the apply job
-(see [design](design.md#what-migrune-doesnt-guarantee)).
+Both jobs need the same migrune version and the same commit. apply refuses
+to run without `--digest-in` (exit 2); `--no-digest` (`MIGRUNE_NO_DIGEST`)
+lifts that, for local runs only. The digest proves apply runs what plan saw,
+not that anyone approved it: the approval is your CI's, who may start the
+apply job and where its digest file comes from (see
+[design](design.md#what-migrune-doesnt-guarantee)).
 
-plan isn't read-only: it takes the lock (a write to `migrations_lock`) and
+plan isn't read-only: it takes the lock (a write to `migrations_lock`),
+creates the empty `migrations_changelog` collection if it's missing (see
+[changelog](reference/changelog-and-lock.md#changelog-migrations_changelog)), and
 opens transactions it aborts. Give it the same credentials as apply, and run
 it only in pipelines you trust with them, such as tag or default-branch
 pipelines, never in pull request pipelines that run the branch's own CI file.
@@ -226,11 +238,12 @@ entry, whose checksum later edits are compared with. It logs a warning for
 each one.
 
 ```sh
-migrune apply --dir migrations --db app --mutable
+migrune apply --dir migrations --db app --no-digest --mutable
 ```
 
 - It only exists on apply. plan, and lint with a connection, still fail on
-  an edited migration.
+  an edited migration, so no plan digest can cover it: apply refuses
+  `--mutable` without `--no-digest` as a usage error (exit 2).
 - The migration must still be idempotent: the re-run applies it on top of its
   earlier effect.
 - A migration whose file was deleted still stops the run.

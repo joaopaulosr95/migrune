@@ -13,7 +13,7 @@ internal/cmd/gendocs/  CLI reference generator (not part of the binary)
 internal/inttest/      keeps integration test packages from sharing the replica set (fails them without -p 1)
 internal/migration/    load, validate (embedded schema.json) and parse migration files
 internal/lint/         offline lint: per-file rules, index replay, expected indexes
-internal/runner/       plan/apply: pending set, data migrations (double-run), index migrations, merge migrations (diff count), report;
+internal/runner/       plan/apply: pending set, data migrations (double-run), index migrations, merge migrations (diff count), digest, report;
                        lock, heartbeat and fence, changelog, format versions (v), graceful shutdown
 test/replicaset/       3-node replica set for integration tests (test commands on, for fail points; image from MONGO_IMAGE), smoke test
 docs/                  getting-started, writing-migrations, running, troubleshooting, design;
@@ -52,7 +52,7 @@ Done means `task lint test vulncheck test:int:all` passes.
   Integration tests skip under `-short` or without `MIGRUNE_TEST_URI`, and use a fresh database each.
 - Commits and PR titles: Conventional Commits.
 - A breaking change to a stable interface (commands, flags, exit codes, migration schema,
-  changelog/lock formats, JSON output, images) is a major release.
+  changelog/lock/digest formats, JSON output, images) is a major release.
 - Docs describe the code as built. When behaviour, a flag or the report changes, update
   `docs/reference/` and the guide that covers it (and `task docs` for the CLI pages) in the
   same change. Explain each fact in one place and link to it; don't repeat it across pages.
