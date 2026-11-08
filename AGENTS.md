@@ -8,7 +8,7 @@ assumptions.
 
 ```txt
 cmd/migrune/          package main: signal handling, exit codes, the final error (text or a JSON log record)
-internal/cmd/          cobra commands, env binding, slog setup, connection
+internal/cmd/          cobra commands, env binding, slog setup, connection checks
 internal/cmd/gendocs/  CLI reference generator (not part of the binary)
 internal/inttest/      keeps integration test packages from sharing the replica set (fails them without -p 1)
 internal/migration/    load, validate (embedded schema.json) and parse migration files

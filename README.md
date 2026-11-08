@@ -19,8 +19,13 @@ See [design](docs/design.md) for how each guarantee works and where it stops.
 
 ## Requirements
 
-migrune supports MongoDB 7.0 or later, running as a replica set (even of
-one member), since it needs transactions. Sharded clusters aren't supported.
+migrune supports MongoDB 7.0 or later, running as a replica set, since it
+needs transactions. It checks the server when it connects, and exits 1 on an
+older version or a standalone server (a replica set member, even of one
+member, is required).
+
+Sharded clusters aren't supported: connected to a mongos, migrune exits 1
+with an error.
 
 Every MongoDB major from 7.0 is supported until it reaches end of life on
 [MongoDB's lifecycle schedule](https://www.mongodb.com/legal/support-policy/lifecycles);
@@ -44,6 +49,9 @@ Building migrune with `go install` needs the Go version in
 [release policy](https://go.dev/doc/devel/release#policy), which supports
 the two latest Go releases: `go.mod` stays on one of them, and moves up
 before Go stops supporting it.
+
+On a major newer than the newest tested one, migrune
+[warns and runs anyway](docs/troubleshooting.md#mongodb-is-newer-than-the-newest-version-migrune-is-tested-on).
 
 ## Install
 

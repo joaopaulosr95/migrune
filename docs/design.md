@@ -32,6 +32,17 @@ disappears; otherwise environments that applied different versions would
 silently disagree, and a revert would look like a rollback. Retiring a
 migration is an explicit act: delete its changelog entries.
 
+**Reads come from the primary.** migrune reads from the primary with read
+concern `majority`, whatever the URI's `readPreference` and
+`readConcernLevel` (see [credentials](running.md#credentials)). A
+secondary can lag behind the writes migrune just made: a merge reading one
+would compare against data from before an earlier migration, and could be
+recorded `Finished` without changing anything. A read that isn't
+majority-committed could see a write that a failover then rolls back.
+Transactions keep read concern `snapshot`; `listIndexes` and
+`listCollections` accept no read concern and read the primary's current
+state.
+
 **One runner at a time.** plan and apply take a global lock, one document
 taken with an atomic `findOneAndUpdate` and owned through a random token,
 new on every acquisition, so runners sharing a `--runner-id` still exclude
@@ -99,8 +110,8 @@ and lock expiry already handle.
   creating collections with options or views, and inserting documents happen
   out of band and aren't in the changelog. Record them in a migration's
   description or in your deploy log.
-- **Sharded clusters.** They aren't supported: the guarantees above are
-  only tested on replica sets (see [Requirements](../README.md#requirements)).
+- **Sharded clusters.** They are refused: connected to a mongos, migrune
+  exits 1 with an error (see [Requirements](../README.md#requirements)).
 
 ## Why migrations are JSON
 

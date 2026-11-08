@@ -1,10 +1,11 @@
 // Package inttest keeps integration test packages from sharing the test
 // replica set. Some integration tests change server-wide state: failCommand
-// and other fail points, a primary step-down. When go test runs packages in
-// parallel, as it does without -p 1, one package's change breaks another's
-// tests. Each test process registers in a dedicated database, and a process
-// that finds another one registered fails its integration tests at once,
-// saying to run with -p 1, as task test:int does.
+// and other fail points, a secondary's replication, the replica set config,
+// a primary step-down. When go test runs packages in parallel, as it does
+// without -p 1, one package's change breaks another's tests. Each test
+// process registers in a dedicated database, and a process that finds
+// another one registered fails its integration tests at once, saying to run
+// with -p 1, as task test:int does.
 package inttest
 
 import (

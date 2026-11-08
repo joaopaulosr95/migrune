@@ -7,18 +7,20 @@ run in `mongosh` against the target database.
 
 ## The server can't be reached
 
-Every command that connects waits for a server it can use. After 30
-seconds, the driver's default `serverSelectionTimeoutMS`, it fails with
-exit 1, before doing anything and without a report:
+Every command that connects logs the hosts it connects to, then waits for a
+server it can use. After 30 seconds, the driver's default
+`serverSelectionTimeoutMS`, it fails with exit 1, before doing anything and
+without a report:
 
 ```txt
-time=… level=INFO msg=connecting db=app
-Error: check the changelog format version: server selection error: context deadline exceeded, current topology: { Type: ReplicaSetNoPrimary, Servers: [{ Addr: db1.example.net:27017, Type: Unknown, Last error: dial tcp 10.0.0.12:27017: connect: connection refused }, ] }
+time=… level=INFO msg=connecting hosts=db1.example.net:27017 db=app
+Error: connect to MongoDB: server selection error: context deadline exceeded, current topology: { Type: ReplicaSetNoPrimary, Servers: [{ Addr: db1.example.net:27017, Type: Unknown, Last error: dial tcp 10.0.0.12:27017: connect: connection refused }, ] }
 ```
 
 Each server's `Last error` says why: a refused or timed-out connection (a
 firewall, an IP allow list, the wrong port), a TLS handshake error, or no
-such host.
+such host. A `mongodb+srv://` URI whose DNS lookup fails stops earlier, with
+`Error: resolve the --uri hosts: lookup …`.
 
 The driver connects to the members the replica set advertises, not only the
 hosts in the URI: a `Type: ReplicaSetNoPrimary` with every member
@@ -33,26 +35,33 @@ To fail faster, set `serverSelectionTimeoutMS` in the URI, for example
 server, not only the first: keep it longer than an election takes, so a run
 waits through a failover instead of failing.
 
-## The server isn't a replica set
+## The server isn't a replica set, is a mongos, or is older than 7.0
 
-On a standalone `mongod`, the first data migration fails, since it needs a
-transaction:
+migrune checks the server when it connects, and exits 1 before doing
+anything on a standalone `mongod`, a mongos or a MongoDB version it doesn't support:
 
 ```txt
-Error: migration 2026-11-01-001-seed-account failed: fence migration lock: (IllegalOperation) Transaction numbers are only allowed on a replica set member or mongos
+Error: migrune needs a replica set; for local development, start mongod with --replSet and run rs.initiate() once
+Error: connected to a mongos: sharded clusters aren't supported; migrune needs a replica set
+Error: MongoDB 6.0.28 is not supported: migrune needs 7.0 or later
 ```
 
-migrune needs transactions, so a replica set, even of one member (see
-[Requirements](../README.md#requirements)). For local development, start
-`mongod` with `--replSet rs0` and run `rs.initiate()` once, as
-[`examples/docker-compose.yaml`](../examples/docker-compose.yaml) does.
+migrune needs transactions, so a replica set, even of one member, running
+MongoDB 7.0 or later (see [Requirements](../README.md#requirements)). For
+local development, start `mongod` with `--replSet rs0` and run
+`rs.initiate()` once, as [`examples/docker-compose.yaml`](../examples/docker-compose.yaml)
+does. A server that is too old needs upgrading; no migrune release runs on
+it.
+
+A mongos means a sharded cluster, which migrune refuses: point it at a
+replica set.
 
 ## Authentication fails, or a privilege is missing
 
 A user name or password the server refuses fails the connection, with exit 1:
 
 ```txt
-Error: check the changelog format version: connection() error occurred during connection handshake: auth error: sasl conversation error: unable to authenticate using mechanism "SCRAM-SHA-256": (AuthenticationFailed) Authentication failed.
+Error: connect to MongoDB: connection() error occurred during connection handshake: auth error: unable to authenticate using mechanism "SCRAM-SHA-256": (AuthenticationFailed) Authentication failed.
 ```
 
 Check the credentials, that a password with reserved characters (`@`, `:`,
@@ -315,6 +324,14 @@ target's unique index on the `on` fields has it too, the same warning lists
 what the comparison can't check through it. The run
 continues, but the counts may not show everything `$merge` writes. See
 [collations](writing-migrations.md#collations) for the limits and what to do.
+
+## MongoDB is newer than the newest version migrune is tested on
+
+migrune logs "MongoDB 10.0.0 is newer than the newest version migrune is
+tested on (9.x)" when the server's major is newer than any it is tested on,
+and the run continues. It is a warning, not an error: read the plan with care,
+and check for a migrune release that tests the new major. See
+[Requirements](../README.md#requirements) for the tested versions.
 
 ## An applied migration did the wrong thing
 

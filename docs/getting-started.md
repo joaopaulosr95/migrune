@@ -42,7 +42,7 @@ The first run builds the image, which takes a minute. migrune then logs
 (timestamps shortened):
 
 ```txt
-time=… level=INFO msg=connecting db=example
+time=… level=INFO msg=connecting hosts=mongo:27017 db=example
 time=… level=INFO msg="lint passed" warnings=0
 ```
 

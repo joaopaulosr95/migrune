@@ -140,8 +140,17 @@ func (a *app) settle(ctx context.Context) {
 	}
 }
 
-// preRun fills unset flags from the environment, then sets up logging.
+// uriFlagWarning is the warning logged when --uri is given on the command
+// line rather than as MIGRUNE_URI.
+const uriFlagWarning = "--uri is set on the command line: process arguments are visible to other users " +
+	"of this machine and in CI logs; set MIGRUNE_URI instead"
+
+// preRun fills unset flags from the environment, then sets up logging. It
+// warns when --uri was given on the command line, never naming its value.
 func (a *app) preRun(cmd *cobra.Command, _ []string) error {
+	// Read before bindEnv, which marks a flag set from the environment as
+	// changed too.
+	uriFlag := cmd.Flags().Changed("uri")
 	if err := bindEnv(cmd.Flags(), os.LookupEnv); err != nil {
 		return &UsageError{Err: err}
 	}
@@ -150,6 +159,9 @@ func (a *app) preRun(cmd *cobra.Command, _ []string) error {
 		return &UsageError{Err: err}
 	}
 	a.log = log
+	if uriFlag {
+		a.log.Warn(uriFlagWarning)
+	}
 	return nil
 }
 

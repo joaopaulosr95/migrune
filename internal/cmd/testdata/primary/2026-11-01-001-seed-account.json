@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-01-001-seed-account",
+  "description": "Seed an account",
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "updateOne",
+      "filter": { "_id": "a1" },
+      "update": { "$setOnInsert": { "name": "Ada" } },
+      "options": { "upsert": true }
+    }
+  ]
+}

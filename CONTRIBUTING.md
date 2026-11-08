@@ -35,8 +35,8 @@ task replicaset:down   # stop it and discard its data
 ```
 
 Integration test packages must run one at a time (`-p 1`): some tests change
-server-wide state (fail points, a step-down) that would break another
-package's tests. Each test
+server-wide state (fail points, a secondary's replication, the replica set
+config, a step-down) that would break another package's tests. Each test
 process registers in the `migrune_inttest` database; one that finds another
 process registered fails its integration tests with a message saying so.
 A new package with integration tests calls `inttest.Exclusive` before it

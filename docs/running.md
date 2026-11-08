@@ -139,8 +139,17 @@ the durations in its report, before you choose the timeout.
 
 Pass the connection string as `MIGRUNE_URI`, from a secret or protected
 variable, never as `--uri`: process arguments show up in `ps` and in job
-logs. migrune never logs or prints the URI, not even in error messages: it
-logs the database it connects to.
+logs. A `--uri` given on the command line logs a warning saying so, without
+its value. migrune never logs or prints the URI, not even in error messages: it
+logs the hosts it connects to, as the driver parsed them (resolved, for
+`mongodb+srv://`), and the database. It sends `appName=migrune`, so its
+operations show under that name in `currentOp`, the server logs and the
+profiler, unless the URI sets its own `appName`.
+
+The URI's `readPreference` and `readConcernLevel` are ignored: migrune
+always [reads from the primary](design.md#guarantees), so an application's
+URI with `secondaryPreferred` or `nearest` can be used as it is. A
+`readPreference` other than `primary` logs a warning.
 
 The database user needs `readWrite` on the target database: it covers data
 changes, `createIndex` and `dropIndex`, `$merge`, and the

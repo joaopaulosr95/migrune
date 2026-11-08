@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-002-copy-display-name",
+  "description": "Copy each account's name to displayName",
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$match": { "displayName": { "$exists": false } } },
+        { "$project": { "displayName": "$name" } },
+        { "$merge": { "into": "accounts", "on": "_id", "whenMatched": "merge", "whenNotMatched": "discard" } }
+      ]
+    }
+  ]
+}
