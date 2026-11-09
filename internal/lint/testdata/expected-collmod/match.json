@@ -1,0 +1,39 @@
+[
+  {
+    "collection": "events",
+    "name": "createdAt_1",
+    "keys": {
+      "createdAt": 1
+    },
+    "options": {
+      "expireAfterSeconds": 2592000
+    }
+  },
+  {
+    "collection": "users",
+    "name": "email_1",
+    "keys": {
+      "email": 1
+    },
+    "options": {
+      "unique": true
+    }
+  },
+  {
+    "collection": "orders",
+    "name": "ref_1",
+    "keys": {
+      "ref": 1
+    }
+  },
+  {
+    "collection": "items",
+    "name": "legacy_1",
+    "keys": {
+      "legacy": 1
+    },
+    "options": {
+      "hidden": true
+    }
+  }
+]

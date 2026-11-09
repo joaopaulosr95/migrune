@@ -64,20 +64,54 @@
       "type": "object",
       "properties": {
         "collection": { "$ref": "#/$defs/collection" },
-        "operation": { "enum": ["createIndex", "dropIndex"] },
+        "operation": { "enum": ["createIndex", "dropIndex", "collModIndex"] },
         "keys": { "type": "object", "minProperties": 1 },
         "options": {
           "type": "object",
           "properties": { "name": { "type": "string", "minLength": 1 } },
           "required": ["name"]
         },
-        "name": { "type": "string", "minLength": 1 }
+        "name": { "type": "string", "minLength": 1 },
+        "set": { "$ref": "#/$defs/indexSet" }
       },
       "additionalProperties": false,
       "required": ["collection", "operation"],
-      "if": { "properties": { "operation": { "const": "createIndex" } } },
-      "then": { "required": ["keys", "options"], "not": { "required": ["name"] } },
-      "else": { "required": ["name"], "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] } }
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "createIndex" } } },
+          "then": {
+            "required": ["keys", "options"],
+            "allOf": [{ "not": { "required": ["name"] } }, { "not": { "required": ["set"] } }]
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "dropIndex" } } },
+          "then": {
+            "required": ["name"],
+            "allOf": [{ "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] } }, { "not": { "required": ["set"] } }]
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "collModIndex" } } },
+          "then": {
+            "required": ["name", "set"],
+            "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] }
+          }
+        }
+      ]
+    },
+    "indexSet": {
+      "description": "The options a collModIndex step changes on an existing index, at least one",
+      "type": "object",
+      "properties": {
+        "expireAfterSeconds": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "hidden": { "type": "boolean" },
+        "prepareUnique": { "const": true },
+        "unique": { "const": true }
+      },
+      "additionalProperties": false,
+      "minProperties": 1,
+      "not": { "required": ["prepareUnique"], "minProperties": 2 }
     },
     "mergeStep": {
       "type": "object",

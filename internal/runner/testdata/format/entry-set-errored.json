@@ -108,6 +108,14 @@
           "name": "name_1"
         },
         {
+          "collection": "events",
+          "operation": "collModIndex",
+          "name": "dedupeKey_1",
+          "set": {
+            "unique": true
+          }
+        },
+        {
           "collection": "accounts",
           "operation": "aggregate",
           "pipeline": [

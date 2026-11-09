@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-06-002-hide-name",
+  "description": "Hide name_1 before dropping it",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "collModIndex",
+      "name": "name_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

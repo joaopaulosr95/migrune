@@ -313,6 +313,10 @@ const (
 	// collation plan can't compare with the step's: apply may do nothing
 	// or fail.
 	IndexDiffers IndexAction = "differs"
+	// IndexModify is a collModIndex that changes at least one option of its
+	// index. A collModIndex whose index already has every value it sets is
+	// IndexPresent.
+	IndexModify IndexAction = "modify"
 )
 
 // IndexChange is one index step in a report.
@@ -321,20 +325,30 @@ type IndexChange struct {
 	Collection string      `json:"collection"`
 	Name       string      `json:"name"`
 	// Keys is the key pattern, as relaxed Extended JSON: the step's for a
-	// createIndex, the existing index's for a drop. Absent when the index
-	// is already absent.
+	// createIndex, the existing index's for a drop or a collModIndex.
+	// Absent when the index is already absent, or missing.
 	Keys json.RawMessage `json:"keys,omitempty"`
 	// Options are the index options but its name, as relaxed Extended
-	// JSON, in the same way as Keys. Absent when there are none.
+	// JSON, for a createIndex or a drop, in the same way as Keys. Absent
+	// when there are none, and for a collModIndex.
 	Options json.RawMessage `json:"options,omitempty"`
+	// Set is, for a collModIndex, the options the step sets: the values
+	// after it. As relaxed Extended JSON.
+	Set json.RawMessage `json:"set,omitempty"`
+	// Before is, for a collModIndex whose index exists, the index's value
+	// of each option in Set before the step: null for no
+	// expireAfterSeconds, false for an absent boolean, and prepareUnique
+	// true on a unique index.
+	Before json.RawMessage `json:"before,omitempty"`
 	// Conflict is why MongoDB would reject the step. plan only.
 	Conflict string `json:"conflict,omitempty"`
 	// Warning is why apply may fail although plan found no conflict. plan
 	// only.
 	Warning string `json:"warning,omitempty"`
-	// WouldExpire is, for a TTL index plan would create, how many documents
-	// it would delete as soon as it is built: those whose indexed date is
-	// older than now less expireAfterSeconds. plan only.
+	// WouldExpire is, for a TTL index plan would create, or a collModIndex
+	// that adds a TTL to an index or lowers it, how many documents the
+	// index would delete as soon as it is built or modified: those whose
+	// indexed date is older than now less expireAfterSeconds. plan only.
 	WouldExpire *int64 `json:"wouldExpire,omitempty"`
 }
 

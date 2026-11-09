@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Index the status",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1"
+      }
+    }
+  ]
+}

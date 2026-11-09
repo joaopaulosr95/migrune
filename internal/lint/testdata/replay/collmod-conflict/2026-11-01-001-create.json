@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Index the expiry",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expiresAt_1"
+      }
+    }
+  ]
+}

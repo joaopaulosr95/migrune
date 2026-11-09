@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-06-001-expire-events",
+  "description": "Expire events an hour after their creation",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "expireAfterSeconds": 3600
+      }
+    }
+  ]
+}

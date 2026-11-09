@@ -198,12 +198,17 @@ func comparePointers(a, b string) int {
 // notMessages explain the schema's "not" keywords, by the location of the
 // schema holding them.
 var notMessages = map[string]string{
-	"#/$defs/collection":     "the collection is reserved: " + reservedMessage,
-	"#/$defs/noOut":          "$out is not allowed: it replaces the whole target collection",
-	"#/$defs/noMerge":        "$merge is only allowed as the last stage of an aggregate step in a merge migration",
-	"#/$defs/dataStep/else":  "update is not allowed: deleteMany takes no update",
-	"#/$defs/indexStep/then": "name is not allowed in createIndex: name the index in options.name",
-	"#/$defs/indexStep/else": "keys and options are not allowed in dropIndex: it takes only the name of the index",
+	"#/$defs/collection":                     "the collection is reserved: " + reservedMessage,
+	"#/$defs/noOut":                          "$out is not allowed: it replaces the whole target collection",
+	"#/$defs/noMerge":                        "$merge is only allowed as the last stage of an aggregate step in a merge migration",
+	"#/$defs/dataStep/else":                  "update is not allowed: deleteMany takes no update",
+	"#/$defs/indexStep/allOf/0/then/allOf/0": "name is not allowed in createIndex: name the index in options.name",
+	"#/$defs/indexStep/allOf/0/then/allOf/1": "set is not allowed in createIndex: give the options in options; to change an existing index, use collModIndex",
+	"#/$defs/indexStep/allOf/1/then/allOf/0": "keys and options are not allowed in dropIndex: it takes only the name of the index",
+	"#/$defs/indexStep/allOf/1/then/allOf/1": "set is not allowed in dropIndex: it takes only the name of the index",
+	"#/$defs/indexStep/allOf/2/then":         "keys and options are not allowed in collModIndex: it takes the name of the index and the options to change in set",
+	"#/$defs/indexSet": "prepareUnique can't be combined with another option: MongoDB sets it in a collMod of its own. " +
+		"Set prepareUnique in one step, and the other options in another",
 }
 
 // mergeHint follows a violation on a $merge stage itself.
@@ -240,7 +245,7 @@ func unknownOperation(op any) string {
 		name = jsonValue(op)
 	}
 	msg := name + " is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), " +
-		"createIndex or dropIndex (index), or aggregate (merge)"
+		"createIndex, dropIndex or collModIndex (index), or aggregate (merge)"
 	if strings.HasPrefix(name, "insert") {
 		msg += "; seed documents with updateOne, upsert: true and $setOnInsert"
 	}

@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-062-collmod-ttl-not-integer",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "expireAfterSeconds": 1.5
+      }
+    }
+  ]
+}

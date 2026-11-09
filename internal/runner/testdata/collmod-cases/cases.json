@@ -1,0 +1,82 @@
+[
+  {
+    "name": "a TTL on a single-field index",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1" }],
+    "index": "at_1",
+    "set": { "expireAfterSeconds": 60 },
+    "plan": "modify",
+    "apply": true
+  },
+  {
+    "name": "a TTL on a compound index",
+    "existing": [{ "key": { "at": 1, "kind": 1 }, "name": "at_kind" }],
+    "index": "at_kind",
+    "set": { "expireAfterSeconds": 60 },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "a TTL on the _id index",
+    "existing": [],
+    "index": "_id_",
+    "set": { "expireAfterSeconds": 60 },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "hiding the _id index",
+    "existing": [],
+    "index": "_id_",
+    "set": { "hidden": true },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "unique on the _id index",
+    "existing": [],
+    "index": "_id_",
+    "set": { "unique": true },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "unique without prepareUnique",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1" }],
+    "index": "at_1",
+    "set": { "unique": true },
+    "plan": "error",
+    "apply": false
+  },
+  {
+    "name": "unique on an index created unique",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1", "unique": true }],
+    "index": "at_1",
+    "set": { "unique": true },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "prepareUnique on a unique index",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1", "unique": true }],
+    "index": "at_1",
+    "set": { "prepareUnique": true },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "unhiding a visible index",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1" }],
+    "index": "at_1",
+    "set": { "hidden": false },
+    "plan": "present",
+    "apply": true
+  },
+  {
+    "name": "hiding and a TTL at once",
+    "existing": [{ "key": { "at": 1 }, "name": "at_1" }],
+    "index": "at_1",
+    "set": { "hidden": true, "expireAfterSeconds": 60 },
+    "plan": "modify",
+    "apply": true
+  }
+]

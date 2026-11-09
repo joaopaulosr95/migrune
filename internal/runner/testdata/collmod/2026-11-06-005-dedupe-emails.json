@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-06-005-dedupe-emails",
+  "description": "Remove the duplicate users",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "deleteMany",
+      "filter": {
+        "duplicate": true
+      }
+    }
+  ]
+}

@@ -66,7 +66,9 @@ unreadable `--expected-indexes` file, exits 2 (see
 | `index-name-reused`   | error    | during the [index replay](#index-replay), `createIndex` reuses a live index name in the same collection for a different definition |
 | `index-conflict`      | error    | during the [index replay](#index-replay), `createIndex` uses the key pattern of a live index with another name in the same collection, and its `collation`, `partialFilterExpression`, `unique`, `sparse` and `wildcardProjection` are the same |
 | `drop-then-create`    | error    | during the [index replay](#index-replay), a migration drops an index and later creates one with the same name or keys in the same collection |
-| `ttl-index`           | warning  | a `createIndex` sets `expireAfterSeconds`: the TTL index deletes every document whose indexed date is older than that as soon as it is built. plan reports how many in `wouldExpire` |
+| `ttl-index`           | warning  | a `createIndex` or a `collModIndex` sets `expireAfterSeconds`: the TTL index deletes every document whose indexed date is older than that as soon as it is built or changed. plan reports how many in `wouldExpire` |
+| `unknown-index`       | warning  | during the [index replay](#index-replay), a `collModIndex` changes an index no earlier migration creates, so lint can't check it. A baseline may have created it; plan fails if it doesn't exist |
+| `unique-without-prepare` | error | during the [index replay](#index-replay), a `collModIndex` sets `unique` on an index that isn't unique and on which no earlier step set `prepareUnique`: MongoDB refuses it |
 | `index-missing`       | error    | an index in the [`--expected-indexes`](#expected-indexes) file has no migration                                                     |
 | `index-options`       | error    | a migrated index has the expected keys but different options (see [how indexes are matched](#how-indexes-are-matched)) |
 | `index-extra`         | warning  | a migrated index isn't in the `--expected-indexes` file                                                        |
@@ -91,10 +93,12 @@ name, and only then `schema` for breaking the id pattern.
 
 ## Index replay
 
-lint replays every `createIndex` and `dropIndex` step of the index migrations
-in id order, without a database, with or without `--expected-indexes`. It
-fails when MongoDB would reject a `createIndex` once the migration is
-applied:
+lint replays every `createIndex`, `dropIndex` and `collModIndex` step of the
+index migrations in id order, without a database, with or without
+`--expected-indexes`. A `collModIndex` changes the options of the live index
+as MongoDB would, so later steps and the expected indexes see the index as it
+leaves it. The replay fails when MongoDB would reject a step once the
+migration is applied:
 
 - `index-name-reused`: it reuses the name of a live index in the same
   collection for a different definition. Pick another name, and drop the old
@@ -113,10 +117,18 @@ applied:
   the new index under a new name first, and drop the old one in a later
   migration. The keys of a dropped index are known when an earlier
   migration created it; otherwise only the name is compared.
+- `unique-without-prepare`: a `collModIndex` sets `unique` on an index that
+  isn't unique and isn't `prepareUnique`. Set `prepareUnique` in an earlier
+  step, as in
+  [making an index unique](../writing-migrations.md#changing-an-index-in-place).
+
+A `collModIndex` on an index the replay doesn't know gets the
+`unknown-index` warning instead, and changes nothing in the replay.
 
 An index dropped earlier in the replay doesn't count as live. A rejected
-`createIndex` doesn't create anything, so later steps and the comparison with
-the expected-indexes file see the index that was already there.
+`createIndex` doesn't create anything, and a rejected `collModIndex` changes
+nothing, so later steps and the comparison with the expected-indexes file
+see the index that was already there.
 
 ## Expected indexes
 

@@ -1,0 +1,15 @@
+{
+  "id": "2026-01-01-063-collmod-prepare-unique-combined",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "prepareUnique": true,
+        "hidden": true
+      }
+    }
+  ]
+}

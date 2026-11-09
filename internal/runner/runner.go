@@ -103,6 +103,9 @@ type Run struct {
 	// pending index migrations planned so far would leave them, read with
 	// listIndexes on first use.
 	planIndexes map[string][]migration.Index
+	// serverIndexes are, in plan, the indexes of each collection as
+	// listIndexes returned them, before any planned step.
+	serverIndexes map[string][]migration.Index
 	// version is the server's MongoDB version, read on first use (see
 	// serverVersion).
 	version string

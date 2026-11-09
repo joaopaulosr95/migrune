@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-001-hide-baseline",
+  "description": "Hide an index a baseline created",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "collModIndex",
+      "name": "legacy_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

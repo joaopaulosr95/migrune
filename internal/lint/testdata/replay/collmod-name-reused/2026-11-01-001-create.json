@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Index the creation date",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1
+      },
+      "options": {
+        "name": "createdAt_1"
+      }
+    }
+  ]
+}

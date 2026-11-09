@@ -249,6 +249,62 @@ func TestWriteReport(t *testing.T) {
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 130},
 	}
 	const (
+		expireEvents  = "2026-11-06-001-expire-events"
+		hideLegacy    = "2026-11-06-002-hide-legacy"
+		prepareEmail  = "2026-11-06-003-prepare-email"
+		uniqueEmail   = "2026-11-06-004-unique-email"
+		dupsError     = "index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first"
+		prepareNotice = "once index email_1 is prepareUnique, MongoDB rejects every insert and update that would add a duplicate key to it: make sure the application doesn't write any"
+	)
+	collModPlan := &runner.Report{
+		Command: "plan",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: expireEvents, Kind: "index", Status: runner.RowApplied, DurationMs: 6,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "events", Name: "createdAt_1", Keys: raw(`{"createdAt":1}`),
+						Set: raw(`{"expireAfterSeconds":2592000}`), Before: raw(`{"expireAfterSeconds":null}`), WouldExpire: n(12)},
+				}},
+			{ID: hideLegacy, Kind: "index", Status: runner.RowApplied, DurationMs: 2,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexPresent, Collection: "items", Name: "legacy_1", Keys: raw(`{"legacy":1}`),
+						Set: raw(`{"hidden":true}`), Before: raw(`{"hidden":true}`)},
+				}},
+			{ID: prepareEmail, Kind: "index", Status: runner.RowApplied, DurationMs: 3,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "users", Name: "email_1", Keys: raw(`{"email":1}`),
+						Set: raw(`{"prepareUnique":true}`), Before: raw(`{"prepareUnique":false}`), Warning: prepareNotice},
+				}},
+			{ID: uniqueEmail, Kind: "index", Status: runner.RowErrored, DurationMs: 9,
+				Error: "/steps/0 (collModIndex on users): " + dupsError,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "users", Name: "email_1", Keys: raw(`{"email":1}`),
+						Set: raw(`{"unique":true}`), Before: raw(`{"unique":false}`), Conflict: dupsError},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 4, Applied: 3, Errored: 1, DurationMs: 25},
+		Error:             "migration " + uniqueEmail + " failed: /steps/0 (collModIndex on users): " + dupsError,
+	}
+	collModApply := &runner.Report{
+		Command: "apply",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: expireEvents, Kind: "index", Status: runner.RowApplied, DurationMs: 15,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "events", Name: "createdAt_1", Keys: raw(`{"createdAt":1}`),
+						Set: raw(`{"expireAfterSeconds":2592000}`), Before: raw(`{"expireAfterSeconds":null}`)},
+				}},
+			{ID: hideLegacy, Kind: "index", Status: runner.RowApplied, DurationMs: 4,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexPresent, Collection: "items", Name: "legacy_1", Keys: raw(`{"legacy":1}`),
+						Set: raw(`{"hidden":true}`), Before: raw(`{"hidden":true}`)},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 2, Applied: 2, DurationMs: 20},
+	}
+	const (
 		copyLabel      = "2026-11-03-001-copy-label"
 		amountToDouble = "2026-11-03-002-amount-to-double"
 		priceBySKU     = "2026-11-03-003-price-by-sku"
@@ -364,6 +420,9 @@ func TestWriteReport(t *testing.T) {
 		{name: "index plan table", rep: indexPlan, output: "table", golden: "plan-index.txt"},
 		{name: "index plan json", rep: indexPlan, output: "json", golden: "plan-index.json"},
 		{name: "index apply table", rep: indexApply, output: "table", golden: "apply-index.txt"},
+		{name: "collMod plan table", rep: collModPlan, output: "table", golden: "plan-collmod.txt"},
+		{name: "collMod plan json", rep: collModPlan, output: "json", golden: "plan-collmod.json"},
+		{name: "collMod apply table", rep: collModApply, output: "table", golden: "apply-collmod.txt"},
 		{name: "merge plan table", rep: mergePlan, output: "table", golden: "plan-merge.txt"},
 		{name: "merge plan json", rep: mergePlan, output: "json", golden: "plan-merge.json"},
 		{name: "merge nested plan table", rep: mergeNested, output: "table", golden: "plan-merge-nested.txt"},

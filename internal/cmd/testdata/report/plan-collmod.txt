@@ -1,0 +1,16 @@
+Plan: each status is what apply would do. Nothing was committed.
+Database: app
+
+MIGRATION                     KIND   STATUS   DURATION  ERROR
+2026-11-06-001-expire-events  index  applied  6ms
+  index to modify: createdAt_1 on events, keys {"createdAt":1}, set {"expireAfterSeconds":2592000}, before {"expireAfterSeconds":null}, wouldExpire 12
+2026-11-06-002-hide-legacy    index  applied  2ms
+  index already present: legacy_1 on items, keys {"legacy":1}, set {"hidden":true}, before {"hidden":true}
+2026-11-06-003-prepare-email  index  applied  3ms
+  index to modify: email_1 on users, keys {"email":1}, set {"prepareUnique":true}, before {"prepareUnique":false}: warning: once index email_1 is prepareUnique, MongoDB rejects every insert and update that would add a duplicate key to it: make sure the application doesn't write any
+2026-11-06-004-unique-email   index  errored  9ms       /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first
+  index to modify, would fail: email_1 on users, keys {"email":1}, set {"unique":true}, before {"unique":false}: index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first
+
+Total: 4 migrations: 3 applied, 1 errored, 0 interrupted, 0 skipped in 25ms
+
+Error: migration 2026-11-06-004-unique-email failed: /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first

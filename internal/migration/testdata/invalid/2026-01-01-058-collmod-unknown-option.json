@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-058-collmod-unknown-option",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "sparse": true
+      }
+    }
+  ]
+}

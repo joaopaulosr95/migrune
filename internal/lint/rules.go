@@ -51,6 +51,15 @@ func checkFile(path, stem string, raw []byte) []Finding {
 					ptr, coll, strings.Join(sortedKeys(keys), ", "), jsonString(ttl)))
 			}
 		}
+		if set, ok := step["set"].(map[string]any); ok && op == "collModIndex" {
+			if ttl, ok := set["expireAfterSeconds"]; ok {
+				coll, _ := step["collection"].(string)
+				name, _ := step["name"].(string)
+				c.warn(RuleTTLIndex, fmt.Sprintf("%s/set/expireAfterSeconds: with a TTL, index %s deletes the documents of %s whose indexed date is more than %s seconds old, "+
+					"from the moment it is set and from then on: check the wouldExpire count plan reports for it",
+					ptr, name, coll, jsonString(ttl)))
+			}
+		}
 		c.serverJS(ptr, step, op == "aggregate")
 		if op == "aggregate" {
 			if p, ok := step["pipeline"].([]any); ok {

@@ -47,6 +47,7 @@ func TestLoadValid(t *testing.T) {
 		{id: "2026-11-05-002-seed-price-table-v1", kind: KindData, operations: []string{"updateOne"}},
 		{id: "2026-11-05-003-account-name-ci-index", kind: KindIndex, operations: []string{"createIndex", "dropIndex"}},
 		{id: "2026-11-05-004-denormalize-project-owner-name", kind: KindMerge, operations: []string{"aggregate"}},
+		{id: "2026-11-05-005-prepare-dedupe-key", kind: KindIndex, operations: []string{"createIndex", "collModIndex"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -136,6 +137,11 @@ func TestLoadExtendedJSON(t *testing.T) {
 	if _, err := merge.Steps[0].Pipeline[3].LookupErr("$merge"); err != nil {
 		t.Errorf("last stage is not $merge: %v", err)
 	}
+
+	collMod := byID["2026-11-05-005-prepare-dedupe-key"].Steps[1]
+	if set, err := StepSet(collMod); err != nil || collMod.Name != "dedupeKey_1" || Canonical(set) != `{"prepareUnique": true}` {
+		t.Errorf("collModIndex name %q, set %v, %v", collMod.Name, set, err)
+	}
 }
 
 func TestLoadDirectory(t *testing.T) {
@@ -153,6 +159,7 @@ func TestLoadDirectory(t *testing.T) {
 		"2026-11-05-002-seed-price-table-v1",
 		"2026-11-05-003-account-name-ci-index",
 		"2026-11-05-004-denormalize-project-owner-name",
+		"2026-11-05-005-prepare-dedupe-key",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -221,7 +228,7 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-009-steps-not-array", pointer: "/steps", want: "got object, want array"},
 		// Unknown or undetectable kind.
 		{file: "2026-01-01-010-mixed-kinds", pointer: "/steps/1/operation", want: "createIndex belongs to index migrations, but the file's first operation, updateMany, belongs to data migrations"},
-		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex or dropIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert"},
+		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex or collModIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert"},
 		{file: "2026-01-01-012-delete-one", pointer: "/steps/0/operation", want: "deleteOne is not an operation migrune runs"},
 		{file: "2026-01-01-013-replace-one", pointer: "/steps/0/operation", want: "replaceOne is not an operation migrune runs"},
 		{file: "2026-01-01-014-missing-operation", pointer: "/steps/0", want: "missing property 'operation'"},
@@ -246,6 +253,19 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-031-index-drop-with-keys", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
 		{file: "2026-01-01-032-index-drop-with-options", pointer: "/steps/0", want: "keys and options are not allowed in dropIndex"},
 		{file: "2026-01-01-033-index-extra-property", pointer: "/steps/0", want: "additional properties 'background' not allowed"},
+		{file: "2026-01-01-064-index-drop-with-set", pointer: "/steps/0", want: "set is not allowed in dropIndex"},
+		{file: "2026-01-01-065-index-create-with-set", pointer: "/steps/0", want: "set is not allowed in createIndex: give the options in options; to change an existing index, use collModIndex"},
+		{file: "2026-01-01-055-collmod-missing-set", pointer: "/steps/0", want: "missing property 'set'"},
+		{file: "2026-01-01-066-collmod-missing-name", pointer: "/steps/0", want: "missing property 'name'"},
+		{file: "2026-01-01-056-collmod-with-keys", pointer: "/steps/0", want: "keys and options are not allowed in collModIndex"},
+		{file: "2026-01-01-057-collmod-empty-set", pointer: "/steps/0/set", want: "minProperties"},
+		{file: "2026-01-01-058-collmod-unknown-option", pointer: "/steps/0/set", want: "additional properties 'sparse' not allowed"},
+		{file: "2026-01-01-059-collmod-unique-false", pointer: "/steps/0/set/unique", want: "must be true, got false"},
+		{file: "2026-01-01-067-collmod-prepare-unique-false", pointer: "/steps/0/set/prepareUnique", want: "must be true, got false"},
+		{file: "2026-01-01-060-collmod-ttl-negative", pointer: "/steps/0/set/expireAfterSeconds", want: "minimum"},
+		{file: "2026-01-01-061-collmod-ttl-too-large", pointer: "/steps/0/set/expireAfterSeconds", want: "maximum"},
+		{file: "2026-01-01-062-collmod-ttl-not-integer", pointer: "/steps/0/set/expireAfterSeconds", want: "want integer"},
+		{file: "2026-01-01-063-collmod-prepare-unique-combined", pointer: "/steps/0/set", want: "prepareUnique can't be combined with another option"},
 		// Merge steps.
 		{file: "2026-01-01-034-merge-missing-pipeline", pointer: "/steps/0", want: "missing property 'pipeline'"},
 		{file: "2026-01-01-035-merge-empty-pipeline", pointer: "/steps/0/pipeline", want: "minItems"},

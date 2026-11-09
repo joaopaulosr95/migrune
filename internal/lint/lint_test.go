@@ -102,7 +102,7 @@ func TestRules(t *testing.T) {
 			`2026-11-01-006-string-form.json: error: schema: /steps/0/pipeline/0/$merge: got string, want object: $merge takes into`,
 			"2026-11-01-007-data-then-index.json: error: schema: /steps/1/operation: createIndex belongs to index migrations, but the file's first operation, deleteMany, belongs to data migrations; a file holds one kind of migration",
 			"2026-11-01-007-data-then-index.json: error: schema: /steps/2/operation: aggregate belongs to merge migrations",
-			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex or dropIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert",
+			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex or collModIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert",
 			"2026-11-01-009-merge-in-update.json: error: schema: /steps/0/update/1: $merge is only allowed as the last stage of an aggregate step in a merge migration",
 			// Two problems, two findings.
 			"2026-11-01-010-out-and-replace.json: error: schema: /steps/0/pipeline/1: $out is not allowed",
@@ -148,6 +148,17 @@ func TestRules(t *testing.T) {
 		}},
 		{rule: RuleTTLIndex, want: []string{
 			"2026-11-01-001-expire-sessions.json: warning: ttl-index: /steps/0/options/expireAfterSeconds: a TTL index deletes the documents of sessions whose lastUsedAt is more than 3600 seconds old, from the moment it is built and from then on: check the wouldExpire count plan reports for it",
+			"2026-11-01-002-expire-events.json: warning: ttl-index: /steps/1/set/expireAfterSeconds: with a TTL, index createdAt_1 deletes the documents of events whose indexed date is more than 2592000 seconds old, from the moment it is set and from then on: check the wouldExpire count plan reports for it",
+		}},
+		// A baseline may have created the index.
+		{rule: RuleUnknownIndex, want: []string{
+			"2026-11-01-001-hide-baseline.json: warning: unknown-index: /steps/0: no earlier migration creates index legacy_1 on orders, so lint can't check this collModIndex: make sure the index exists, such as from a baseline; plan fails if it doesn't",
+			"2026-11-01-002-hide-dropped.json: warning: unknown-index: /steps/2: no earlier migration creates index status_1 on orders",
+		}},
+		// unique on an index already unique is a no-op; a rejected unique
+		// leaves the index as it was, so a later one is checked again.
+		{rule: RuleUniqueUnprepared, want: []string{
+			"2026-11-01-002-unique.json: error: unique-without-prepare: /steps/0: index email_1 on users isn't prepareUnique, created by 2026-11-01-001-create.json: MongoDB converts an index to unique only once prepareUnique is set on it. Set prepareUnique in an earlier migration, remove the duplicates in a data migration, then set unique",
 		}},
 		{rule: RuleDropThenCreate, want: []string{
 			`2026-11-01-002-same-keys.json: error: drop-then-create: /steps/1: index owner_unique on projects is created after /steps/0 drops index owner_1, with the same keys {"ownerId": 1}: if the createIndex fails, such as a unique index on duplicates, the collection is left without either. Create the new index under a new name, and drop the old one in a later migration`,
@@ -280,6 +291,14 @@ func TestReplay(t *testing.T) {
 		// A text index's weights and default_language take their defaults
 		// when left out, as listIndexes shows them.
 		{dir: "text-same-definition"},
+		// A collModIndex changes the definition later steps see.
+		{dir: "collmod-conflict", want: []string{
+			`2026-11-01-003-ttl-again.json: error: index-conflict: /steps/0: index expiresAt_ttl on sessions has the same definition as index expiresAt_1, created by 2026-11-01-001-create.json`,
+		}},
+		{dir: "collmod-name-reused", want: []string{
+			`2026-11-01-003-again.json: error: index-name-reused: /steps/0: index createdAt_1 on events already exists with a different definition, created by 2026-11-01-001-create.json: keys {"createdAt": 1} options {} here, keys {"createdAt": 1} options {"hidden": true} there`,
+		}},
+		{dir: "collmod-unhide"},
 		{dir: "text-name-reused", want: []string{
 			`2026-11-01-002-weights.json: error: index-name-reused: /steps/0: index text on articles already exists with a different definition, created by 2026-11-01-001-create.json: keys {"_fts": "text", "_ftsx": 1} options {"weights": {"body": 1, "title": 10}, "default_language": "english", "language_override": "language"} here, keys {"_fts": "text", "_ftsx": 1} options {"weights": {"body": 1, "title": 1}, "default_language": "english", "language_override": "language"} there`,
 		}},
@@ -321,6 +340,9 @@ func TestReplayResult(t *testing.T) {
 			`events.all_b {"$**": 1} {"wildcardProjection": {"b": 1}}`,
 		}},
 		{dir: "conflict-drop-rename", want: []string{`projects.ownerId_1 {"ownerId": 1} {"unique": true}`}},
+		{dir: "collmod-conflict", want: []string{`sessions.expiresAt_1 {"expiresAt": 1} {"expireAfterSeconds": 3600}`}},
+		{dir: "collmod-name-reused", want: []string{`events.createdAt_1 {"createdAt": 1} {"hidden": true}`}},
+		{dir: "collmod-unhide", want: []string{`events.createdAt_1 {"createdAt": 1} {}`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.dir, func(t *testing.T) {
@@ -431,6 +453,38 @@ func TestExpectedIndexesOptions(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, err := Run(filepath.Join("testdata", "expected-options", "migrations"), expected, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			match(t, render(got, RuleTTLIndex), tc.want)
+		})
+	}
+}
+
+// TestExpectedIndexesCollMod checks the expected indexes are compared with
+// the indexes as the collModIndex steps leave them: expireAfterSeconds,
+// unique and hidden count, prepareUnique doesn't.
+func TestExpectedIndexesCollMod(t *testing.T) {
+	const migrations = "2026-11-01-001-create.json"
+	cases := []struct {
+		file string
+		want []string
+	}{
+		{file: "match"},
+		{file: "options", want: []string{
+			migrations + `: error: index-options: /steps/0: index createdAt_1 on events has keys {"createdAt": 1} with options {"expireAfterSeconds": 2592000}, but the expected index createdAt_1 has options {}`,
+			migrations + `: error: index-options: /steps/1: index email_1 on users has keys {"email": 1} with options {"unique": true}, but the expected index email_1 has options {}`,
+			migrations + `: error: index-options: /steps/2: index ref_1 on orders has keys {"ref": 1} with options {}, but the expected index ref_1 has options {"unique": true}`,
+			migrations + `: error: index-options: /steps/3: index legacy_1 on items has keys {"legacy": 1} with options {"hidden": true}, but the expected index legacy_1 has options {}`,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			expected, err := ReadExpectedIndexes(filepath.Join("testdata", "expected-collmod", tc.file+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := Run(filepath.Join("testdata", "expected-collmod", "migrations"), expected, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

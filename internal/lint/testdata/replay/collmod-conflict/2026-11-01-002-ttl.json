@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-002-ttl",
+  "description": "Make it a TTL index",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "collModIndex",
+      "name": "expiresAt_1",
+      "set": {
+        "expireAfterSeconds": 3600
+      }
+    }
+  ]
+}

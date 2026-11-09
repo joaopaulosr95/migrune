@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-06-007-modify-missing",
+  "description": "Hide an index that doesn't exist",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "collModIndex",
+      "name": "missing_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

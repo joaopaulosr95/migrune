@@ -53,7 +53,7 @@ mixes kinds:
 | Kind    | Operations                             | Runs                                                                |
 | ------- | -------------------------------------- | ------------------------------------------------------------------- |
 | `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. |
-| `index` | `createIndex`, `dropIndex`             | Step by step, outside a transaction.                                |
+| `index` | `createIndex`, `dropIndex`, `collModIndex` | Step by step, outside a transaction.                            |
 | `merge` | `aggregate`                            | Step by step, outside a transaction; the pipeline ends in `$merge`. |
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: inserts and
@@ -97,10 +97,25 @@ The schema rejects `$merge` and `$out` as stages of an update pipeline, as Mongo
 | Field        | Type   | Required             | Description                                                                     |
 | ------------ | ------ | -------------------- | ------------------------------------------------------------------------------- |
 | `collection` | string | yes                  | The collection, not empty.                                                      |
-| `operation`  | string | yes                  | `createIndex` or `dropIndex`.                                                   |
+| `operation`  | string | yes                  | `createIndex`, `dropIndex` or `collModIndex`.                                   |
 | `keys`       | object | `createIndex` only   | The index keys, in order, at least one.                                         |
 | `options`    | object | `createIndex` only   | The index options. `name` is required; every other option is passed to MongoDB as given. |
-| `name`       | string | `dropIndex` only     | The name of the index to drop.                                                  |
+| `name`       | string | `dropIndex`, `collModIndex` | The name of the index to drop or change.                                 |
+| `set`        | object | `collModIndex` only  | The options to change on the index, at least one; see below.                    |
+
+`collModIndex` runs MongoDB's `collMod` with `index: {name, ...set}`. `set`
+takes these fields and no other:
+
+| Field                | Value                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `expireAfterSeconds` | A JSON integer from 0 to 2147483647: adds a TTL to the index, or changes it.      |
+| `hidden`             | `true` hides the index from the query planner; `false` unhides it.                 |
+| `prepareUnique`      | `true` only: MongoDB rejects new duplicate keys. Alone in its `set`, as MongoDB requires. |
+| `unique`             | `true` only: makes an index that is already `prepareUnique` unique.                |
+
+There is no way to remove a TTL, make an index non-unique or clear
+`prepareUnique`. How to use each option is in
+[changing an index in place](../writing-migrations.md#changing-an-index-in-place).
 
 ## Merge steps
 

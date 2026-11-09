@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-01-003-ttl-again",
+  "description": "Create the same TTL index under another name",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "name": "expiresAt_ttl",
+        "expireAfterSeconds": 3600
+      }
+    }
+  ]
+}

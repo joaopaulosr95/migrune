@@ -222,8 +222,9 @@ primary, while holding the migration lock:
   it up to three times: that comparison before, the pipeline with `$merge`,
   and the comparison again after (see
   [how the comparison works](writing-migrations.md#how-the-comparison-works)).
-- **Index migrations**: plan reads the indexes and counts the documents a
-  new TTL index would delete. apply builds each index with
+- **Index migrations**: plan reads the indexes, counts the documents a new
+  or lowered TTL would delete, and checks a `collModIndex` that sets `unique`
+  for duplicates. apply builds each index with
   `createIndexes` and waits for it: migrune sets no `commitQuorum`, so the
   server's default applies (every data-bearing voting member), and no time
   limit.
@@ -261,8 +262,23 @@ URI with `secondaryPreferred` or `nearest` can be used as it is. A
 
 The database user needs `readWrite` on the target database: it covers data
 changes, `createIndex` and `dropIndex`, `$merge`, and the
-`migrations_changelog` and `migrations_lock` collections. For lint in pull
-requests, use another user with `read`.
+`migrations_changelog` and `migrations_lock` collections. `collModIndex`
+also needs the `collMod` action, which `readWrite` lacks: apply runs
+`collMod`, and plan runs it with `dryRun` for a step that sets `unique`.
+plan checks the user has it, from `connectionStatus`, and fails a
+`collModIndex` step that would change its index otherwise. Grant it with a
+role of its own, for example:
+
+```js
+db.getSiblingDB("app").createRole({
+  role: "migruneCollMod",
+  privileges: [{ resource: { db: "app", collection: "" }, actions: ["collMod"] }],
+  roles: [],
+})
+db.getSiblingDB("app").grantRolesToUser("<user>", ["migruneCollMod"])
+```
+
+For lint in pull requests, use another user with `read`.
 
 ### AWS IAM
 

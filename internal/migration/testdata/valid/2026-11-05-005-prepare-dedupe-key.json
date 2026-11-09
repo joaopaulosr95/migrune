@@ -1,0 +1,24 @@
+{
+  "id": "2026-11-05-005-prepare-dedupe-key",
+  "description": "Index the dedupe key and prepare it to become unique",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "dedupeKey": 1
+      },
+      "options": {
+        "name": "dedupeKey_1"
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "dedupeKey_1",
+      "set": {
+        "prepareUnique": true
+      }
+    }
+  ]
+}

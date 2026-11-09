@@ -90,6 +90,91 @@ func SpecIndex(coll string, spec bson.D) Index {
 	return ix
 }
 
+// StepSet returns the options a collModIndex step sets, in file order. The
+// schema allows expireAfterSeconds, hidden, prepareUnique and unique, at
+// least one.
+func StepSet(s Step) (bson.D, error) {
+	var set bson.D
+	if err := bson.Unmarshal(s.Set, &set); err != nil {
+		return nil, fmt.Errorf("set: %w", err)
+	}
+	if len(set) == 0 {
+		return nil, errors.New("collModIndex must change at least one option in set")
+	}
+	return set, nil
+}
+
+// Modified returns ix as a collMod setting set leaves it, as listIndexes then
+// shows it: expireAfterSeconds replaced or added; hidden added when true and
+// removed when false; prepareUnique added unless ix is already unique; unique
+// added, and prepareUnique removed with it.
+func (ix Index) Modified(set bson.D) Index {
+	out := ix
+	out.Options = slices.Clone(ix.Options)
+	for _, e := range set {
+		switch e.Key {
+		case "hidden":
+			if b, _ := e.Value.(bool); !b {
+				out.Options = withoutOption(out.Options, "hidden")
+				continue
+			}
+		case "prepareUnique":
+			if out.Option("unique") != "" {
+				continue
+			}
+		case "unique":
+			out.Options = withoutOption(out.Options, "prepareUnique")
+		}
+		if i := slices.IndexFunc(out.Options, func(o bson.E) bool { return o.Key == e.Key }); i >= 0 {
+			out.Options[i].Value = e.Value
+		} else {
+			out.Options = append(out.Options, e)
+		}
+	}
+	return out
+}
+
+func withoutOption(opts bson.D, name string) bson.D {
+	return slices.DeleteFunc(opts, func(o bson.E) bool { return o.Key == name })
+}
+
+// Current returns, for each option in set, ix's value of it: nil when ix has
+// no expireAfterSeconds, false for an absent boolean. unique is true on the
+// _id index, which listIndexes doesn't mark unique, and prepareUnique is true
+// on a unique index, which already rejects duplicates: MongoDB takes setting
+// either as a no-op.
+func (ix Index) Current(set bson.D) bson.D {
+	unique := ix.Option("unique") != "" || ix.IsID()
+	out := make(bson.D, 0, len(set))
+	for _, e := range set {
+		v, ok := ix.option(e.Key)
+		switch e.Key {
+		case "expireAfterSeconds":
+			if !ok {
+				v = nil
+			}
+		case "unique", "prepareUnique":
+			v = unique || (e.Key == "prepareUnique" && v == true)
+		default:
+			b, _ := v.(bool)
+			v = b
+		}
+		out = append(out, bson.E{Key: e.Key, Value: v})
+	}
+	return out
+}
+
+// Unchanged reports whether a collMod setting set leaves ix as it is: every
+// option already has its value, numbers compared by value.
+func (ix Index) Unchanged(set bson.D) bool {
+	for i, cur := range ix.Current(set) {
+		if Canonical(cur.Value) != Canonical(set[i].Value) {
+			return false
+		}
+	}
+	return true
+}
+
 // IsText reports whether ix is a text index.
 func (ix Index) IsText() bool {
 	return slices.ContainsFunc(ix.Keys, func(e bson.E) bool { return e.Key == "_fts" || e.Value == "text" })

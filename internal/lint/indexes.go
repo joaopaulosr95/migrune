@@ -32,13 +32,17 @@ func (ix Index) conflicts(other Index) bool {
 	return ix.Collection == other.Collection && ix.Name != other.Name && ix.SameDistinct(other.Index)
 }
 
-// replayIndexes replays the createIndex and dropIndex steps of migrations, in
-// order, and returns the indexes left at the end, in creation order. MongoDB
-// rejects a createIndex that reuses a live name for a different definition
-// (index-name-reused), and one whose key pattern matches a live index under
-// another name, unless their collation, partialFilterExpression, unique,
-// sparse or wildcardProjection differ (index-conflict). Both are errors; the
-// rejected index is not created.
+// replayIndexes replays the createIndex, dropIndex and collModIndex steps of
+// migrations, in order, and returns the indexes left at the end, in creation
+// order. MongoDB rejects a createIndex that reuses a live name for a
+// different definition (index-name-reused), and one whose key pattern matches
+// a live index under another name, unless their collation,
+// partialFilterExpression, unique, sparse or wildcardProjection differ
+// (index-conflict). Both are errors; the rejected index is not created. A collModIndex changes the live
+// index's options, so later steps and the expected indexes see them; on an
+// index the replay doesn't know it is a warning (unknown-index), and setting
+// unique on an index that isn't prepareUnique is an error
+// (unique-without-prepare), which leaves the index as it was.
 func replayIndexes(migrations []migration.Migration) ([]Index, []Finding) {
 	var (
 		live     = map[indexKey]Index{}
@@ -80,6 +84,10 @@ func replayIndexes(migrations []migration.Migration) ([]Index, []Finding) {
 						"%s: index %s on %s already exists with a different definition, created by %s: keys %s options %s here, keys %s options %s there. Pick another name, or drop it in an earlier migration",
 						ptr, ix.Name, ix.Collection, filepath.Base(old.File), ix.KeysString(), ix.OptionsString(), old.KeysString(), old.OptionsString())})
 				}
+			case "collModIndex":
+				if f, found := collMod(m.Path, ptr, s, live); found {
+					findings = append(findings, f)
+				}
 			case "dropIndex":
 				k := indexKey{s.Collection, s.Name}
 				old, ok := live[k]
@@ -101,6 +109,36 @@ func replayIndexes(migrations []migration.Migration) ([]Index, []Finding) {
 		}
 	}
 	return out, findings
+}
+
+// collMod applies a collModIndex step s, at ptr in the migration file path,
+// to its index in live, and returns the finding it raises, if any.
+func collMod(path, ptr string, s migration.Step, live map[indexKey]Index) (Finding, bool) {
+	set, err := migration.StepSet(s)
+	if err != nil {
+		return Finding{File: path, Severity: Error, Rule: RuleSchema, Message: ptr + ": " + err.Error()}, true
+	}
+	k := indexKey{s.Collection, s.Name}
+	ix, ok := live[k]
+	switch {
+	case !ok:
+		return Finding{File: path, Severity: Warning, Rule: RuleUnknownIndex, Message: fmt.Sprintf(
+				"%s: no earlier migration creates index %s on %s, so lint can't check this collModIndex: make sure the index exists, "+
+					"such as from a baseline; plan fails if it doesn't", ptr, s.Name, s.Collection)},
+
+			true
+	case slices.ContainsFunc(set, func(e bson.E) bool { return e.Key == "unique" }) &&
+		ix.Option("unique") == "" && ix.Option("prepareUnique") == "":
+		return Finding{File: path, Severity: Error, Rule: RuleUniqueUnprepared, Message: fmt.Sprintf(
+				"%s: index %s on %s isn't prepareUnique, created by %s: MongoDB converts an index to unique only once prepareUnique is set on it. "+
+					"Set prepareUnique in an earlier migration, remove the duplicates in a data migration, then set unique",
+				ptr, s.Name, s.Collection, filepath.Base(ix.File))},
+
+			true
+	}
+	ix.Index = ix.Modified(set)
+	live[k] = ix
+	return Finding{}, false
 }
 
 // dropThenCreate returns the drop-then-create finding for ix when the same

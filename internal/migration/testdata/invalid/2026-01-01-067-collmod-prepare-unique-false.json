@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-067-collmod-prepare-unique-false",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "prepareUnique": false
+      }
+    }
+  ]
+}

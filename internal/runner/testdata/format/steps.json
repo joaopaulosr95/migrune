@@ -22,6 +22,7 @@
       "options": { "name": "name_1_ci", "unique": true, "collation": { "locale": "en", "strength": 2 } }
     },
     { "collection": "accounts", "operation": "dropIndex", "name": "name_1" },
+    { "collection": "events", "operation": "collModIndex", "name": "dedupeKey_1", "set": { "unique": true } },
     {
       "collection": "accounts",
       "operation": "aggregate",

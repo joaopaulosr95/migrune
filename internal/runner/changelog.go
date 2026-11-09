@@ -129,7 +129,9 @@ type StepResult struct {
 	UpsertedCount *int64 `bson:"upsertedCount,omitempty"`
 	DeletedCount  *int64 `bson:"deletedCount,omitempty"`
 	IndexName     string `bson:"indexName,omitempty"`
-	MergeCounts   `bson:",inline"`
+	// Set is, for a collModIndex step, the options it set, as in the file.
+	Set         bson.Raw `bson:"set,omitempty"`
+	MergeCounts `bson:",inline"`
 }
 
 // StepError is one error of an Errored entry. Step is the index of the failed

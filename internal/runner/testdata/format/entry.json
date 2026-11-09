@@ -100,6 +100,14 @@
         "name": "name_1"
       },
       {
+        "collection": "events",
+        "operation": "collModIndex",
+        "name": "dedupeKey_1",
+        "set": {
+          "unique": true
+        }
+      },
+      {
         "collection": "accounts",
         "operation": "aggregate",
         "pipeline": [
@@ -163,6 +171,14 @@
       "collection": "accounts",
       "operation": "dropIndex",
       "indexName": "name_1"
+    },
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "indexName": "dedupeKey_1",
+      "set": {
+        "unique": true
+      }
     },
     {
       "collection": "accounts",

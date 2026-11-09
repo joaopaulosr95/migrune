@@ -6,6 +6,75 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// TestCollModSet checks how a collModIndex's set changes an index, as
+// listIndexes shows it afterwards on every supported MongoDB version.
+func TestCollModSet(t *testing.T) {
+	d := func(kv ...any) bson.D {
+		var out bson.D
+		for i := 0; i < len(kv); i += 2 {
+			out = append(out, bson.E{Key: kv[i].(string), Value: kv[i+1]})
+		}
+		return out
+	}
+	ix := func(opts ...any) Index {
+		return Index{Collection: "events", Name: "createdAt_1", Keys: d("createdAt", int32(1)), Options: d(opts...)}
+	}
+	cases := []struct {
+		name string
+		have Index
+		set  bson.D
+		// after is the options after, current the index's values of set
+		// before.
+		after, current string
+		unchanged      bool
+	}{
+		{name: "add a TTL", have: ix(), set: d("expireAfterSeconds", int32(3600)),
+			after: `{"expireAfterSeconds": 3600}`, current: `{"expireAfterSeconds": null}`},
+		{name: "change a TTL", have: ix("expireAfterSeconds", int32(60)), set: d("expireAfterSeconds", int32(3600)),
+			after: `{"expireAfterSeconds": 3600}`, current: `{"expireAfterSeconds": 60}`},
+		{name: "the same TTL, as another number type", have: ix("expireAfterSeconds", int64(60)), set: d("expireAfterSeconds", 60.0),
+			after: `{"expireAfterSeconds": 60}`, current: `{"expireAfterSeconds": 60}`, unchanged: true},
+		{name: "hide", have: ix(), set: d("hidden", true),
+			after: `{"hidden": true}`, current: `{"hidden": false}`},
+		{name: "hide a hidden index", have: ix("hidden", true), set: d("hidden", true),
+			after: `{"hidden": true}`, current: `{"hidden": true}`, unchanged: true},
+		{name: "unhide", have: ix("hidden", true), set: d("hidden", false),
+			after: `{}`, current: `{"hidden": true}`},
+		{name: "unhide a visible index", have: ix(), set: d("hidden", false),
+			after: `{}`, current: `{"hidden": false}`, unchanged: true},
+		{name: "prepareUnique", have: ix(), set: d("prepareUnique", true),
+			after: `{"prepareUnique": true}`, current: `{"prepareUnique": false}`},
+		{name: "prepareUnique on a unique index is a no-op", have: ix("unique", true), set: d("prepareUnique", true),
+			after: `{"unique": true}`, current: `{"prepareUnique": true}`, unchanged: true},
+		{name: "unique drops prepareUnique", have: ix("prepareUnique", true), set: d("unique", true),
+			after: `{"unique": true}`, current: `{"unique": false}`},
+		{name: "unique on a unique index", have: ix("unique", true), set: d("unique", true),
+			after: `{"unique": true}`, current: `{"unique": true}`, unchanged: true},
+		{name: "unique on the _id index", have: Index{Name: "_id_", Keys: d("_id", int32(1))}, set: d("unique", true),
+			after: `{"unique": true}`, current: `{"unique": true}`, unchanged: true},
+		{name: "several options, one already set", have: ix("hidden", true, "expireAfterSeconds", int32(60)),
+			set:   d("hidden", true, "expireAfterSeconds", int32(30)),
+			after: `{"expireAfterSeconds": 30, "hidden": true}`, current: `{"expireAfterSeconds": 60, "hidden": true}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			after := tc.have.Modified(tc.set)
+			if got := Canonical(after.Options); got != tc.after {
+				t.Errorf("Modified options %s, want %s", got, tc.after)
+			}
+			if got := Canonical(tc.have.Current(tc.set)); got != tc.current {
+				t.Errorf("Current %s, want %s", got, tc.current)
+			}
+			if got := tc.have.Unchanged(tc.set); got != tc.unchanged {
+				t.Errorf("Unchanged %v, want %v", got, tc.unchanged)
+			}
+			if after.KeysString() != tc.have.KeysString() || after.Name != tc.have.Name {
+				t.Errorf("Modified changed the keys or name: %+v", after)
+			}
+		})
+	}
+}
+
 // TestDefinitionDiff checks which options count when two indexes are
 // compared, for each index type, as listIndexes shows the existing one on
 // every supported MongoDB version.

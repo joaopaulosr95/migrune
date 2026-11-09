@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-003-unique",
+  "description": "Make the email index unique",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "unique": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+[
+  {
+    "collection": "events",
+    "name": "createdAt_1",
+    "keys": {
+      "createdAt": 1
+    }
+  },
+  {
+    "collection": "users",
+    "name": "email_1",
+    "keys": {
+      "email": 1
+    }
+  },
+  {
+    "collection": "orders",
+    "name": "ref_1",
+    "keys": {
+      "ref": 1
+    },
+    "options": {
+      "unique": true
+    }
+  },
+  {
+    "collection": "items",
+    "name": "legacy_1",
+    "keys": {
+      "legacy": 1
+    }
+  }
+]

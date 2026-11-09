@@ -41,12 +41,20 @@ func TestFormatGolden(t *testing.T) {
 	}
 	n := func(v int64) *int64 { return &v }
 	step := func(i int) *int { return &i }
+	set := func(ext string) bson.Raw {
+		var r bson.Raw
+		if err := bson.UnmarshalExtJSON([]byte(ext), false, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
 	results := []StepResult{
 		{Collection: "projects", Operation: "updateOne", MatchedCount: n(0), ModifiedCount: n(0), UpsertedCount: n(1)},
 		{Collection: "projects", Operation: "updateMany", MatchedCount: n(3), ModifiedCount: n(2), UpsertedCount: n(0)},
 		{Collection: "projects", Operation: "deleteMany", DeletedCount: n(4)},
 		{Collection: "accounts", Operation: "createIndex", IndexName: "name_1_ci"},
 		{Collection: "accounts", Operation: "dropIndex", IndexName: "name_1"},
+		{Collection: "events", Operation: "collModIndex", IndexName: "dedupeKey_1", Set: set(`{"unique": true}`)},
 		{Collection: "accounts", Operation: "aggregate", MergeCounts: MergeCounts{
 			DiffCountBefore: n(5), DiffCountAfter: n(0), UnmatchedCount: n(1), TypeChangedCount: n(2),
 			DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),

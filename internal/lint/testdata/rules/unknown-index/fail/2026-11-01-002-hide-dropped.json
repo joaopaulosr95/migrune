@@ -1,0 +1,29 @@
+{
+  "id": "2026-11-01-002-hide-dropped",
+  "description": "Hide an index after dropping it",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "createIndex",
+      "keys": {
+        "status": 1
+      },
+      "options": {
+        "name": "status_1"
+      }
+    },
+    {
+      "collection": "orders",
+      "operation": "dropIndex",
+      "name": "status_1"
+    },
+    {
+      "collection": "orders",
+      "operation": "collModIndex",
+      "name": "status_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

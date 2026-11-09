@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-002-hide",
+  "description": "Hide the status index",
+  "steps": [
+    {
+      "collection": "orders",
+      "operation": "collModIndex",
+      "name": "status_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

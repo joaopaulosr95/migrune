@@ -1,0 +1,13 @@
+{
+  "id": "2026-01-01-066-collmod-missing-name",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

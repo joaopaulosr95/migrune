@@ -15,8 +15,9 @@ import (
 
 // Server error codes index steps handle.
 const (
-	codeNamespaceNotFound = 26
-	codeIndexNotFound     = 27
+	codeNamespaceNotFound          = 26
+	codeIndexNotFound              = 27
+	codeCannotConvertIndexToUnique = 359
 )
 
 // runIndex runs an index migration. Index builds can't run in a
@@ -52,10 +53,12 @@ func (r *Run) runIndex(m migration.Migration, apply bool, log *slog.Logger, row 
 	return r.writeFinishedAlone(m, results)
 }
 
-// runIndexStep runs one createIndex or dropIndex step and returns what it did
-// to the index. A dropIndex of an index or a collection that doesn't exist
-// succeeds. check runs right before the createIndexes or dropIndexes
-// command, which isn't sent when it fails.
+// runIndexStep runs one createIndex, dropIndex or collModIndex step and
+// returns what it did to the index. A dropIndex of an index or a collection
+// that doesn't exist succeeds; a collModIndex of one fails. A collModIndex
+// whose index already has every value it sets sends nothing. check runs
+// right before the createIndexes, dropIndexes or collMod command, which isn't
+// sent when it fails.
 func runIndexStep(ctx context.Context, db *mongo.Database, s migration.Step, check func() error, log *slog.Logger) (StepResult, IndexChange, error) {
 	out := StepResult{Collection: s.Collection, Operation: s.Operation}
 	var change IndexChange
@@ -126,10 +129,60 @@ func runIndexStep(ctx context.Context, db *mongo.Database, s migration.Step, che
 		default:
 			return out, change, err
 		}
+	case "collModIndex":
+		out.IndexName, out.Set = s.Name, s.Set
+		set, err := migration.StepSet(s)
+		if err != nil {
+			return out, change, err
+		}
+		// Look first, to report the values before and skip a no-op.
+		indexes, err := listIndexes(ctx, db.Collection(s.Collection))
+		if err != nil {
+			return out, change, fmt.Errorf("list indexes: %w", err)
+		}
+		j := slices.IndexFunc(indexes, func(ix migration.Index) bool { return ix.Name == s.Name })
+		if j < 0 {
+			return out, change, missingIndexError(s.Collection, s.Name)
+		}
+		change = collModChange(IndexPresent, s.Collection, indexes[j], set)
+		if indexes[j].Unchanged(set) {
+			log.Info("index options already set", "collection", s.Collection, "index", s.Name, "set", extJSON(set))
+			return out, change, nil
+		}
+		if err := check(); err != nil {
+			return out, change, err
+		}
+		err = db.RunCommand(ctx, bson.D{
+			{Key: "collMod", Value: s.Collection},
+			{Key: "index", Value: append(bson.D{{Key: "name", Value: s.Name}}, set...)},
+			majority,
+		}).Err()
+		if err != nil {
+			return out, change, err
+		}
+		change.Action = IndexModify
+		log.Info("index modified", "collection", s.Collection, "index", s.Name,
+			"before", extJSON(indexes[j].Current(set)), "set", extJSON(set))
 	default:
 		return out, change, fmt.Errorf("operation %q is not an index operation", s.Operation)
 	}
 	return out, change, nil
+}
+
+// collModChange describes what a collModIndex setting set does to have, an
+// index of coll, for the report.
+func collModChange(action IndexAction, coll string, have migration.Index, set bson.D) IndexChange {
+	c := IndexChange{Action: action, Collection: coll, Name: have.Name, Set: rawExtJSON(set), Before: rawExtJSON(have.Current(set))}
+	if len(have.Keys) > 0 {
+		c.Keys = rawExtJSON(have.Keys)
+	}
+	return c
+}
+
+// missingIndexError is the failure of a collModIndex whose index doesn't
+// exist.
+func missingIndexError(coll, name string) error {
+	return fmt.Errorf("index %s doesn't exist on %s, so there is nothing to modify: create it in an earlier migration, or fix the name", name, coll)
 }
 
 // indexChange describes what a step does to ix, an index of coll, for the

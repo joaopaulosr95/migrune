@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-06-004-prepare-email",
+  "description": "Reject new duplicate emails",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "prepareUnique": true
+      }
+    }
+  ]
+}

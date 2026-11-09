@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-002-unhide",
+  "description": "Unhide it",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "hidden": false
+      }
+    }
+  ]
+}

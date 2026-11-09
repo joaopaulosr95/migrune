@@ -1,0 +1,11 @@
+{
+  "id": "2026-01-01-055-collmod-missing-set",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1"
+    }
+  ]
+}

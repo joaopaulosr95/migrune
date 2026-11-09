@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-003-again",
+  "description": "Create it again, visible: a no-op",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1
+      },
+      "options": {
+        "name": "createdAt_1"
+      }
+    }
+  ]
+}

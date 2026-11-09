@@ -1,0 +1,112 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "migrations": [
+    {
+      "id": "2026-11-06-001-expire-events",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 6,
+      "indexes": [
+        {
+          "action": "modify",
+          "collection": "events",
+          "name": "createdAt_1",
+          "keys": {
+            "createdAt": 1
+          },
+          "set": {
+            "expireAfterSeconds": 2592000
+          },
+          "before": {
+            "expireAfterSeconds": null
+          },
+          "wouldExpire": 12
+        }
+      ]
+    },
+    {
+      "id": "2026-11-06-002-hide-legacy",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 2,
+      "indexes": [
+        {
+          "action": "present",
+          "collection": "items",
+          "name": "legacy_1",
+          "keys": {
+            "legacy": 1
+          },
+          "set": {
+            "hidden": true
+          },
+          "before": {
+            "hidden": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "2026-11-06-003-prepare-email",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 3,
+      "indexes": [
+        {
+          "action": "modify",
+          "collection": "users",
+          "name": "email_1",
+          "keys": {
+            "email": 1
+          },
+          "set": {
+            "prepareUnique": true
+          },
+          "before": {
+            "prepareUnique": false
+          },
+          "warning": "once index email_1 is prepareUnique, MongoDB rejects every insert and update that would add a duplicate key to it: make sure the application doesn't write any"
+        }
+      ]
+    },
+    {
+      "id": "2026-11-06-004-unique-email",
+      "kind": "index",
+      "status": "errored",
+      "durationMs": 9,
+      "error": "/steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first",
+      "indexes": [
+        {
+          "action": "modify",
+          "collection": "users",
+          "name": "email_1",
+          "keys": {
+            "email": 1
+          },
+          "set": {
+            "unique": true
+          },
+          "before": {
+            "unique": false
+          },
+          "conflict": "index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first"
+        }
+      ]
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 4,
+    "applied": 3,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 25
+  },
+  "error": "migration 2026-11-06-004-unique-email failed: /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first"
+}

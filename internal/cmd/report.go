@@ -106,6 +106,12 @@ func writeRowDetails(w io.Writer, command string, row runner.Row) {
 		if c.Options != nil {
 			line += ", options " + string(c.Options)
 		}
+		if c.Set != nil {
+			line += ", set " + string(c.Set)
+		}
+		if c.Before != nil {
+			line += ", before " + string(c.Before)
+		}
 		if c.WouldExpire != nil {
 			line += fmt.Sprintf(", wouldExpire %d", *c.WouldExpire)
 		}
@@ -138,6 +144,8 @@ func indexLabel(command string, c runner.IndexChange) string {
 		return "created"
 	case c.Action == runner.IndexDrop:
 		return "dropped"
+	case c.Action == runner.IndexModify:
+		return "modified"
 	}
 	return string(c.Action)
 }

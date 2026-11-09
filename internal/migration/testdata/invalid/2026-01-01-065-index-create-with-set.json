@@ -1,0 +1,19 @@
+{
+  "id": "2026-01-01-065-index-create-with-set",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1
+      },
+      "options": {
+        "name": "createdAt_1"
+      },
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-06-003-unhide-name",
+  "description": "Unhide name_1: a query regressed",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "collModIndex",
+      "name": "name_1",
+      "set": {
+        "hidden": false
+      }
+    }
+  ]
+}

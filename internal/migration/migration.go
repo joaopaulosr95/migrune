@@ -34,12 +34,13 @@ const (
 
 // kinds maps each allowed operation to the kind of migration it belongs to.
 var kinds = map[string]Kind{
-	"updateOne":   KindData,
-	"updateMany":  KindData,
-	"deleteMany":  KindData,
-	"createIndex": KindIndex,
-	"dropIndex":   KindIndex,
-	"aggregate":   KindMerge,
+	"updateOne":    KindData,
+	"updateMany":   KindData,
+	"deleteMany":   KindData,
+	"createIndex":  KindIndex,
+	"dropIndex":    KindIndex,
+	"collModIndex": KindIndex,
+	"aggregate":    KindMerge,
 }
 
 // Errors wrapped by LoadFile and LoadDir when a file can't be read or parsed.
@@ -75,9 +76,12 @@ type Step struct {
 	// Update is an update document or an update pipeline.
 	Update  bson.RawValue `bson:"update,omitempty"`
 	Options bson.Raw      `bson:"options,omitempty"`
-	// Index steps: createIndex uses Keys and Options, dropIndex uses Name.
+	// Index steps: createIndex uses Keys and Options, dropIndex uses Name,
+	// collModIndex uses Name and Set.
 	Keys bson.Raw `bson:"keys,omitempty"`
 	Name string   `bson:"name,omitempty"`
+	// Set holds the index options a collModIndex step changes.
+	Set bson.Raw `bson:"set,omitempty"`
 	// Merge steps.
 	Pipeline []bson.Raw `bson:"pipeline,omitempty"`
 }

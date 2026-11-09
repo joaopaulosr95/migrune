@@ -78,8 +78,10 @@ the lock, with exit 1 and no report:
 Error: acquire migration lock: (Unauthorized) not authorized on app to execute command { findAndModify: "migrations_lock", … }
 ```
 
-plan and apply need `readWrite` on the target database. See
-[credentials](running.md#credentials) for the roles each command needs.
+plan and apply need `readWrite` on the target database; a `collModIndex`
+step needs the `collMod` action too, which plan checks and reports as the
+step's conflict. See [credentials](running.md#credentials) for the roles
+each command needs.
 
 ## A migration errored
 

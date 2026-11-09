@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-064-index-drop-with-set",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "dropIndex",
+      "name": "createdAt_1",
+      "set": {
+        "hidden": true
+      }
+    }
+  ]
+}

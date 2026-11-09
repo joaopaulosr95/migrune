@@ -1,0 +1,22 @@
+{
+  "id": "2026-11-01-003-unique-again",
+  "description": "Prepare it, then make it unique: the earlier unique left it as it was",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "prepareUnique": true
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "unique": true
+      }
+    }
+  ]
+}

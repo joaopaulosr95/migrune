@@ -1,0 +1,24 @@
+{
+  "id": "2026-11-01-002-expire-events",
+  "description": "Expire events after 30 days",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1
+      },
+      "options": {
+        "name": "createdAt_1"
+      }
+    },
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "expireAfterSeconds": 2592000
+      }
+    }
+  ]
+}

@@ -36,7 +36,7 @@ The steps' `operation` decides the kind, and a file never mixes kinds:
 | Kind  | Operations                              | Use it for                                                          |
 | ----- | --------------------------------------- | ------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`, `deleteMany` | Backfills that fit in a transaction, value renames, cleanups, seeds |
-| index | `createIndex`, `dropIndex`              | Creating and dropping indexes                                       |
+| index | `createIndex`, `dropIndex`, `collModIndex` | Creating, changing and dropping indexes                          |
 | merge | `aggregate` ending in `$merge`          | Logic that reads other collections, backfills too big for a transaction |
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: they aren't
@@ -134,7 +134,7 @@ committed.
 
 ## Index migrations
 
-MongoDB can't build indexes on existing collections, or drop them, in a
+MongoDB can't build, change or drop indexes on existing collections in a
 transaction, so index steps run one by one, outside a transaction, and the
 `Finished` entry is written after the last one.
 
@@ -160,14 +160,17 @@ transaction, so index steps run one by one, outside a transaction, and the
   goes in `options` too: `unique`, `sparse`, `partialFilterExpression`,
   `expireAfterSeconds`, `collation`, `weights`, `hidden` and so on.
 - `dropIndex` takes only the index `name`.
+- `collModIndex` takes the index `name` and, in `set`, the options to change
+  in place: see [changing an index in place](#changing-an-index-in-place).
 
-Always name indexes: `dropIndex` and lint work by name, and generated names
-change with the keys.
+Always name indexes: `dropIndex`, `collModIndex` and lint work by name, and
+generated names change with the keys.
 
 Re-running is safe: creating an index that already exists with the same name
-and definition does nothing, dropping a missing index (or on a missing
-collection) counts as success, and a unique index build fails on its own if
-documents have duplicates. If a step fails, the steps before it stay done; fix
+and definition does nothing, and so does changing an index to the values it
+already has; dropping a missing index (or on a missing collection) counts as
+success, and a unique index build fails on its own if documents have
+duplicates. If a step fails, the steps before it stay done; fix
 the file and run again.
 
 lint replays every index migration in id order, without a database, and fails
@@ -177,9 +180,9 @@ the same `collation`, `partialFilterExpression`, `unique`, `sparse` and
 `wildcardProjection` (`index-conflict`). Every index option counts in a
 definition, but the few MongoDB ignores: see
 [how indexes are matched](reference/lint-rules.md#how-indexes-are-matched).
-To change an index's options, create the replacement under a new name, then
-drop the old index, as above, or in a later migration once no code names it
-(in a `hint`, for instance). Never drop an index and
+`collModIndex` changes `expireAfterSeconds`, `hidden` and `unique` in place. To change anything else, create the replacement under a
+new name, then drop the old index, as above, or in a later migration once no
+code names it (in a `hint`, for instance). Never drop an index and
 recreate it under the same name or keys: if the build fails, such as a unique
 index on duplicates, the collection is left without either, and lint rejects
 it in one migration (`drop-then-create`). If your application declares its
@@ -188,14 +191,16 @@ indexes too, compare them with `--expected-indexes` (see
 
 A TTL index (`expireAfterSeconds`) deletes documents: every one whose indexed
 date is already older than the TTL goes as soon as it is built, and the rest
-as they age. lint warns about every TTL index (`ttl-index`), and plan reports
-how many documents a new one would delete at once (`wouldExpire`).
+as they age. lint warns about every TTL index and every TTL a `collModIndex`
+sets (`ttl-index`), and plan reports how many documents a new TTL index, or a
+TTL a `collModIndex` adds or lowers, would delete at once (`wouldExpire`).
 
-plan builds and drops nothing: it reads the existing indexes and lists, step
-by step, the index to create, to drop, already present or already absent, and
-fails a step MongoDB would reject. It carries what each pending index
-migration would do to the next, so a migration that recreates an index an
-earlier pending one drops plans as apply would run it. It compares indexes the way lint does, except that on MongoDB 7.0, which
+plan builds, changes and drops nothing: it reads the existing indexes and
+lists, step by step, the index to create, to modify, to drop, already present
+or already absent, and fails a step MongoDB would reject. It carries what
+each pending index migration would do to the next, so a migration that
+recreates an index an earlier pending one drops plans as apply would run it.
+It compares indexes the way lint does, except that on MongoDB 7.0, which
 takes a `createIndex` that differs from the index of its name only by
 `hidden` as that index, plan reports it `present`; lint, without a database,
 rejects it as 8.0 and later do. For a collation, `listIndexes` lists every
@@ -205,6 +210,76 @@ another collation, so plan fails the step as MongoDB would reject it; when
 every field the step sets matches but the index has more, plan says the
 index differs, or warns on the index to create, that apply may fail. It can't predict a unique
 index build failing on duplicates; only apply finds out.
+
+### Changing an index in place
+
+`collModIndex` changes options of an existing index with MongoDB's
+`collMod`, without rebuilding it, so the collection never goes without the
+index:
+
+```json
+{
+  "collection": "events",
+  "operation": "collModIndex",
+  "name": "createdAt_1",
+  "set": { "expireAfterSeconds": 2592000 }
+}
+```
+
+`set` takes one or more of `expireAfterSeconds`, `hidden`, `prepareUnique`
+and `unique`; `prepareUnique` goes in a step of its own, as MongoDB requires
+(see the [reference](reference/migration-file.md#index-steps)). Each change
+only rewrites the index's metadata, so it is fast. A step whose index already
+has every value it sets does nothing (`present`); a step whose index doesn't
+exist fails, in plan and apply, since there is nothing to change. plan
+reports the index `to modify`, with each option's value before and after.
+
+**Add or change a TTL.** `expireAfterSeconds` turns a plain index on a
+single date field into a TTL index, or changes its TTL. As with a new TTL
+index, every document already older than the TTL goes at the TTL monitor's
+next pass, so plan reports `wouldExpire` when the step adds a TTL or lowers
+it; raising it deletes nothing more. plan fails the step on a compound index
+or `_id_`, which MongoDB refuses.
+
+**Retire an index safely.** Hide it, watch, then drop it in a later
+migration:
+
+```json
+{ "collection": "orders", "operation": "collModIndex", "name": "status_1", "set": { "hidden": true } }
+```
+
+MongoDB keeps a hidden index up to date but the query planner stops using
+it, so you see how queries do without it while it can still come back. If
+something regresses, unhide it at once with `"hidden": false` in a new
+migration: it is back as soon as that runs, with no rebuild. Once nothing
+regressed for long enough, drop it in a later release.
+
+**Make an index unique.** MongoDB converts an existing index to unique only
+in two `collMod` steps, with the duplicates removed in between. Write three
+migrations:
+
+1. `"set": { "prepareUnique": true }`. From then on MongoDB rejects every
+   insert and update that would add a duplicate key to the index, so check
+   the application can't write one first; plan warns about it.
+2. A [data migration](#data-migrations) that deletes the duplicates or makes
+   their keys distinct.
+3. `"set": { "unique": true }`. MongoDB refuses it on an index without
+   `prepareUnique` (lint's `unique-without-prepare`, and plan fails), and on
+   duplicates. plan runs `collMod` with `dryRun` and fails the step on
+   duplicates, with how many keys, how many documents share them, and up to
+   five of the keys.
+
+plan checks the data as it is, so ship the third migration in a later
+release than the second: while the data migration is still pending, plan
+finds the duplicates it would remove and fails. When the first migration is
+pending too, plan can't check at all, as MongoDB checks only an index that is
+already `prepareUnique`: it warns, and apply fails on duplicates.
+
+**Turn a TTL off.** `collModIndex` can't remove a TTL. Set
+`expireAfterSeconds` to 2147483647 (about 68 years), the largest value it
+takes: the index stays a TTL index but deletes nothing in practice. If your
+application declares its indexes, declare the same value there, or
+`--expected-indexes` reports the index (`index-options`).
 
 ## Merge migrations
 

@@ -1,0 +1,24 @@
+{
+  "id": "2026-11-06-008-index-then-ttl",
+  "description": "Index the last use, then expire sessions after a minute",
+  "steps": [
+    {
+      "collection": "sessions",
+      "operation": "createIndex",
+      "keys": {
+        "lastUsedAt": 1
+      },
+      "options": {
+        "name": "lastUsedAt_1"
+      }
+    },
+    {
+      "collection": "sessions",
+      "operation": "collModIndex",
+      "name": "lastUsedAt_1",
+      "set": {
+        "expireAfterSeconds": 60
+      }
+    }
+  ]
+}

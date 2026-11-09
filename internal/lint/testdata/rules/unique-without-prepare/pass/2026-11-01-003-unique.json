@@ -1,0 +1,22 @@
+{
+  "id": "2026-11-01-003-unique",
+  "description": "Make the email index unique, and the already unique login index",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "unique": true
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "login_1",
+      "set": {
+        "unique": true
+      }
+    }
+  ]
+}

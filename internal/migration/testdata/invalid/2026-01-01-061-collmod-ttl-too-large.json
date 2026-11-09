@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-061-collmod-ttl-too-large",
+  "description": "test fixture",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModIndex",
+      "name": "createdAt_1",
+      "set": {
+        "expireAfterSeconds": 2147483648
+      }
+    }
+  ]
+}

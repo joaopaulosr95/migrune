@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-002-prepare",
+  "description": "Prepare the email index to become unique",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModIndex",
+      "name": "email_1",
+      "set": {
+        "prepareUnique": true
+      }
+    }
+  ]
+}

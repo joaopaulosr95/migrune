@@ -99,8 +99,10 @@ and lock expiry already handle.
 - **Correct values.** The checks prove a data migration is repeatable and a
   merge keeps types, not that it computes the right values. The plan's report and samples
   are there for a human to read.
-- **Unique index builds.** plan can't predict a unique index failing on
-  duplicates; apply finds out.
+- **Unique index builds.** plan can't predict a unique index build failing
+  on duplicates; apply finds out. Converting an existing index to unique
+  with `collModIndex` is checked: see
+  [making an index unique](writing-migrations.md#changing-an-index-in-place).
 - **Bounded run times.** migrune sets no time limit on index builds (and
   no `commitQuorum`, so the server's default applies), merges or plan's
   reads; a run on a large collection lasts as long as the server takes.

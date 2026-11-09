@@ -120,7 +120,7 @@ returned for that kind of step:
 | Kind  | Fields                                                                                 |
 | ----- | -------------------------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs. |
-| index | `indexName`.                                                                           |
+| index | `indexName`, and for `collModIndex` its `set`, as in the file.                         |
 | merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
 To read the latest `Finished` entry of a migration, steps included (in a
@@ -218,7 +218,7 @@ passed, the server may hand the lock to another runner soon, so the run stops,
 as if the lock were lost. The lease is measured on the runner's monotonic
 clock, so a step of its system clock, such as NTP setting it back, doesn't
 extend it. The runner checks the lease right before every
-index command (`createIndexes`, `dropIndexes`) and every `$merge` aggregate,
+index command (`createIndexes`, `dropIndexes`, `collMod`) and every `$merge` aggregate,
 which aren't fenced, and after each heartbeat that fails.
 
 `--lock-ttl` must stay above the server's transaction lifetime limit

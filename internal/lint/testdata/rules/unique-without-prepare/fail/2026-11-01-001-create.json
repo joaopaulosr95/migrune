@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Index the emails",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_1"
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "2026-11-01-001-create",
+  "description": "Create the indexes",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": {
+        "createdAt": 1
+      },
+      "options": {
+        "name": "createdAt_1"
+      }
+    },
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": {
+        "email": 1
+      },
+      "options": {
+        "name": "email_1"
+      }
+    },
+    {
+      "collection": "orders",
+      "operation": "createIndex",
+      "keys": {
+        "ref": 1
+      },
+      "options": {
+        "name": "ref_1"
+      }
+    },
+    {
+      "collection": "items",
+      "operation": "createIndex",
+      "keys": {
+        "legacy": 1
+      },
+      "options": {
+        "name": "legacy_1"
+      }
+    }
+  ]
+}

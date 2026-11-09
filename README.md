@@ -6,8 +6,8 @@ and applies them (`apply`) under a lock, recording each one in a changelog
 collection.
 
 - **Three kinds of migration**: data (`updateOne`, `updateMany`,
-  `deleteMany` in one transaction), index (`createIndex`, `dropIndex`) and
-  merge (an aggregation pipeline ending in `$merge`).
+  `deleteMany` in one transaction), index (`createIndex`, `dropIndex`,
+  `collModIndex`) and merge (an aggregation pipeline ending in `$merge`).
 - **Checked before they run**: lint works offline; plan runs every data
   migration twice in a transaction and aborts it, so non-idempotent
   migrations fail before anyone approves them.
