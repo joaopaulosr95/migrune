@@ -11,6 +11,7 @@ import (
 
 type applyOptions struct {
 	conn            connFlags
+	namespace       string
 	digestIn        string
 	noDigest        bool
 	mutable         bool
@@ -43,6 +44,7 @@ https://github.com/joaopaulosr95/migrune.`,
 	}
 	fs := c.Flags()
 	o.conn.register(fs)
+	namespaceFlag(fs, &o.namespace)
 	fs.StringVar(&o.digestIn, "digest-in", "", "plan digest file (plan --digest-out) the run must match; required unless --no-digest")
 	fs.BoolVar(&o.noDigest, "no-digest", false, "run without a plan digest (local use only)")
 	fs.BoolVar(&o.mutable, "mutable", false, "re-run finished migrations whose file changed instead of failing (local use only; needs --no-digest)")
@@ -63,6 +65,9 @@ func (a *app) apply(cmd *cobra.Command, o applyOptions) error {
 		return err
 	}
 	if err := o.lock.check(); err != nil {
+		return err
+	}
+	if err := checkNamespace(o.namespace); err != nil {
 		return err
 	}
 	switch {
@@ -90,6 +95,7 @@ func (a *app) apply(cmd *cobra.Command, o applyOptions) error {
 			RunnerID:   o.runnerID,
 			LockTTL:    o.lock.ttl,
 			LockWait:   o.lock.wait,
+			Namespace:  o.namespace,
 			ApprovedBy: runner.ApprovedBy{Name: o.approvedByName, Email: o.approvedByEmail},
 		},
 		runner.Config{Mode: runner.ModeApply, Mutable: o.mutable, Digest: digest, SampleValues: o.values})

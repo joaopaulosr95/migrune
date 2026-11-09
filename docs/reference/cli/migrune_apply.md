@@ -32,6 +32,7 @@ migrune apply [flags]
       --lock-ttl duration            shortest time the migration lock lives without a heartbeat, in whole seconds, at least 61s; it expires after the longer of this and 3 heartbeat intervals (30s). Keep it above the server's transactionLifetimeLimitSeconds (60s by default), so the lock can't expire while a migration's transaction is open (default 1m30s)
       --lock-wait duration           how long to keep trying, with backoff, to take a migration lock held by another runner; 0 fails at once. A lock still held after the wait exits with code 3
       --mutable[=true|false]         re-run finished migrations whose file changed instead of failing (local use only; needs --no-digest)
+      --namespace string             set of migrations this directory holds in the database, for several apps sharing one database: scopes the changelog reads, the lock and the digest; 1 to 64 lowercase letters, digits, _ or -; empty is the default namespace. lint checks it always but uses it only with --uri
       --no-digest[=true|false]       run without a plan digest (local use only)
   -o, --output string                report format: table or json (default "table")
       --runner-id string             runner id used for the lock and logs (default: hostname, PID and a random suffix)

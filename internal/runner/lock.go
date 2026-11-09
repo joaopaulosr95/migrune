@@ -20,14 +20,14 @@ import (
 )
 
 const (
-	// LockCollection holds the single lock document.
+	// LockCollection holds one lock document per namespace.
 	LockCollection = migration.LockCollection
 	// LockVersion is the format version every lock document is written
 	// with, in its v field. A document without v, such as one
 	// written by hand, reads as 1.
 	LockVersion = 1
-	// lockID is the _id of the one global lock document.
-	lockID = "migrations"
+	// defaultLockID is the _id of the default namespace's lock document.
+	defaultLockID = "migrations"
 	// DefaultHeartbeatInterval is how often the lock holder refreshes the lock.
 	DefaultHeartbeatInterval = 10 * time.Second
 	// DefaultLockTTL is the shortest time a lock lives without a heartbeat. It
@@ -99,7 +99,17 @@ type lockDoc struct {
 	ExpiresAt     time.Time `bson:"expiresAt"`
 }
 
-// Lock is this runner's handle on the global migration lock.
+// lockID is the _id of namespace's lock document: "migrations" for the
+// default namespace, "migrations:<namespace>" otherwise. A namespace can't
+// hold ":", so two namespaces never share a lock.
+func lockID(namespace string) string {
+	if namespace == "" {
+		return defaultLockID
+	}
+	return defaultLockID + ":" + namespace
+}
+
+// Lock is this runner's handle on its namespace's migration lock.
 //
 // Every timestamp is written and compared with the server's $$NOW, never the
 // runner's clock. Each write by the holder sets expiresAt to $$NOW plus the
@@ -115,7 +125,9 @@ type lockDoc struct {
 // a TTL above the server's transaction lifetime limit the lock can't expire
 // while the transaction is open; the fence remains the backstop.
 type Lock struct {
-	coll     *mongo.Collection
+	coll *mongo.Collection
+	// id is the lock document's _id (lockID).
+	id       string
 	owner    string
 	interval time.Duration
 	ttl      time.Duration
@@ -141,9 +153,10 @@ type Lock struct {
 	mu sync.Mutex
 }
 
-// NewLock returns a handle on the lock in db for the runner owner. interval
-// and ttl must be whole numbers of seconds, at least one.
-func NewLock(db *mongo.Database, owner string, interval, ttl time.Duration, log *slog.Logger) (*Lock, error) {
+// NewLock returns a handle on namespace's lock in db for the runner owner.
+// namespace is "" for the default namespace. interval and ttl must be whole
+// numbers of seconds, at least one.
+func NewLock(db *mongo.Database, namespace, owner string, interval, ttl time.Duration, log *slog.Logger) (*Lock, error) {
 	if owner == "" {
 		return nil, errors.New("lock: empty runner id")
 	}
@@ -156,7 +169,7 @@ func NewLock(db *mongo.Database, owner string, interval, ttl time.Duration, log 
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Lock{coll: lockCollection(db), owner: owner, interval: interval, ttl: ttl, log: log, now: time.Now}, nil
+	return &Lock{coll: lockCollection(db), id: lockID(namespace), owner: owner, interval: interval, ttl: ttl, log: log, now: time.Now}, nil
 }
 
 // lockCollection is db's lock collection, written and read with majority.
@@ -192,7 +205,7 @@ func (l *Lock) leaseExpired() bool {
 
 // ownedFilter matches the lock document only while this runner owns it.
 func (l *Lock) ownedFilter() bson.D {
-	return bson.D{{Key: "_id", Value: lockID}, {Key: "token", Value: l.token}}
+	return bson.D{{Key: "_id", Value: l.id}, {Key: "token", Value: l.token}}
 }
 
 // expiresAt is the expression for the lock's new expiry: $$NOW plus the
@@ -298,7 +311,7 @@ func (l *Lock) tryAcquire(ctx context.Context, token string) error {
 		{{Key: "$unset", Value: acquireField}},
 	}
 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
-	filter := bson.D{{Key: "_id", Value: lockID}}
+	filter := bson.D{{Key: "_id", Value: l.id}}
 
 	for range 3 {
 		sent := l.now()
@@ -327,7 +340,7 @@ func (l *Lock) tryAcquire(ctx context.Context, token string) error {
 		}
 		l.token = token
 		l.renewed(sent)
-		l.log.Info("migration lock acquired", "runner", l.owner, "heartbeatInterval", l.interval, "lockTTL", l.ttl)
+		l.log.Info("migration lock acquired", "runner", l.owner, "lock", l.id, "heartbeatInterval", l.interval, "lockTTL", l.ttl)
 		return nil
 	}
 	return fmt.Errorf("acquire migration lock: %w", ErrLockHeld)

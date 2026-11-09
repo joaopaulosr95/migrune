@@ -34,6 +34,8 @@ type Report struct {
 	Command string `json:"command"`
 	// Database is the target database's name.
 	Database string `json:"database"`
+	// Namespace is the run's namespace; absent for the default one.
+	Namespace string `json:"namespace,omitempty"`
 	// StartedAt is when the run started, in UTC, to the millisecond.
 	StartedAt time.Time `json:"startedAt"`
 	Runner    string    `json:"runner"`

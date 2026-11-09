@@ -4,8 +4,9 @@ migrune keeps its state in two collections of the target database (`--db`),
 next to your data:
 
 - `migrations_changelog`: one entry per migration outcome, the audit trail.
-- `migrations_lock`: at most one document, the lock that keeps two runs from
-  working at once.
+- `migrations_lock`: at most one document per
+  [namespace](../running.md#several-apps-on-one-database), the lock that keeps
+  two runs in that namespace from working at once.
 
 Both are written with write concern `majority` and read with read concern
 `majority`; data migrations run in transactions with read concern
@@ -19,8 +20,8 @@ Every changelog entry and every lock document carries its format version in
 v1. A document without `v`, such as one written by hand, reads as v1.
 
 Every command that connects (plan, apply, and lint with `--uri`)
-first looks for a changelog entry or a lock document with a `v` higher than
-the one it knows, before it reads or writes anything else.
+first looks for a changelog entry, in any namespace, or a lock document with
+a `v` higher than the one it knows, before it reads or writes anything else.
 If it finds one, a newer migrune has written to this database, and the run
 fails with exit code 1, writing nothing:
 
@@ -34,8 +35,8 @@ Upgrade to a migrune that knows the format (see
 [troubleshooting](../troubleshooting.md#the-changelog-or-lock-has-a-newer-format)).
 A new format version comes only with a major release.
 
-Neither lookup uses an index: the lock collection holds at most one
-document, and the changelog grows by one entry per migration outcome, so
+Neither lookup uses an index: the lock collection holds one document per
+namespace, and the changelog grows by one entry per migration outcome, so
 scanning it costs about as much as the changelog read plan and apply make
 anyway.
 
@@ -64,10 +65,15 @@ and the empty collection if it was missing.
   entry. Checks that fail before any migration runs (an edited or missing
   applied migration, a digest mismatch) write none either.
 
-A migration is **pending** while it has no `Finished` entry: `Errored`
-entries don't count. When a migration has several `Finished` entries (it was
-re-run with `--mutable`, or retired and applied again), the latest one, by
-`createdAt`, holds the checksum that file edits are compared with.
+Every read of the changelog (plan, apply, lint) takes only the entries of
+the run's namespace: `{namespace: "<name>"}`, or `{namespace: null}` for the
+default namespace, which also matches entries without the field, such as
+those written before namespaces existed.
+
+A migration is **pending** while it has no `Finished` entry in its namespace:
+`Errored` entries don't count. When a migration has several `Finished` entries
+(it was re-run with `--mutable`, or retired and applied again), the latest
+one, by `createdAt`, holds the checksum that file edits are compared with.
 
 Example `Finished` entry for a data migration:
 
@@ -97,6 +103,7 @@ Example `Finished` entry for a data migration:
 | ------------------ | --------- | --------------------------------------------------------------------------------------------------- |
 | `_id`              | ObjectId  | Generated for each entry, before its transaction starts.                                            |
 | `v`                | int       | The entry format version: `1`. See [format versions](#format-versions).                              |
+| `namespace`        | string    | The run's `--namespace`. Absent in the default namespace.                                           |
 | `migrationId`      | string    | The migration id: the file name without `.json`.                                                    |
 | `checksum`         | string    | SHA-256, lowercase hex, of the migration file's bytes when it ran.                                  |
 | `createdAt`        | date      | When the entry was written, server time.                                                            |
@@ -116,21 +123,32 @@ returned for that kind of step:
 | index | `indexName`.                                                                           |
 | merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
-To read the latest `Finished` entry of a migration, steps included:
+To read the latest `Finished` entry of a migration, steps included (in a
+named namespace, add `namespace: "<name>"` to the filter):
 
 ```js
 db.migrations_changelog.find({migrationId: "<id>", status: "Finished"}).sort({createdAt: -1}).limit(1)
 ```
 
-migrune creates no index on this collection. Don't edit entries; deleting a
-migration's entries is how you retire it on purpose (see
-[troubleshooting](../troubleshooting.md#fix-2-retire-the-migration)).
+apply creates one index on this collection once its digest matched, before
+it runs any migration (the read before it scans without it), named
+`namespace_status_createdAt`, with keys `{namespace: 1, status: 1,
+createdAt: 1, _id: 1}`: the namespace and status of the read, then its sort.
+When an index of that name and those keys already exists, apply goes on; when
+the name is taken by an index with other keys, apply fails. plan and lint
+don't create it.
+
+Don't edit entries; deleting a migration's entries is how you retire it on
+purpose (see [troubleshooting](../troubleshooting.md#fix-2-retire-the-migration)).
 
 ## Lock: `migrations_lock`
 
-One global lock per database: a document with `_id: "migrations"`. plan and
-apply take it before reading the changelog and release it when they finish,
-fail or are interrupted. lint doesn't take it.
+One lock per namespace in each database: a document with `_id:
+"migrations"` for the default namespace, `"migrations:<name>"` for the
+namespace `<name>`. A namespace name can't hold `:`, so two namespaces never
+share a lock, and runs in different namespaces don't wait for each other.
+plan and apply take their namespace's lock before reading the changelog and
+release it when they finish, fail or are interrupted. lint doesn't take it.
 
 ```js
 {
@@ -147,7 +165,7 @@ fail or are interrupted. lint doesn't take it.
 
 | Field           | BSON type    | Description                                                                                       |
 | --------------- | ------------ | ------------------------------------------------------------------------------------------------- |
-| `_id`           | string       | Always `migrations`.                                                                              |
+| `_id`           | string       | `migrations`, or `migrations:<name>` in the namespace `<name>`.                                   |
 | `v`             | int          | The lock format version: `1`, set on every write. See [format versions](#format-versions).        |
 | `token`         | string       | A random 128-bit value, in hex, new on every acquisition. It alone says who owns the lock.        |
 | `owner`         | string       | The holder's runner id (`--runner-id`): a label for people, shown in "lock is held" errors. Two runners may share it. |
@@ -212,13 +230,14 @@ value under 61 seconds. Raise it if your server allows longer transactions.
 
 Every transaction (a data migration's, the one an index or merge migration's
 `Finished` entry is written in, and the one each `Errored` entry is written
-in) first updates the lock document, matching `{_id: "migrations", token:
-<this runner's token>}`. If another runner took the lock over, that update
-matches nothing, or conflicts with the takeover, and the transaction aborts.
-So a runner that lost its lock (a "zombie", paused or cut off for longer than
-the expiry) can never commit. Index and merge steps aren't fenced; the local
-lease keeps a runner from sending one once its lock may have expired, and they
-are idempotent, so one that still lands gives the same result.
+in) first updates the lock document, matching `{_id: <the namespace's lock
+id>, token: <this runner's token>}`. If another runner took the lock over,
+that update matches nothing, or conflicts with the takeover, and the
+transaction aborts. So a runner that lost its lock (a "zombie", paused or cut
+off for longer than the expiry) can never commit. Index and merge steps aren't
+fenced; the local lease keeps a runner from sending one once its lock may have
+expired, and they are idempotent, so one that still lands gives the same
+result.
 
 ### Transactions
 

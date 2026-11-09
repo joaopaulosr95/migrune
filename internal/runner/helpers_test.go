@@ -140,7 +140,7 @@ func testCtx(t *testing.T) context.Context {
 
 func newTestLock(t *testing.T, db *mongo.Database, owner string, interval, ttl time.Duration) *Lock {
 	t.Helper()
-	l, err := NewLock(db, owner, interval, ttl, testLogger(t).With("runner", owner))
+	l, err := NewLock(db, "", owner, interval, ttl, testLogger(t).With("runner", owner))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func newTestLock(t *testing.T, db *mongo.Database, owner string, interval, ttl t
 func readLock(t *testing.T, ctx context.Context, db *mongo.Database) *lockDoc {
 	t.Helper()
 	var doc lockDoc
-	err := db.Collection(LockCollection).FindOne(ctx, bson.D{{Key: "_id", Value: lockID}}).Decode(&doc)
+	err := db.Collection(LockCollection).FindOne(ctx, bson.D{{Key: "_id", Value: lockID("")}}).Decode(&doc)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil
 	}
@@ -165,7 +165,7 @@ func readLock(t *testing.T, ctx context.Context, db *mongo.Database) *lockDoc {
 // expired lock would.
 func takeOver(t *testing.T, ctx context.Context, db *mongo.Database, owner string) {
 	t.Helper()
-	_, err := db.Collection(LockCollection).UpdateOne(ctx, bson.D{{Key: "_id", Value: lockID}},
+	_, err := db.Collection(LockCollection).UpdateOne(ctx, bson.D{{Key: "_id", Value: lockID("")}},
 		mongo.Pipeline{{{Key: "$set", Value: bson.D{
 			{Key: "token", Value: newToken()},
 			{Key: "owner", Value: owner},

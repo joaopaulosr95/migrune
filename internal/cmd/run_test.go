@@ -41,6 +41,7 @@ func TestPlanApplyUsage(t *testing.T) {
 	cases := []struct {
 		name    string
 		args    []string
+		env     map[string]string
 		message string
 	}{
 		{name: "plan without dir", args: []string{"plan", "--uri", "mongodb://x", "--db", "app"}, message: "--dir is required"},
@@ -58,11 +59,19 @@ func TestPlanApplyUsage(t *testing.T) {
 		{name: "missing digest file", args: append([]string{"apply", "--digest-in", digest + ".missing"}, conn...), message: "--digest-in: open"},
 		{name: "apply without a digest", args: append([]string{"apply"}, conn...), message: "apply needs --digest-in"},
 		{name: "mutable without --no-digest", args: append([]string{"apply", "--mutable"}, conn...), message: "--mutable needs --no-digest"},
+		{name: "plan namespace with a colon", args: append([]string{"plan", "--namespace", "api:jobs"}, conn...), message: `--namespace: invalid namespace "api:jobs"`},
+		{name: "apply namespace in upper case", args: append([]string{"apply", "--namespace", "Api"}, conn...), message: `--namespace: invalid namespace "Api"`},
+		{name: "namespace too long", args: append([]string{"apply", "--namespace", strings.Repeat("a", 65)}, conn...), message: "--namespace: invalid namespace"},
+		{name: "namespace from env", args: append([]string{"plan"}, conn...), env: map[string]string{"MIGRUNE_NAMESPACE": "api jobs"},
+			message: `--namespace: invalid namespace "api jobs"`},
 		{name: "invalid uri", args: []string{"apply", "--no-digest", "--dir", dir, "--uri", "mongodb://ada:s3cret@host/?authMechanismProperties=AWS_SESSION_TOKEN:tok3n&connectTimeoutMS=soon", "--db", "app"},
 			message: "--uri is not a valid MongoDB connection string"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
 			var stdout, stderr bytes.Buffer
 			_, err := Execute(context.Background(), tc.args, &stdout, &stderr)
 			var usage *UsageError
@@ -312,6 +321,16 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 50},
 	}
+	// A plan in a namespace.
+	namespaced := &runner.Report{
+		Command:           "plan",
+		Runner:            "ci-42",
+		Namespace:         "api",
+		Digest:            "b406959934b80f64bc6228dc81a24ae78dd8f824405c544f9de768028015b47d",
+		Migrations:        []runner.Row{{ID: setFlag, Kind: "data", Status: runner.RowApplied, DurationMs: 5}},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 9},
+	}
 	// A plan against a new database.
 	newDB := &runner.Report{
 		Command:           "plan",
@@ -351,6 +370,8 @@ func TestWriteReport(t *testing.T) {
 		{name: "merge nested plan json", rep: mergeNested, output: "json", golden: "plan-merge-nested.json"},
 		{name: "merge apply table", rep: mergeApply, output: "table", golden: "apply-merge.txt"},
 		{name: "merge apply json", rep: mergeApply, output: "json", golden: "apply-merge.json"},
+		{name: "namespace plan table", rep: namespaced, output: "table", golden: "plan-namespace.txt"},
+		{name: "namespace plan json", rep: namespaced, output: "json", golden: "plan-namespace.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -18,7 +18,7 @@ var updateGolden = flag.Bool("update", false, "rewrite the golden files (digests
 
 // TestDigestInput checks the digest file plan writes for each input: the
 // digest, then the input it hashes. The golden files pin the text byte for
-// byte. The digest on the first line is the
+// byte; the default namespace adds no namespace line. The digest on the first line is the
 // SHA-256 of the lines after it, e.g. for valid.digest:
 //
 //	tail -n +2 testdata/digest/one.digest | shasum -a 256
@@ -30,16 +30,20 @@ func TestDigestInput(t *testing.T) {
 		database   string
 		replicaSet string
 		deployment string
+		namespace  string
 		pending    []migration.Migration
 	}{
 		{golden: "nothing-pending.digest", database: "app", replicaSet: "rs0", deployment: testDeployment},
 		{golden: "one.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, pending: []migration.Migration{a}},
 		{golden: "sorted.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, pending: []migration.Migration{b, a}},
+		{golden: "namespace.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, namespace: "api", pending: []migration.Migration{a}},
+		{golden: "namespace-nothing-pending.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, namespace: "api"},
 		{golden: "deployment-none.digest", database: "app", replicaSet: "rs0", deployment: DeploymentNone, pending: []migration.Migration{a}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.golden, func(t *testing.T) {
 			d := NewDigestInput(tc.database, tc.replicaSet, tc.deployment, tc.pending)
+			d.Namespace = tc.namespace
 			path := filepath.Join(t.TempDir(), "plan.digest")
 			if err := WriteDigestFile(path, d); err != nil {
 				t.Fatal(err)
@@ -62,7 +66,7 @@ func TestDigestInput(t *testing.T) {
 				t.Errorf("digest file:\n%s\nwant:\n%s", got, want)
 			}
 			back, err := ReadDigestFile(golden)
-			if err != nil || back.Sum() != d.Sum() {
+			if err != nil || back.Sum() != d.Sum() || back.Namespace != tc.namespace {
 				t.Errorf("ReadDigestFile: %+v, %v; want %+v", back, err, d)
 			}
 		})
@@ -71,7 +75,10 @@ func TestDigestInput(t *testing.T) {
 	base := NewDigestInput("app", "rs0", testDeployment, []migration.Migration{a, b})
 	edited := b
 	edited.Checksum = "cccc"
+	namespaced := NewDigestInput("app", "rs0", testDeployment, []migration.Migration{a, b})
+	namespaced.Namespace = "api"
 	for name, d := range map[string]*DigestInput{
+		"namespace":    namespaced,
 		"database":     NewDigestInput("app-staging", "rs0", testDeployment, []migration.Migration{a, b}),
 		"replica set":  NewDigestInput("app", "rs1", testDeployment, []migration.Migration{a, b}),
 		"deployment":   NewDigestInput("app", "rs0", "7c9e6679-7425-40de-944b-e07fc1f90ae7", []migration.Migration{a, b}),
@@ -113,7 +120,11 @@ func TestReadDigestFile(t *testing.T) {
 	}{
 		{file: "one.digest"},
 		{file: "sorted.digest"},
+		{file: "namespace.digest"},
 		{file: "deployment-none.digest"},
+		{file: "namespace-invalid.digest", err: "line 5: want namespace <name>"},
+		{file: "namespace-empty.digest", err: "line 5: want namespace <name>"},
+		{file: "namespace-misplaced.digest", err: `line 6: unexpected "namespace api"`},
 		{file: "deployment-invalid.digest", err: "line 4: want deployment <uuid> or deployment none"},
 		{file: "deployment-missing.digest", err: `line 4: unexpected "migration`},
 		{file: "uppercase.digest", err: "not a plan digest file"},
@@ -156,6 +167,8 @@ func TestDigestMismatchError(t *testing.T) {
 		{name: "deployment", run: NewDigestInput("app-prod", "rs0", DeploymentNone, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}),
 			want: []string{"the plan was made against another deployment (this run's migrations_changelog collection is none, the plan's was " + testDeployment + ")",
 				`the database is "app-prod", the plan's was "app"`}},
+		{name: "namespace", run: withNamespace(NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}), "api"),
+			want: []string{`the namespace is "api", the plan's was the default`}},
 		{name: "migrations", run: NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("2-b", "edited"), m("3-c", "c"), m("4-d", "d")}),
 			want: []string{"pending since the plan: 4-d", "edited since the plan: 2-b", "no longer pending (applied, or removed, since the plan): 1-a"}},
 	}
@@ -170,4 +183,9 @@ func TestDigestMismatchError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withNamespace(d *DigestInput, namespace string) *DigestInput {
+	d.Namespace = namespace
+	return d
 }

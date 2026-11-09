@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
@@ -18,9 +19,9 @@ import (
 // digest covers, or how, gets a new version.
 const DigestVersion = "migrune-digest-v1"
 
-// DigestInput is what the plan digest covers: the target, the deployment
-// and the pending set. plan writes it, with its digest, and apply refuses to
-// run when its own input gives a different digest.
+// DigestInput is what the plan digest covers: the target, the deployment,
+// the namespace and the pending set. plan writes it, with its digest, and
+// apply refuses to run when its own input gives a different digest.
 type DigestInput struct {
 	// Database is the target database's name.
 	Database string
@@ -31,6 +32,9 @@ type DigestInput struct {
 	// and then read again. It tells apart two deployments whose database and
 	// replica set names are the same.
 	Deployment string
+	// Namespace is the run's namespace, "" for the default one, which adds
+	// no line.
+	Namespace string
 	// Pending are the pending migrations, sorted by id.
 	Pending []DigestMigration
 }
@@ -68,6 +72,7 @@ func NewDigestInput(database, replicaSet, deployment string, pending []migration
 //	database <name>
 //	replicaSet <name>
 //	deployment <uuid>
+//	namespace <name>            only when the namespace isn't the default
 //	migration <id> <checksum>   one per pending migration, by id
 func (d *DigestInput) Text() string {
 	var b strings.Builder
@@ -75,6 +80,9 @@ func (d *DigestInput) Text() string {
 	b.WriteString("database " + d.Database + "\n")
 	b.WriteString("replicaSet " + d.ReplicaSet + "\n")
 	b.WriteString("deployment " + d.Deployment + "\n")
+	if d.Namespace != "" {
+		b.WriteString("namespace " + d.Namespace + "\n")
+	}
 	for _, m := range d.Pending {
 		b.WriteString("migration " + m.ID + " " + m.Checksum + "\n")
 	}
@@ -110,6 +118,11 @@ func parseDigestInput(text string) (*DigestInput, error) {
 				return nil, fmt.Errorf("line %d: want deployment <uuid> or deployment none", n)
 			}
 			d.Deployment = rest
+		case n == 5 && kind == "namespace":
+			if err := CheckNamespace(rest); err != nil || rest == "" {
+				return nil, fmt.Errorf("line %d: want namespace <name>, 1 to 64 lowercase letters, digits, _ or -", n)
+			}
+			d.Namespace = rest
 		case n > 4 && kind == "migration":
 			id, sum, ok := strings.Cut(rest, " ")
 			if !ok {
@@ -189,6 +202,9 @@ func (e *DigestMismatchError) Differences() []string {
 	if e.Plan.ReplicaSet != e.Run.ReplicaSet {
 		out = append(out, fmt.Sprintf("the replica set is %q, the plan's was %q", e.Run.ReplicaSet, e.Plan.ReplicaSet))
 	}
+	if e.Plan.Namespace != e.Run.Namespace {
+		out = append(out, fmt.Sprintf("the namespace is %s, the plan's was %s", namespaceText(e.Run.Namespace), namespaceText(e.Plan.Namespace)))
+	}
 	plan := make(map[string]string, len(e.Plan.Pending))
 	for _, m := range e.Plan.Pending {
 		plan[m.ID] = m.Checksum
@@ -228,4 +244,12 @@ func (e *DigestMismatchError) Differences() []string {
 		out = append(out, "the digest input differs")
 	}
 	return out
+}
+
+// namespaceText quotes a namespace name, or names the default one.
+func namespaceText(namespace string) string {
+	if namespace == "" {
+		return "the default"
+	}
+	return strconv.Quote(namespace)
 }

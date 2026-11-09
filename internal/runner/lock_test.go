@@ -598,7 +598,7 @@ func TestNewLock(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("interval %s ttl %s", tc.interval, tc.ttl), func(t *testing.T) {
-			l, err := NewLock(db, "runner-a", tc.interval, tc.ttl, nil)
+			l, err := NewLock(db, "", "runner-a", tc.interval, tc.ttl, nil)
 			if (err == nil) != tc.ok {
 				t.Fatalf("NewLock(%s, %s) error = %v, want ok %v", tc.interval, tc.ttl, err, tc.ok)
 			}
@@ -607,7 +607,7 @@ func TestNewLock(t *testing.T) {
 			}
 		})
 	}
-	if _, err := NewLock(db, "", time.Second, time.Second, nil); err == nil {
+	if _, err := NewLock(db, "", "", time.Second, time.Second, nil); err == nil {
 		t.Error("NewLock with an empty owner succeeded")
 	}
 }

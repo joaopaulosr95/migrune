@@ -20,7 +20,9 @@ by another runner.
 ## Which migrations are considered
 
 - **Pending** migrations: those with no `Finished` entry in the changelog, in
-  id order.
+  id order. Only the entries of the run's
+  [namespace](../running.md#several-apps-on-one-database) count, here and
+  below.
 - With `apply --mutable`, also the `Finished` migrations whose file changed.
 - Without `--mutable`, a `Finished` migration whose file changed fails the run
   before anything runs. It is reported as `errored`, and every pending
@@ -146,6 +148,7 @@ as the data, such as locally.
 | `version`                 | string           | The migrune version that wrote the report, as `migrune --version` prints it.                               |
 | `command`                 | string           | `plan` or `apply`.                                                                                           |
 | `database`                | string           | The target database, `--db`.                                                                                 |
+| `namespace`               | string, optional | The run's `--namespace`. Absent in the default namespace.                                                    |
 | `startedAt`               | string           | When the run started, RFC 3339 in UTC to the millisecond, e.g. `2026-11-08T10:30:00.125Z`.                   |
 | `runner`                  | string           | The runner id the run held the lock under, as in the logs and the changelog.                                 |
 | `approvedBy`              | object, optional | apply only: `name` and `email`, as given by `--approved-by-name` and `--approved-by-email`, and recorded in the changelog. Absent in plan and when neither is set. |
@@ -323,8 +326,9 @@ Error: migration 2026-11-01-002-inc-counter failed: ...
 ```
 
 The table starts with the target database, followed by `(new: it had no
-collections)` for a [new database](#new-databases). With no row, the table
-prints `No pending migrations.` in place of the header and rows; the JSON has
+collections)` for a [new database](#new-databases), then, in a named
+namespace, a `Namespace: <name>` line. With no row, the table prints `No
+pending migrations.` in place of the header and rows; the JSON has
 `"migrations": []`.
 
 When the run failed, the table ends with its `error`, the same text as in the
@@ -441,6 +445,7 @@ migrune-digest-v1
 database <name>
 replicaSet <name>
 deployment <uuid>
+namespace <name>
 migration <id> <checksum>
 ```
 
@@ -459,12 +464,14 @@ migration <id> <checksum>
   different digests. plan and apply read it the same way, before taking the
   lock. A snapshot clone keeps the UUID, so a plan against a clone matches
   the original: harmless, since both hold the same changelog.
+- `namespace` is `--namespace`, only when it is set: a default-namespace
+  digest has no such line.
 - One `migration` line per pending migration, sorted by id, with the
   SHA-256 of its file.
 
-So apply against another deployment, database or replica set, with a
-migration added, edited or applied since, fails before running anything, and
-its error names each part that differs, the deployment first.
+So apply against another deployment, database, replica set or namespace,
+with a migration added, edited or applied since, fails before running
+anything, and its error names each part that differs, the deployment first.
 
 The file holds the digest on its first line, followed by the input:
 

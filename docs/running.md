@@ -21,6 +21,76 @@ Every flag is also an environment variable (`--db` is `MIGRUNE_DB`); see
 stdout and logs to stderr, so redirect stdout to keep the report; `-o json`
 gives a [machine-readable report](reference/report.md).
 
+## Several apps on one database
+
+By default, a migrations directory owns its database: the changelog holds
+every migration applied to it, so a migration applied from another directory
+shows up as [applied but missing](troubleshooting.md#applied-but-missing) and
+plan and apply fail. When several apps, each with its own migrations directory,
+migrate one database, give each app a namespace with `--namespace`
+(`MIGRUNE_NAMESPACE`), the same on lint, plan and apply:
+
+```sh
+migrune plan  --dir migrations --db app --namespace billing --digest-out plan.digest
+migrune apply --dir migrations --db app --namespace billing --digest-in plan.digest
+```
+
+A namespace is 1 to 64 lowercase letters, digits, `_` or `-`. Without the
+flag, a run uses the default namespace. A namespace scopes:
+
+- **the changelog reads**: plan, apply and lint only consider their
+  namespace's entries, so another app's migrations are neither pending nor
+  applied but missing. Every namespace's entries stay in the one
+  `migrations_changelog`, each with its
+  [`namespace`](reference/changelog-and-lock.md#changelog-migrations_changelog);
+- **the lock**: one per namespace, so apps on different namespaces migrate at
+  the same time;
+- **the [plan digest](reference/report.md#plan-digest)**: a plan made for one
+  namespace doesn't approve another's apply.
+
+It doesn't scope collections or indexes: every namespace migrates the same
+database, and plan's index preview sees every index `listIndexes` returns,
+whichever namespace created it.
+
+### Each namespace owns its collections
+
+Two namespaces that touch the same collection can run at the same time, since
+their locks differ: their data migrations interleave, their index builds
+collide, and a plan approved in one can go stale when the other applies in
+between, which its digest doesn't see. Apps that must share a collection share
+a namespace: one migrations directory and one lock, so their migrations run
+one at a time, in one order.
+
+plan and apply warn about each pending migration that writes a collection
+another namespace's changelog entries wrote, naming those namespaces, and
+carry on. A step writes its `collection`, except a merge step, which writes
+its `$merge` target.
+
+Sharing a collection between apps is a bad practice in general, with or
+without migrune. It is the shared-database integration pattern: the
+collection's schema becomes an undeclared contract between the apps, so a
+migration in one can break the other; changing it needs coordinated deploys;
+and nobody clearly owns the data, its indexes or its validation. Prefer one
+app that owns the collection and that the others reach through an API or
+events. If sharing is unavoidable, share the namespace too.
+
+### Moving onto namespaces
+
+An app already deployed stays in the default namespace: its entries have no
+`namespace` field, which is what the default namespace reads. Give the apps
+that join the database their own namespaces. To name the deployed app's
+namespace too, stop its deploys, rename its entries once, with a user allowed
+to write to `migrations_changelog`, and deploy it with `--namespace <name>`
+from then on:
+
+```js
+db.migrations_changelog.updateMany({namespace: {$exists: false}}, {$set: {namespace: "<name>"}})
+```
+
+Every runner on a database with namespaces needs a migrune version that has
+them: an older one reads every namespace's entries as its own and fails with
+applied but missing before doing anything.
+
 ## In CI, with an approval gate
 
 Run two jobs per environment: **plan**, which runs on its own and publishes

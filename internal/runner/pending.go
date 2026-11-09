@@ -15,11 +15,12 @@ import (
 )
 
 // Finished reads the changelog in db and returns, for every migration id with
-// a Finished entry, what its latest one recorded. It only reads, and projects
-// out the stored steps.
-func Finished(ctx context.Context, db *mongo.Database) (map[string]migration.Applied, error) {
+// a Finished entry in namespace ("" for the default), what its latest one
+// recorded. Entries of other namespaces are left out. It only reads, and
+// projects out the stored steps.
+func Finished(ctx context.Context, db *mongo.Database, namespace string) (map[string]migration.Applied, error) {
 	cur, err := changelogCollection(db).Find(ctx,
-		bson.D{{Key: "status", Value: StatusFinished}},
+		bson.D{namespaceFilter(namespace), {Key: "status", Value: StatusFinished}},
 		options.Find().
 			SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}).
 			SetProjection(bson.D{
@@ -126,4 +127,86 @@ func (e *AppliedMissingError) Error() string {
 	return fmt.Sprintf("applied migrations must keep their file, but the file of %s is missing from the migrations directory; "+
 		"restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand",
 		strings.Join(ids, ", "))
+}
+
+// writtenCollections returns the collections steps write, in order and
+// without repeats: each step's collection, but a merge step's $merge target
+// rather than the collection it reads.
+func writtenCollections(steps []migration.Step) []string {
+	var out []string
+	for _, s := range steps {
+		coll := s.Collection
+		if s.Operation == "aggregate" {
+			if _, t, err := splitMerge(s); err == nil {
+				coll = t.Into
+			}
+		}
+		if !slices.Contains(out, coll) {
+			out = append(out, coll)
+		}
+	}
+	return out
+}
+
+// namespaceName renders namespace for logs, naming the default one.
+func namespaceName(namespace string) string {
+	if namespace == "" {
+		return "(default)"
+	}
+	return namespace
+}
+
+// warnSharedCollections logs a warning for each collection a pending
+// migration writes that another namespace's changelog entries, Finished or
+// Errored, wrote too. Namespaces take different locks, so their migrations
+// can run at the same time: apps that share a collection should share a
+// namespace. It only reads.
+//
+// ponytail: reads every other namespace's entries on each run; aggregate on
+// the server if changelogs grow large enough for this to show.
+func (r *Run) warnSharedCollections(pending []migration.Migration) error {
+	if len(pending) == 0 {
+		return nil
+	}
+	cur, err := changelogCollection(r.db).Find(r.ctx,
+		bson.D{{Key: "namespace", Value: bson.D{{Key: "$ne", Value: namespaceFilter(r.namespace).Value}}}},
+		options.Find().SetProjection(bson.D{
+			{Key: "namespace", Value: 1},
+			{Key: "migration.steps.collection", Value: 1},
+			{Key: "migration.steps.operation", Value: 1},
+			{Key: "migration.steps.pipeline", Value: 1},
+		}))
+	if err != nil {
+		return fmt.Errorf("read other namespaces' changelog entries: %w", err)
+	}
+	var entries []struct {
+		Namespace string `bson:"namespace"`
+		Migration struct {
+			Steps []migration.Step `bson:"steps"`
+		} `bson:"migration"`
+	}
+	if err := cur.All(r.ctx, &entries); err != nil {
+		return fmt.Errorf("read other namespaces' changelog entries: %w", err)
+	}
+	others := map[string][]string{} // collection: the namespaces that wrote it
+	for _, e := range entries {
+		for _, coll := range writtenCollections(e.Migration.Steps) {
+			if ns := namespaceName(e.Namespace); !slices.Contains(others[coll], ns) {
+				others[coll] = append(others[coll], ns)
+			}
+		}
+	}
+	for _, m := range pending {
+		for _, coll := range writtenCollections(m.Steps) {
+			if ns := others[coll]; len(ns) > 0 {
+				slices.Sort(ns)
+				r.log.Warn("a pending migration writes a collection another namespace's migrations wrote: "+
+					"namespaces take different locks, so their migrations can run at the same time; "+
+					"apps that share a collection should share a namespace",
+					"migration", m.ID, "collection", coll, "namespace", namespaceName(r.namespace),
+					"otherNamespaces", strings.Join(ns, ","))
+			}
+		}
+	}
+	return nil
 }

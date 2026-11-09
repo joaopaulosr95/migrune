@@ -309,10 +309,10 @@ what it reported and plan again.
 ## Applied but missing
 
 A migration is applied but missing when the changelog has a `Finished` entry
-for it and its file isn't in `--dir`. plan and apply exit 1 before running
-anything, report every pending migration as `skipped`, list the missing ones,
-and plan writes no digest. With a connection, lint reports `applied-missing`
-too.
+for it, in the run's namespace, and its file isn't in `--dir`. plan and apply
+exit 1 before running anything, report every pending migration as `skipped`,
+list the missing ones, and plan writes no digest. With a connection, lint
+reports `applied-missing` too.
 
 ```txt
 Applied but missing (Finished in the changelog, no file):
@@ -321,10 +321,16 @@ Applied but missing (Finished in the changelog, no file):
 Error: applied migrations must keep their file, but the file of 2026-11-02-001-plans-currency-index is missing from the migrations directory; restore it (removing a file doesn't undo its migration), or, to retire a migration on purpose, delete its changelog entries by hand
 ```
 
-Removing a file never undoes a migration; migrune stops so nobody believes
-it did. The usual causes: the file was reverted or deleted; it was renamed
-(one missing migration and one new one); or `--dir` points at the wrong
-directory, or the checkout is older than the database.
+Removing a file never undoes a migration; migrune stops so nobody believes it
+did. The usual causes: the file was reverted or deleted; it was renamed (one
+missing migration and one new one); `--dir` points at the wrong directory, or
+the checkout is older than the database; or another app, with its own
+migrations directory, applied it in the same namespace, often the default one:
+give each app its [own namespace](running.md#several-apps-on-one-database), or
+check `--namespace`.
+
+In a named namespace, add `namespace: "<name>"` to the changelog filters in
+the fixes below.
 
 ### Fix 1: restore the file
 

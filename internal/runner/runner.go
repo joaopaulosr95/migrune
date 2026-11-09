@@ -1,7 +1,7 @@
 // Package runner runs migrations against a database: plan and apply (pending
 // set, double-run data migrations, index migrations, merge migrations with
 // their diff count, digest, report), the
-// global lock with its heartbeat and fence, the changelog and
+// lock with its heartbeat and fence, the changelog and
 // graceful shutdown.
 package runner
 
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -56,9 +57,25 @@ type Options struct {
 	LockTTL time.Duration
 	// LockWait is how long Start keeps trying, with backoff, to take a
 	// lock another runner holds. 0 tries once.
-	LockWait   time.Duration
+	LockWait time.Duration
+	// Namespace scopes the run to one set of migrations in the database:
+	// its changelog reads and entries, its lock and its digest. "" is the
+	// default namespace. It must pass CheckNamespace.
+	Namespace  string
 	ApprovedBy ApprovedBy
 	Logger     *slog.Logger
+}
+
+// namespacePattern is what a namespace name must match.
+var namespacePattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
+
+// CheckNamespace returns an error unless name is "" (the default namespace)
+// or 1 to 64 lowercase letters, digits, "_" or "-".
+func CheckNamespace(name string) error {
+	if name != "" && !namespacePattern.MatchString(name) {
+		return fmt.Errorf("invalid namespace %q: want 1 to 64 lowercase letters, digits, _ or -", name)
+	}
+	return nil
 }
 
 // DefaultRunnerID returns the host name, the process id and a random suffix.
@@ -76,6 +93,7 @@ type Run struct {
 	db         *mongo.Database
 	lock       *Lock
 	changelog  *mongo.Collection
+	namespace  string
 	runnerID   string
 	approvedBy ApprovedBy
 	log        *slog.Logger
@@ -112,8 +130,14 @@ func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
 	if o.Logger == nil {
 		o.Logger = slog.New(slog.DiscardHandler)
 	}
+	if err := CheckNamespace(o.Namespace); err != nil {
+		return nil, err
+	}
 	log := o.Logger.With("runner", o.RunnerID)
-	lock, err := NewLock(db, o.RunnerID, o.HeartbeatInterval, o.LockTTL, o.Logger)
+	if o.Namespace != "" {
+		log = log.With("namespace", o.Namespace)
+	}
+	lock, err := NewLock(db, o.Namespace, o.RunnerID, o.HeartbeatInterval, o.LockTTL, o.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +150,7 @@ func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
 		db:            db,
 		lock:          lock,
 		changelog:     changelogCollection(db),
+		namespace:     o.Namespace,
 		runnerID:      o.RunnerID,
 		approvedBy:    o.ApprovedBy,
 		log:           log,

@@ -73,8 +73,8 @@ func createChangelog(ctx context.Context, db *mongo.Database) error {
 // a collection that exists.
 const codeNamespaceExists = 48
 
-// changelogHasEntries reports whether the changelog of db has any entry.
-// A missing changelog collection has none.
+// changelogHasEntries reports whether the changelog of db has any entry,
+// in any namespace. A missing changelog collection has none.
 func changelogHasEntries(ctx context.Context, db *mongo.Database) (bool, error) {
 	err := changelogCollection(db).FindOne(ctx, bson.D{}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
 	if errors.Is(err, mongo.ErrNoDocuments) {
@@ -99,7 +99,11 @@ const (
 type Entry struct {
 	ID bson.ObjectID `bson:"_id"`
 	// V is the entry's format version, EntryVersion.
-	V           int    `bson:"v"`
+	V int `bson:"v"`
+	// Namespace is the namespace the entry belongs to. The default
+	// namespace writes no field, as entries written before namespaces
+	// existed.
+	Namespace   string `bson:"namespace,omitempty"`
 	MigrationID string `bson:"migrationId"`
 	Checksum    string `bson:"checksum"`
 	// CreatedAt is server time ($$NOW) when the entry was written.
@@ -139,6 +143,42 @@ func changelogCollection(db *mongo.Database) *mongo.Collection {
 	return db.Collection(ChangelogCollection, options.Collection().
 		SetWriteConcern(writeconcern.Majority()).
 		SetReadConcern(readconcern.Majority()))
+}
+
+// ChangelogIndexName is the name of the index apply creates on the
+// changelog, ChangelogIndexKeys.
+const ChangelogIndexName = "namespace_status_createdAt"
+
+// ChangelogIndexKeys serve Finished's read: the namespace and status
+// equalities, then its sort.
+var ChangelogIndexKeys = bson.D{
+	{Key: "namespace", Value: 1},
+	{Key: "status", Value: 1},
+	{Key: "createdAt", Value: 1},
+	{Key: "_id", Value: 1},
+}
+
+// ensureChangelogIndex creates the changelog index, ChangelogIndexName. It
+// does nothing when an index with that name and those keys exists, and fails
+// when the name is taken by an index with other keys.
+func ensureChangelogIndex(ctx context.Context, db *mongo.Database) error {
+	_, err := changelogCollection(db).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    ChangelogIndexKeys,
+		Options: options.Index().SetName(ChangelogIndexName),
+	})
+	if err != nil {
+		return fmt.Errorf("create the changelog index %s: %w", ChangelogIndexName, err)
+	}
+	return nil
+}
+
+// namespaceFilter matches the changelog entries of namespace: those with no
+// namespace field (or a null one) for the default namespace.
+func namespaceFilter(namespace string) bson.E {
+	if namespace == "" {
+		return bson.E{Key: "namespace", Value: nil}
+	}
+	return bson.E{Key: "namespace", Value: namespace}
 }
 
 // snapshot is the migration file as applied, kept in every entry so the audit
@@ -248,8 +288,11 @@ func (r *Run) entrySet(m migration.Migration, status Status, outcome bson.E) (bs
 		return nil, err
 	}
 	lit := func(v any) bson.D { return bson.D{{Key: "$literal", Value: v}} }
-	set := bson.D{
-		{Key: "v", Value: lit(int32(EntryVersion))},
+	set := bson.D{{Key: "v", Value: lit(int32(EntryVersion))}}
+	if r.namespace != "" {
+		set = append(set, bson.E{Key: "namespace", Value: lit(r.namespace)})
+	}
+	set = append(set, bson.D{
 		{Key: "migrationId", Value: lit(m.ID)},
 		{Key: "checksum", Value: lit(m.Checksum)},
 		{Key: "createdAt", Value: "$$NOW"},
@@ -258,6 +301,6 @@ func (r *Run) entrySet(m migration.Migration, status Status, outcome bson.E) (bs
 		{Key: "status", Value: lit(status)},
 		{Key: "migration", Value: lit(snap)},
 		{Key: outcome.Key, Value: lit(outcome.Value)},
-	}
+	}...)
 	return set, nil
 }

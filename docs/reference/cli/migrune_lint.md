@@ -5,9 +5,9 @@ Check migration files
 ### Synopsis
 
 Check migration files offline. With --uri and --db it also compares each
-file's checksum with the changelog of the target database, read-only: a
-migration whose file changed after it was applied is an error, and so is an
-applied migration whose file is missing.
+file's checksum with the changelog of the target database, read-only, for the
+entries of --namespace only: a migration whose file changed after it was
+applied is an error, and so is an applied migration whose file is missing.
 
 Each finding is printed to stdout on its own line as
 "<file>: <severity>: <rule>: <message>", where severity is error or warning.
@@ -26,6 +26,7 @@ migrune lint [flags]
       --dir string                directory holding the migration files
       --expected-indexes string   JSON file listing the indexes the migrations must produce
   -h, --help[=true|false]         help for lint
+      --namespace string          set of migrations this directory holds in the database, for several apps sharing one database: scopes the changelog reads, the lock and the digest; 1 to 64 lowercase letters, digits, _ or -; empty is the default namespace. lint checks it always but uses it only with --uri
   -o, --output string             findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command (default "text")
       --uri string                MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
 ```

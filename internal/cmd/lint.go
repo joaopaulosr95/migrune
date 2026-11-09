@@ -15,6 +15,7 @@ import (
 
 type lintOptions struct {
 	conn            connFlags
+	namespace       string
 	expectedIndexes string
 	output          string
 }
@@ -25,9 +26,9 @@ func (a *app) newLintCmd() *cobra.Command {
 		Use:   "lint",
 		Short: "Check migration files",
 		Long: `Check migration files offline. With --uri and --db it also compares each
-file's checksum with the changelog of the target database, read-only: a
-migration whose file changed after it was applied is an error, and so is an
-applied migration whose file is missing.
+file's checksum with the changelog of the target database, read-only, for the
+entries of --namespace only: a migration whose file changed after it was
+applied is an error, and so is an applied migration whose file is missing.
 
 Each finding is printed to stdout on its own line as
 "<file>: <severity>: <rule>: <message>", where severity is error or warning.
@@ -39,6 +40,7 @@ alone exit 0.`,
 	}
 	fs := c.Flags()
 	o.conn.register(fs)
+	namespaceFlag(fs, &o.namespace)
 	fs.StringVar(&o.expectedIndexes, "expected-indexes", "", "JSON file listing the indexes the migrations must produce")
 	findingsOutputFlag(fs, &o.output)
 	return c
@@ -61,7 +63,12 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 			return &UsageError{Err: fmt.Errorf("--expected-indexes: %w", err)}
 		}
 	}
-	// The online check runs only with both --uri and --db.
+	// --namespace is checked offline too, so a bad MIGRUNE_NAMESPACE fails
+	// the lint job rather than a later plan, but it is used only by the
+	// online check, which runs with both --uri and --db.
+	if err := checkNamespace(o.namespace); err != nil {
+		return err
+	}
 	var applied map[string]migration.Applied
 	if o.conn.uri != "" {
 		db, _, disconnect, err := a.connect(cmd.Context(), o.conn)
@@ -69,7 +76,7 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 			return err
 		}
 		defer disconnect()
-		if applied, err = runner.Finished(cmd.Context(), db); err != nil {
+		if applied, err = runner.Finished(cmd.Context(), db, o.namespace); err != nil {
 			return err
 		}
 	}

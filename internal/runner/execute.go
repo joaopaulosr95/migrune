@@ -103,6 +103,7 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	rep := &Report{
 		Command:           string(c.Mode),
 		Database:          db.Name(),
+		Namespace:         o.Namespace,
 		StartedAt:         start.UTC().Truncate(time.Millisecond),
 		Runner:            run.RunnerID(),
 		NewDatabase:       newDB,
@@ -134,13 +135,14 @@ func withRelease(err, release error, log *slog.Logger) error {
 }
 
 func (r *Run) execute(migrations []migration.Migration, c Config, deployment string, rep *Report) error {
-	finished, err := Finished(r.ctx, r.db)
+	finished, err := Finished(r.ctx, r.db, r.namespace)
 	if err != nil {
 		return r.cause(err)
 	}
 	set := classify(migrations, finished, c.Mutable)
 	rep.AppliedButMissing = append(rep.AppliedButMissing, set.missing...)
 	rep.DigestInput = NewDigestInput(r.db.Name(), c.ReplicaSet, deployment, set.pending)
+	rep.DigestInput.Namespace = r.namespace
 	rep.Digest = rep.DigestInput.Sum()
 
 	for _, m := range set.pending {
@@ -155,6 +157,13 @@ func (r *Run) execute(migrations []migration.Migration, c Config, deployment str
 
 	if c.Digest != nil && c.Digest.Sum() != rep.Digest {
 		return &DigestMismatchError{Plan: c.Digest, Run: rep.DigestInput}
+	}
+	// Only once the digest matched. plan leaves the changelog's indexes
+	// alone.
+	if c.Mode == ModeApply {
+		if err := ensureChangelogIndex(r.ctx, r.db); err != nil {
+			return r.cause(err)
+		}
 	}
 	// Both checks run before any migration, so the report shows every
 	// problem at once.
@@ -191,6 +200,9 @@ func (r *Run) execute(migrations []migration.Migration, c Config, deployment str
 		}
 	}
 	r.log.Info("pending migrations", "count", len(set.pending), "mode", string(c.Mode))
+	if err := r.warnSharedCollections(set.pending); err != nil {
+		return r.cause(err)
+	}
 	for _, m := range set.pending {
 		if err := r.Err(); err != nil {
 			return err

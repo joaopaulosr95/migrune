@@ -25,14 +25,14 @@ func (e *FormatError) Error() string {
 		e.What, e.Found, e.Known)
 }
 
-// CheckFormats fails with a *FormatError when the changelog holds an entry
-// with a v above EntryVersion, or the lock collection a document with a v
-// above LockVersion. A missing v reads as 1. Every command that connects runs
-// it once, before any other read or write, so no later read can forget it.
-// It only reads.
+// CheckFormats fails with a *FormatError when the changelog holds an entry,
+// in any namespace, with a v above EntryVersion, or the lock collection a
+// document with a v above LockVersion. A missing v reads as 1. Every command
+// that connects runs it once, before any other read or write, so no later
+// read can forget it. It only reads.
 //
 // Neither query has an index on v, and neither needs one. The lock collection
-// holds a single document. The changelog holds one entry per
+// holds one document per namespace. The changelog holds one entry per
 // migration outcome, so it grows by a few entries per release, and every
 // plan, apply and online lint already reads its Finished entries (Finished):
 // the scan costs about as much as that read. An index would only help once

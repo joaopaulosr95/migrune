@@ -43,8 +43,9 @@ Transactions keep read concern `snapshot`; `listIndexes` and
 `listCollections` accept no read concern and read the primary's current
 state.
 
-**One runner at a time.** plan and apply take a global lock, one document
-taken with an atomic `findOneAndUpdate` and owned through a random token,
+**One runner at a time.** plan and apply take a lock, one document per
+[namespace](running.md#several-apps-on-one-database), taken with an atomic
+`findOneAndUpdate` and owned through a random token,
 new on every acquisition, so runners sharing a `--runner-id` still exclude
 each other. The holder sends a heartbeat every 10 seconds, and a dead
 holder's lock expires after `max(30s, --lock-ttl)`, computed with the

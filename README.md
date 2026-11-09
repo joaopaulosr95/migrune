@@ -11,7 +11,7 @@ collection.
 - **Checked before they run**: lint works offline; plan runs every data
   migration twice in a transaction and aborts it, so non-idempotent
   migrations fail before anyone approves them.
-- **Safe to run from CI**: one runner at a time, the changelog written in the
+- **Safe to run from CI**: one runner at a time per namespace, the changelog written in the
   migration's own transaction, apply tied to the approved plan by a digest,
   applied migrations immutable, graceful shutdown.
 
@@ -122,9 +122,9 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
   Docker.
 - [Writing migrations](docs/writing-migrations.md): data, index and merge
   migrations, and the checks they must pass.
-- [Running migrations](docs/running.md): plan and apply in CI with an
-  approval gate, large collections, credentials and AWS IAM, `--mutable`
-  locally.
+- [Running migrations](docs/running.md): several apps on one database, plan
+  and apply in CI with an approval gate, large collections, credentials and
+  AWS IAM, `--mutable` locally.
 - [Troubleshooting](docs/troubleshooting.md): connection and permission
   errors, errored or interrupted runs, a held or lost lock, edited or missing
   applied migrations, plan digests.

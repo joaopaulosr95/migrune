@@ -4,6 +4,9 @@
       "$numberInt": "1"
     }
   },
+  "namespace": {
+    "$literal": "api"
+  },
   "migrationId": {
     "$literal": "2026-11-05-001-every-step"
   },

@@ -201,7 +201,8 @@ func TestInterruptMidTransaction(t *testing.T) {
 }
 
 // TestFinished checks Finished keeps, per migration, what its latest Finished
-// entry stored, ignoring Errored entries.
+// entry stored, ignoring Errored entries and the entries of other namespaces.
+// The default namespace's entries have no namespace field, or a null one.
 func TestFinished(t *testing.T) {
 	ctx := testCtx(t)
 	db := testDB(t)
@@ -226,28 +227,47 @@ func TestFinished(t *testing.T) {
 		entry("2026-01-04-001-a", "bad", StatusErrored, at.Add(2*time.Hour), "runner-c", "Errored"),
 		entry("2026-01-05-001-b", "b", StatusFinished, at, "runner-a", "Only apply"),
 		entry("2026-01-06-001-c", "c", StatusErrored, at, "runner-a", "Never finished"),
+		append(entry("2026-01-07-001-d", "d", StatusFinished, at, "runner-a", "Null namespace"), bson.E{Key: "namespace", Value: nil}),
+		append(entry("2026-01-04-001-a", "api", StatusFinished, at.Add(3*time.Hour), "runner-api", "Api's a"), bson.E{Key: "namespace", Value: "api"}),
+		append(entry("2026-01-08-001-e", "e", StatusFinished, at, "runner-api", "Api only"), bson.E{Key: "namespace", Value: "api"}),
+		append(entry("2026-01-09-001-f", "f", StatusFinished, at, "runner-web", "Web only"), bson.E{Key: "namespace", Value: "web"}),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Finished(ctx, db)
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		namespace string
+		want      map[string]migration.Applied
+	}{
+		{namespace: "", want: map[string]migration.Applied{
+			"2026-01-04-001-a": {ID: "2026-01-04-001-a", Checksum: "new", Description: "Second apply", AppliedAt: at.Add(time.Hour), Runner: "runner-b"},
+			"2026-01-05-001-b": {ID: "2026-01-05-001-b", Checksum: "b", Description: "Only apply", AppliedAt: at, Runner: "runner-a"},
+			"2026-01-07-001-d": {ID: "2026-01-07-001-d", Checksum: "d", Description: "Null namespace", AppliedAt: at, Runner: "runner-a"},
+		}},
+		{namespace: "api", want: map[string]migration.Applied{
+			"2026-01-04-001-a": {ID: "2026-01-04-001-a", Checksum: "api", Description: "Api's a", AppliedAt: at.Add(3 * time.Hour), Runner: "runner-api"},
+			"2026-01-08-001-e": {ID: "2026-01-08-001-e", Checksum: "e", Description: "Api only", AppliedAt: at, Runner: "runner-api"},
+		}},
+		{namespace: "none", want: map[string]migration.Applied{}},
 	}
-	want := map[string]migration.Applied{
-		"2026-01-04-001-a": {ID: "2026-01-04-001-a", Checksum: "new", Description: "Second apply", AppliedAt: at.Add(time.Hour), Runner: "runner-b"},
-		"2026-01-05-001-b": {ID: "2026-01-05-001-b", Checksum: "b", Description: "Only apply", AppliedAt: at, Runner: "runner-a"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("Finished = %+v, want %+v", got, want)
-	}
-	for id, w := range want {
-		g := got[id]
-		if g.ID != w.ID || g.Checksum != w.Checksum || g.Description != w.Description || g.Runner != w.Runner ||
-			!g.AppliedAt.Equal(w.AppliedAt) || g.AppliedAt.Location() != time.UTC {
-			t.Errorf("%s: %+v, want %+v", id, g, w)
-		}
+	for _, tc := range cases {
+		t.Run("namespace "+tc.namespace, func(t *testing.T) {
+			got, err := Finished(ctx, db, tc.namespace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("Finished = %+v, want %+v", got, tc.want)
+			}
+			for id, w := range tc.want {
+				g := got[id]
+				if g.ID != w.ID || g.Checksum != w.Checksum || g.Description != w.Description || g.Runner != w.Runner ||
+					!g.AppliedAt.Equal(w.AppliedAt) || g.AppliedAt.Location() != time.UTC {
+					t.Errorf("%s: %+v, want %+v", id, g, w)
+				}
+			}
+		})
 	}
 }
 

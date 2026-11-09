@@ -20,15 +20,15 @@ import (
 
 // TestNewerFormat checks plan, apply and online lint fail, exiting 1,
 // before anything else happens and with nothing written, when the changelog
-// holds an entry, or the lock collection a document, with a v above the one
-// this migrune writes.
+// holds an entry, in any namespace, or the lock collection a document, with a
+// v above the one this migrune writes.
 func TestNewerFormat(t *testing.T) {
 	newerEntry := bson.D{
-		{Key: "_id", Value: bson.NewObjectID()}, {Key: "v", Value: int32(2)},
+		{Key: "_id", Value: bson.NewObjectID()}, {Key: "v", Value: int32(2)}, {Key: "namespace", Value: "web"},
 		{Key: "migrationId", Value: "2026-10-01-001-later-format"}, {Key: "status", Value: "Finished"},
 	}
 	newerLock := bson.D{
-		{Key: "_id", Value: "migrations"}, {Key: "v", Value: int32(2)}, {Key: "token", Value: "t"},
+		{Key: "_id", Value: "migrations:web"}, {Key: "v", Value: int32(2)}, {Key: "token", Value: "t"},
 		{Key: "owner", Value: "newer"}, {Key: "expiresAt", Value: time.Now().Add(-time.Hour)},
 	}
 	cases := []struct {

@@ -8,6 +8,7 @@ import (
 
 type planOptions struct {
 	conn      connFlags
+	namespace string
 	digestOut string
 	output    string
 	lock      lockFlags
@@ -35,6 +36,7 @@ https://github.com/joaopaulosr95/migrune.`,
 	}
 	fs := c.Flags()
 	o.conn.register(fs)
+	namespaceFlag(fs, &o.namespace)
 	fs.StringVar(&o.digestOut, "digest-out", "", "file to write the plan digest to")
 	outputFlag(fs, &o.output)
 	o.lock.register(fs)
@@ -52,7 +54,10 @@ func (a *app) plan(cmd *cobra.Command, o planOptions) error {
 	if err := o.lock.check(); err != nil {
 		return err
 	}
-	rep, err := a.runMigrations(cmd, o.conn, o.output, runner.Options{LockTTL: o.lock.ttl, LockWait: o.lock.wait}, runner.Config{Mode: runner.ModePlan, SampleValues: o.values})
+	if err := checkNamespace(o.namespace); err != nil {
+		return err
+	}
+	rep, err := a.runMigrations(cmd, o.conn, o.output, runner.Options{LockTTL: o.lock.ttl, LockWait: o.lock.wait, Namespace: o.namespace}, runner.Config{Mode: runner.ModePlan, SampleValues: o.values})
 	if err != nil {
 		return err
 	}

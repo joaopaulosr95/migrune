@@ -1,5 +1,5 @@
 {
-  "_id": "migrations",
+  "_id": "migrations:api",
   "v": {
     "$numberInt": "1"
   },

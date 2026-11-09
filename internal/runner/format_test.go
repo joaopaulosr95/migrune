@@ -62,6 +62,7 @@ func TestFormatGolden(t *testing.T) {
 	entry := Entry{
 		ID:          bson.ObjectID{0x6a, 0xef, 0xbe, 0x2f, 0x08, 0xc4, 0x9a, 0x79, 0xb0, 0x6c, 0x46, 0x6b},
 		V:           EntryVersion,
+		Namespace:   "api",
 		MigrationID: m.ID,
 		Checksum:    m.Checksum,
 		CreatedAt:   at,
@@ -73,7 +74,7 @@ func TestFormatGolden(t *testing.T) {
 		Results: results,
 		Errors:  errs,
 	}
-	run := &Run{runnerID: entry.Runner, approvedBy: approvedBy}
+	run := &Run{namespace: entry.Namespace, runnerID: entry.Runner, approvedBy: approvedBy}
 	finished, err := run.entrySet(m, StatusFinished, bson.E{Key: "results", Value: results})
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +85,7 @@ func TestFormatGolden(t *testing.T) {
 	}
 	current := "2026-11-03-001-copy-currency-symbol"
 	lock := lockDoc{
-		ID:            lockID,
+		ID:            lockID("api"),
 		V:             LockVersion,
 		Token:         "9f86d081884c7d659a2feaa0c55ad015",
 		Owner:         "ci-42-1-AB12CD34",
@@ -129,19 +130,22 @@ func TestFormatGolden(t *testing.T) {
 	}
 }
 
-// TestCheckFormats checks CheckFormats refuses a changelog entry or a lock
-// document with a v above the one this migrune writes, naming both versions,
-// and reads a missing v as 1.
+// TestCheckFormats checks CheckFormats refuses a changelog entry, in any
+// namespace, or a lock document with a v above the one this migrune writes,
+// naming both versions, and reads a missing v as 1.
 func TestCheckFormats(t *testing.T) {
-	entry := func(v any) bson.D {
+	entry := func(v any, namespace string) bson.D {
 		d := bson.D{{Key: "_id", Value: bson.NewObjectID()}}
 		if v != nil {
 			d = append(d, bson.E{Key: "v", Value: v})
 		}
+		if namespace != "" {
+			d = append(d, bson.E{Key: "namespace", Value: namespace})
+		}
 		return append(d, bson.E{Key: "migrationId", Value: "2026-11-01-001-a"}, bson.E{Key: "status", Value: "Finished"})
 	}
 	lock := func(v any) bson.D {
-		d := bson.D{{Key: "_id", Value: lockID}, {Key: "token", Value: newToken()}, {Key: "owner", Value: "other"}}
+		d := bson.D{{Key: "_id", Value: lockID("")}, {Key: "token", Value: newToken()}, {Key: "owner", Value: "other"}}
 		if v != nil {
 			d = append(d, bson.E{Key: "v", Value: v})
 		}
@@ -154,12 +158,12 @@ func TestCheckFormats(t *testing.T) {
 		want      string // the error, or "" for none
 	}{
 		{name: "empty database"},
-		{name: "current entries and lock", changelog: []bson.D{entry(int32(1))}, locks: []bson.D{lock(int32(1))}},
+		{name: "current entries and lock", changelog: []bson.D{entry(int32(1), ""), entry(int32(1), "api")}, locks: []bson.D{lock(int32(1))}},
 		// Written by hand.
-		{name: "no v", changelog: []bson.D{entry(nil)}, locks: []bson.D{lock(nil)}},
-		{name: "newer entry", changelog: []bson.D{entry(int32(1)), entry(int32(2))},
+		{name: "no v", changelog: []bson.D{entry(nil, "")}, locks: []bson.D{lock(nil)}},
+		{name: "newer entry", changelog: []bson.D{entry(int32(1), ""), entry(int32(2), "")},
 			want: "the changelog has format v2, newer than this migrune understands (v1): upgrade migrune"},
-		{name: "newer entry as int64", changelog: []bson.D{entry(int64(3)), entry(2.0)},
+		{name: "newer entry in another namespace", changelog: []bson.D{entry(int64(3), "web"), entry(2.0, "")},
 			want: "the changelog has format v3, newer than this migrune understands (v1): upgrade migrune"},
 		{name: "newer lock", locks: []bson.D{lock(int32(2))},
 			want: "the migration lock has format v2, newer than this migrune understands (v1): upgrade migrune"},
@@ -209,7 +213,7 @@ func TestAcquireLockVersion(t *testing.T) {
 			db := testDB(t)
 			ctx := testCtx(t)
 			old := bson.D{
-				{Key: "_id", Value: lockID}, {Key: "token", Value: newToken()}, {Key: "owner", Value: "old"},
+				{Key: "_id", Value: lockID("")}, {Key: "token", Value: newToken()}, {Key: "owner", Value: "old"},
 				{Key: "current", Value: nil}, {Key: "acquiredAt", Value: time.Now().Add(-time.Hour)},
 				{Key: "lastHeartbeat", Value: time.Now().Add(-time.Hour)}, {Key: "expiresAt", Value: time.Now().Add(-time.Minute)},
 			}

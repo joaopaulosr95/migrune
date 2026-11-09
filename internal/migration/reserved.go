@@ -13,7 +13,7 @@ import (
 const (
 	// ChangelogCollection holds one entry per migration outcome.
 	ChangelogCollection = "migrations_changelog"
-	// LockCollection holds the migration lock, a single document.
+	// LockCollection holds the migration lock, one document per namespace.
 	LockCollection = "migrations_lock"
 )
 

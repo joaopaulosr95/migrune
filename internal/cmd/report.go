@@ -32,6 +32,9 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 	} else {
 		fmt.Fprintf(ew, "Database: %s\n", rep.Database)
 	}
+	if rep.Namespace != "" {
+		fmt.Fprintf(ew, "Namespace: %s\n", rep.Namespace)
+	}
 	fmt.Fprintln(ew)
 	if len(rep.Migrations) == 0 {
 		fmt.Fprintln(ew, "No pending migrations.")

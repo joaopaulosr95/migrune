@@ -33,6 +33,22 @@ func (c *connFlags) requireAll() error {
 	return nil
 }
 
+// namespaceFlag registers the namespace flag shared by lint, plan and apply.
+func namespaceFlag(fs *pflag.FlagSet, p *string) {
+	fs.StringVar(p, "namespace", "",
+		"set of migrations this directory holds in the database, for several apps sharing one database: "+
+			"scopes the changelog reads, the lock and the digest; 1 to 64 lowercase letters, digits, _ or -; "+
+			"empty is the default namespace. lint checks it always but uses it only with --uri")
+}
+
+// checkNamespace validates --namespace.
+func checkNamespace(namespace string) error {
+	if err := runner.CheckNamespace(namespace); err != nil {
+		return &UsageError{Err: fmt.Errorf("--namespace: %w", err)}
+	}
+	return nil
+}
+
 // outputFlag registers the report format flag shared by plan and apply.
 func outputFlag(fs *pflag.FlagSet, p *string) {
 	fs.StringVarP(p, "output", "o", "table", "report format: table or json")

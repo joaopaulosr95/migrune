@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "namespace": "api",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "digest": "b406959934b80f64bc6228dc81a24ae78dd8f824405c544f9de768028015b47d",
+  "migrations": [
+    {
+      "id": "2026-11-01-001-set-flag",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 5
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 1,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 9
+  }
+}

@@ -1,9 +1,12 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -644,6 +647,54 @@ func TestWithRelease(t *testing.T) {
 				if !errors.Is(got, w) {
 					t.Errorf("withRelease = %v, want it to match %v", got, w)
 				}
+			}
+		})
+	}
+}
+
+// TestSharedCollectionWarning checks a run warns about each pending
+// migration writing a collection another namespace's migrations wrote, and
+// only then.
+func TestSharedCollectionWarning(t *testing.T) {
+	const warning = "a pending migration writes a collection another namespace's migrations wrote"
+	ctx := testCtx(t)
+	db := testDB(t)
+	seedItems(t, ctx, db)
+	if _, err := execute(t, ctx, db, load(t, fixtureDir(t, "data", setFlag)), Options{Namespace: "api"}, Config{Mode: ModeApply}); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name      string
+		namespace string
+		ids       []string
+		want      []string // the collection of each warning
+	}{
+		{name: "default namespace writes items", ids: []string{setFlag, seed}, want: []string{"items"}},
+		{name: "other collection", ids: []string{seed}},
+		{name: "same namespace", namespace: "api", ids: []string{setFlag, seed}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			o := Options{Namespace: tc.namespace, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+			if _, err := execute(t, ctx, db, load(t, fixtureDir(t, "data", tc.ids...)), o, Config{Mode: ModePlan}); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for line := range strings.Lines(logs.String()) {
+				var rec struct{ Msg, Collection, OtherNamespaces string }
+				if err := json.Unmarshal([]byte(line), &rec); err != nil {
+					t.Fatal(err)
+				}
+				if strings.HasPrefix(rec.Msg, warning) {
+					got = append(got, rec.Collection)
+					if rec.OtherNamespaces != "api" {
+						t.Errorf("otherNamespaces %q, want api", rec.OtherNamespaces)
+					}
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("warnings for %v, want %v:\n%s", got, tc.want, logs.String())
 			}
 		})
 	}
