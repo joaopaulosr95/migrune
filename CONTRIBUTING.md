@@ -91,7 +91,7 @@ file that loaded before keeps loading.
 on it in one of two ways:
 
 - **A pull request**, squash-merged: the PR title becomes the commit message
-  on `main`.
+  on `main`. The PR template lists what a PR needs before review.
 - **A commit pushed straight to `main`**, by a maintainer: rebase it on the
   latest `main` first, so it fast-forwards, and run
   `task lint test vulncheck test:int:all` before pushing, since nothing reviews it.
@@ -109,7 +109,8 @@ before it, was 1.0.0. Don't hand-tag a release, or semantic-release sees it
 as already released and publishes no images for it.
 
 A commit marked breaking (`feat!:`, or a `BREAKING CHANGE:` footer) cuts a
-major release. semantic-release writes the
+major release; what counts as breaking is in
+[compatibility](docs/reference/compatibility.md). semantic-release writes the
 release notes from the commits. When users need more, such as upgrade notes
 for a major release, edit them once the Release workflow has finished, the
 image job included (`gh release edit vX.Y.Z --notes-file notes.md`).

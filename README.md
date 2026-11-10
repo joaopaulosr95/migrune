@@ -55,6 +55,11 @@ before Go stops supporting it.
 On a major newer than the newest tested one, migrune
 [warns and runs anyway](docs/troubleshooting.md#mongodb-is-newer-than-the-newest-version-migrune-is-tested-on).
 
+[Compatibility](docs/reference/compatibility.md) says what each release keeps
+stable.
+Only the latest release is supported; see [security](SECURITY.md) to report a
+vulnerability.
+
 ## Install
 
 With Go:
@@ -139,7 +144,8 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
   [lint rules and expected indexes](docs/reference/lint-rules.md),
   [index drift](docs/reference/drift.md), the
   [report and plan digest](docs/reference/report.md), the
-  [changelog and lock](docs/reference/changelog-and-lock.md).
+  [changelog and lock](docs/reference/changelog-and-lock.md),
+  [compatibility](docs/reference/compatibility.md).
 
 ## Contributing
 

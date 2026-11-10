@@ -18,11 +18,12 @@ internal/runner/       plan/apply: pending set, data migrations (double-run), in
                        lock, heartbeat and fence, changelog, format versions (v), graceful shutdown; drift's reads (changelog snapshots, listIndexes)
 test/replicaset/       3-node replica set for integration tests (test commands on, for fail points; image from MONGO_IMAGE), smoke test
 docs/                  getting-started, writing-migrations, running, troubleshooting, design;
-                       reference/ (migration file, lint rules, drift, report, changelog and lock, env and exit codes; cli/ is generated)
+                       reference/ (migration file, lint rules, drift, report, changelog and lock, env and exit codes, compatibility; cli/ is generated)
 examples/              docker-compose.yaml (1-node replica set + migrune apply), migrations/ (one per kind),
                        ci/ (GitHub Actions and GitLab CI plan/approve/apply snippets)
 .github/workflows/     ci.yml (PRs, reusable), release.yml (main; workflow_dispatch republishes a tag's images)
 .github/release/       semantic-release and its plugins (package-lock.json), run by release.yml
+.github/ISSUE_TEMPLATE/ bug and feature issue forms; pull_request_template.md
 ```
 
 ## Tasks
@@ -52,8 +53,8 @@ Done means `task lint test vulncheck test:int:all` passes.
 - Tests: table tests, fixtures under `testdata/`, no mocks of the mongo driver.
   Integration tests skip under `-short` or without `MIGRUNE_TEST_URI`, and use a fresh database each.
 - Commits and PR titles: Conventional Commits.
-- A breaking change to a stable interface (commands, flags, exit codes, migration schema,
-  changelog/lock/digest formats, JSON output, images) is a major release.
+- A change to a stable interface (`docs/reference/compatibility.md`: commands, flags, exit codes,
+  migration schema, changelog/lock/digest formats, JSON output, images) follows that page's rules.
 - Docs describe the code as built. When behaviour, a flag or the report changes, update
   `docs/reference/` and the guide that covers it (and `task docs` for the CLI pages) in the
   same change. Explain each fact in one place and link to it; don't repeat it across pages.

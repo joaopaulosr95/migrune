@@ -1,0 +1,49 @@
+name: Bug report
+description: migrune did something wrong or failed unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste a connection string, password or token. Redact data from reports and logs, especially merge samples run with `--sample-values`.
+        Check [troubleshooting](https://github.com/joaopaulosr95/migrune/blob/main/docs/troubleshooting.md) first.
+  - type: input
+    id: version
+    attributes:
+      label: migrune version
+      description: "`migrune --version`, or the image tag"
+    validations:
+      required: true
+  - type: input
+    id: mongodb
+    attributes:
+      label: MongoDB version and topology
+      placeholder: 8.0.34, 3-node replica set
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The command and flags you ran, without the URI.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration file
+      description: The smallest migration that shows the problem, if one is involved.
+      render: json
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Report and logs
+      description: The report (stdout) and logs (stderr), redacted.
+      render: text
