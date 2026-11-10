@@ -1,0 +1,7 @@
+{
+  "id": "2026-11-02-001-pending",
+  "description": "Index projects by owner",
+  "steps": [
+    { "collection": "projects", "operation": "createIndex", "keys": { "ownerId": 1 }, "options": { "name": "ownerId_1" } }
+  ]
+}

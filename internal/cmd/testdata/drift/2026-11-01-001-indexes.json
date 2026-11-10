@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-01-001-indexes",
+  "description": "Index users, accounts, sessions and labels",
+  "steps": [
+    { "collection": "users", "operation": "createIndex", "keys": { "email": 1 }, "options": { "name": "email_1", "unique": true } },
+    {
+      "collection": "accounts",
+      "operation": "createIndex",
+      "keys": { "name": 1 },
+      "options": { "name": "name_ci", "collation": { "locale": "en", "strength": 2 } }
+    },
+    { "collection": "sessions", "operation": "createIndex", "keys": { "expiresAt": 1 }, "options": { "name": "expires_1", "expireAfterSeconds": 3600 } },
+    { "collection": "labels", "operation": "createIndex", "keys": { "label": 1 }, "options": { "name": "label_1" } }
+  ]
+}

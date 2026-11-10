@@ -3,7 +3,8 @@
 migrune runs MongoDB migrations. Migrations are Extended JSON files kept next
 to your code; migrune checks them (`lint`), shows what would change (`plan`)
 and applies them (`apply`) under a lock, recording each one in a changelog
-collection.
+collection. Afterwards, `drift` checks that the indexes on the server are still
+the ones the applied migrations left.
 
 - **Three kinds of migration**: data (`updateOne`, `updateMany`,
   `deleteMany` in one transaction), index (`createIndex`, `dropIndex`,
@@ -93,6 +94,7 @@ export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
 migrune lint  --dir migrations --db app   # also compares checksums with the changelog
 migrune plan  --dir migrations --db app --digest-out plan.digest
 migrune apply --dir migrations --db app --digest-in plan.digest
+migrune drift --dir migrations --db app   # indexes changed outside migrations
 ```
 
 With `MIGRUNE_URI` set, `lint` needs `--db` too. Every flag can also be set
@@ -124,8 +126,8 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 - [Writing migrations](docs/writing-migrations.md): data, index and merge
   migrations, and the checks they must pass.
 - [Running migrations](docs/running.md): several apps on one database, plan
-  and apply in CI with an approval gate, large collections, credentials and
-  AWS IAM, `--mutable` locally.
+  and apply in CI with an approval gate, large collections, detecting index
+  drift, credentials and AWS IAM, `--mutable` locally.
 - [Troubleshooting](docs/troubleshooting.md): connection and permission
   errors, errored or interrupted runs, a held or lost lock, edited or missing
   applied migrations, plan digests.
@@ -134,7 +136,8 @@ A migration file, `migrations/2026-11-05-001-add-archived-flag.json`:
 - Reference: the [CLI](docs/reference/cli/migrune.md),
   [environment variables and exit codes](docs/reference/env-and-exit-codes.md),
   the [migration file](docs/reference/migration-file.md),
-  [lint rules and expected indexes](docs/reference/lint-rules.md), the
+  [lint rules and expected indexes](docs/reference/lint-rules.md),
+  [index drift](docs/reference/drift.md), the
   [report and plan digest](docs/reference/report.md), the
   [changelog and lock](docs/reference/changelog-and-lock.md).
 

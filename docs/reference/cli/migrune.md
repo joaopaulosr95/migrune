@@ -24,6 +24,7 @@ command line wins over the environment variable, which wins over the default.
 
 * [migrune apply](migrune_apply.md)	 - Apply pending migrations
 * [migrune completion](migrune_completion.md)	 - Generate the autocompletion script for the specified shell
+* [migrune drift](migrune_drift.md)	 - Compare the indexes with the applied migrations
 * [migrune lint](migrune_lint.md)	 - Check migration files
 * [migrune plan](migrune_plan.md)	 - Show what apply would do
 

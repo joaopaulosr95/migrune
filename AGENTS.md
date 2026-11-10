@@ -12,12 +12,12 @@ internal/cmd/          cobra commands, env binding, slog setup, connection check
 internal/cmd/gendocs/  CLI reference generator (not part of the binary)
 internal/inttest/      keeps integration test packages from sharing the replica set (fails them without -p 1)
 internal/migration/    load, validate (embedded schema.json) and parse migration files
-internal/lint/         offline lint: per-file rules, index replay, expected indexes
+internal/lint/         offline lint: per-file rules, index replay, expected indexes; drift's comparison (replayed snapshots vs listIndexes)
 internal/runner/       plan/apply: pending set, data migrations (double-run), index migrations, merge migrations (diff count), digest, report;
-                       lock, heartbeat and fence, changelog, format versions (v), graceful shutdown
+                       lock, heartbeat and fence, changelog, format versions (v), graceful shutdown; drift's reads (changelog snapshots, listIndexes)
 test/replicaset/       3-node replica set for integration tests (test commands on, for fail points; image from MONGO_IMAGE), smoke test
 docs/                  getting-started, writing-migrations, running, troubleshooting, design;
-                       reference/ (migration file, lint rules, report, changelog and lock, env and exit codes; cli/ is generated)
+                       reference/ (migration file, lint rules, drift, report, changelog and lock, env and exit codes; cli/ is generated)
 examples/              docker-compose.yaml (1-node replica set + migrune apply), migrations/ (one per kind),
                        ci/ (GitHub Actions and GitLab CI plan/approve/apply snippets)
 .github/workflows/     ci.yml (PRs, reusable), release.yml (main; workflow_dispatch republishes a tag's images)

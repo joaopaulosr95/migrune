@@ -230,23 +230,33 @@ func loadFile(path string) (Migration, string, error) {
 	if err := bson.UnmarshalExtJSON(raw, false, &f); err != nil {
 		return Migration{}, "", fmt.Errorf("%s: %w: %w", path, ErrInvalidExtendedJSON, err)
 	}
-	k := detectKind(f.Steps)
+	k := StepsKind(f.Steps)
 	if vs := ReservedCollections(f.Steps); len(vs) > 0 {
 		return Migration{}, "", &ReservedCollectionError{File: path, Violations: vs}
 	}
-	sum := sha256.Sum256(raw)
 	return Migration{
 		ID:          id,
 		Path:        path,
 		Description: f.Description,
 		Kind:        k,
 		Steps:       f.Steps,
-		Checksum:    hex.EncodeToString(sum[:]),
+		Checksum:    Checksum(raw),
 	}, f.ID, nil
 }
 
-// detectKind returns the kind of a migration's steps: the schema allows
-// only known operations, at least one step, and one kind per file.
-func detectKind(steps []Step) Kind {
+// Checksum returns the checksum of a migration file's raw bytes: their hex
+// SHA256.
+func Checksum(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// StepsKind returns the kind of a migration's steps, from its first step:
+// the schema allows only known operations, at least one step, and one kind
+// per file. It returns "" for no steps.
+func StepsKind(steps []Step) Kind {
+	if len(steps) == 0 {
+		return ""
+	}
 	return kinds[steps[0].Operation]
 }

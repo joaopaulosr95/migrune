@@ -33,7 +33,8 @@ func (c *connFlags) requireAll() error {
 	return nil
 }
 
-// namespaceFlag registers the namespace flag shared by lint, plan and apply.
+// namespaceFlag registers the namespace flag shared by lint, plan, apply and
+// drift.
 func namespaceFlag(fs *pflag.FlagSet, p *string) {
 	fs.StringVar(p, "namespace", "",
 		"set of migrations this directory holds in the database, for several apps sharing one database: "+

@@ -95,7 +95,8 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 	return nil
 }
 
-// findingsOutputFlag registers the findings format flag of lint.
+// findingsOutputFlag registers the findings format flag shared by lint and
+// drift.
 func findingsOutputFlag(fs *pflag.FlagSet, p *string) {
 	fs.StringVarP(p, "output", "o", "text",
 		"findings format: text, one per line, or json, one array; table, the plan and apply default, means text, so one MIGRUNE_OUTPUT serves every command")

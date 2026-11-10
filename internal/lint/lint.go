@@ -60,17 +60,35 @@ const (
 	RuleAppliedMissing   = "applied-missing"
 )
 
-// Finding is one problem found by lint.
+// Finding is one problem found by lint or drift. It is about a file or, for
+// drift's index findings, a collection: exactly one of File and Collection
+// is set.
 type Finding struct {
-	File     string   `json:"file"`
-	Severity Severity `json:"severity"`
-	Rule     string   `json:"rule"`
-	Message  string   `json:"message"`
+	File       string   `json:"file,omitempty"`
+	Collection string   `json:"collection,omitempty"`
+	Severity   Severity `json:"severity"`
+	Rule       string   `json:"rule"`
+	Message    string   `json:"message"`
 }
 
-// String renders the finding as "<file>: <severity>: <rule>: <message>".
+// Subject returns what the finding is about: its file, or its collection.
+func (f Finding) Subject() string {
+	if f.File != "" {
+		return f.File
+	}
+	return f.Collection
+}
+
+// String renders the finding as "<subject>: <severity>: <rule>: <message>",
+// the subject being its file or collection.
 func (f Finding) String() string {
-	return fmt.Sprintf("%s: %s: %s: %s", f.File, f.Severity, f.Rule, f.Message)
+	return fmt.Sprintf("%s: %s: %s: %s", f.Subject(), f.Severity, f.Rule, f.Message)
+}
+
+// sortFindings sorts findings by subject, keeping the order of those about
+// the same one.
+func sortFindings(findings []Finding) {
+	slices.SortStableFunc(findings, func(a, b Finding) int { return strings.Compare(a.Subject(), b.Subject()) })
 }
 
 // Run lints every *.json file in dir (subdirectories are not read), and warns
@@ -147,7 +165,7 @@ func Run(dir string, expected *ExpectedIndexes, applied map[string]migration.App
 	}
 	findings = append(findings, compareChecksums(migrations, applied)...)
 	findings = append(findings, appliedMissing(dir, stems, applied)...)
-	slices.SortStableFunc(findings, func(a, b Finding) int { return strings.Compare(a.File, b.File) })
+	sortFindings(findings)
 	return findings, nil
 }
 

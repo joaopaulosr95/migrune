@@ -23,6 +23,9 @@ type Applied struct {
 	AppliedAt time.Time `json:"appliedAt,omitzero"`
 	// Runner is empty when the entry has none.
 	Runner string `json:"runner,omitempty"`
+	// Steps are the steps of the migration as applied, from the snapshot
+	// the entry stores. Only drift reads them.
+	Steps []Step `json:"-"`
 }
 
 // AppliedAtText returns AppliedAt as RFC 3339 in UTC, or Unknown.

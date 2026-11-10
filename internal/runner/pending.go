@@ -19,17 +19,32 @@ import (
 // recorded. Entries of other namespaces are left out. It only reads, and
 // projects out the stored steps.
 func Finished(ctx context.Context, db *mongo.Database, namespace string) (map[string]migration.Applied, error) {
+	return finished(ctx, db, namespace, false)
+}
+
+// FinishedSnapshots is Finished, with the Steps of each migration as its
+// latest Finished entry stored them: the migration as applied, whatever its
+// file says now.
+func FinishedSnapshots(ctx context.Context, db *mongo.Database, namespace string) (map[string]migration.Applied, error) {
+	return finished(ctx, db, namespace, true)
+}
+
+func finished(ctx context.Context, db *mongo.Database, namespace string, steps bool) (map[string]migration.Applied, error) {
+	projection := bson.D{
+		{Key: "migrationId", Value: 1},
+		{Key: "checksum", Value: 1},
+		{Key: "createdAt", Value: 1},
+		{Key: "runner", Value: 1},
+		{Key: "migration.description", Value: 1},
+	}
+	if steps {
+		projection = append(projection, bson.E{Key: "migration.steps", Value: 1})
+	}
 	cur, err := changelogCollection(db).Find(ctx,
 		bson.D{namespaceFilter(namespace), {Key: "status", Value: StatusFinished}},
 		options.Find().
 			SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}).
-			SetProjection(bson.D{
-				{Key: "migrationId", Value: 1},
-				{Key: "checksum", Value: 1},
-				{Key: "createdAt", Value: 1},
-				{Key: "runner", Value: 1},
-				{Key: "migration.description", Value: 1},
-			}))
+			SetProjection(projection))
 	if err != nil {
 		return nil, fmt.Errorf("read changelog: %w", err)
 	}
@@ -39,7 +54,8 @@ func Finished(ctx context.Context, db *mongo.Database, namespace string) (map[st
 		CreatedAt   time.Time `bson:"createdAt"`
 		Runner      string    `bson:"runner"`
 		Migration   struct {
-			Description string `bson:"description"`
+			Description string           `bson:"description"`
+			Steps       []migration.Step `bson:"steps"`
 		} `bson:"migration"`
 	}
 	if err := cur.All(ctx, &entries); err != nil {
@@ -53,6 +69,7 @@ func Finished(ctx context.Context, db *mongo.Database, namespace string) (map[st
 			Description: e.Migration.Description,
 			AppliedAt:   e.CreatedAt.UTC(),
 			Runner:      e.Runner,
+			Steps:       e.Migration.Steps,
 		}
 	}
 	return finished, nil

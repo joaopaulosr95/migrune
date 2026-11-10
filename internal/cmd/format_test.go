@@ -18,7 +18,7 @@ import (
 	"github.com/joaopaulosr95/migrune/internal/runner"
 )
 
-// TestNewerFormat checks plan, apply and online lint fail, exiting 1,
+// TestNewerFormat checks plan, apply, drift and online lint fail, exiting 1,
 // before anything else happens and with nothing written, when the changelog
 // holds an entry, in any namespace, or the lock collection a document, with a
 // v above the one this migrune writes.
@@ -43,7 +43,7 @@ func TestNewerFormat(t *testing.T) {
 			want: "the migration lock has format v2, newer than this migrune understands (v1): upgrade migrune"},
 	}
 	for _, tc := range cases {
-		for _, command := range []string{"plan", "apply", "lint"} {
+		for _, command := range []string{"plan", "apply", "drift", "lint"} {
 			t.Run(tc.name+" "+command, func(t *testing.T) {
 				uri, db := testTarget(t)
 				seedItems(t, db)
@@ -106,8 +106,10 @@ func TestOlderFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := migrationsDir(t, setFlag, seed)
-	if out, err := migrune(t, uri, db, "lint", "--dir", dir); err != nil {
-		t.Errorf("lint: %v\n%s", err, out)
+	for _, command := range []string{"lint", "drift"} {
+		if out, err := migrune(t, uri, db, command, "--dir", dir); err != nil {
+			t.Errorf("%s: %v\n%s", command, err, out)
+		}
 	}
 	out, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir)
 	if err != nil || !hasRow(out, seed, "applied") || hasRow(out, setFlag, "applied") {

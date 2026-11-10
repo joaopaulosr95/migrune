@@ -429,7 +429,7 @@ func TestExpectedIndexesOptions(t *testing.T) {
 		// The collation as listIndexes shows it, with every default and its
 		// version: every field the migration gives must match, the others
 		// count as defaults, so caseLevel set on the server alone goes
-		// unnoticed.
+		// unnoticed (the blind spot drift has too).
 		{file: "collation-listindexes"},
 		{file: "collation-listindexes-blind-spot"},
 		{file: "collation-listindexes-differ", want: []string{

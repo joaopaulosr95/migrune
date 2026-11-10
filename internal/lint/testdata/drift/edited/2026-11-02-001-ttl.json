@@ -1,0 +1,9 @@
+{
+  "id": "2026-11-02-001-ttl",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "sessions", "operation": "collModIndex", "name": "expires_1", "set": { "expireAfterSeconds": 9999 } },
+    { "collection": "projects", "operation": "dropIndex", "name": "tmp_1" },
+    { "collection": "users", "operation": "collModCollection", "set": { "validationLevel": "moderate" } }
+  ]
+}

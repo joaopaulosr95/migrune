@@ -1,6 +1,6 @@
 # Running migrations
 
-migrune has three commands:
+migrune has four commands:
 
 - `lint` checks the files offline; with a connection, it also checks that no
   applied migration was edited or deleted, read-only.
@@ -8,6 +8,8 @@ migrune has three commands:
   committing anything and prints what apply would do.
 - `apply` takes the lock and applies the pending migrations in id order,
   stopping at the first failure.
+- `drift` compares the indexes on the server with the indexes the applied
+  migrations leave, read-only.
 
 ```sh
 export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
@@ -28,7 +30,7 @@ every migration applied to it, so a migration applied from another directory
 shows up as [applied but missing](troubleshooting.md#applied-but-missing) and
 plan and apply fail. When several apps, each with its own migrations directory,
 migrate one database, give each app a namespace with `--namespace`
-(`MIGRUNE_NAMESPACE`), the same on lint, plan and apply:
+(`MIGRUNE_NAMESPACE`), the same on lint, plan, apply and drift:
 
 ```sh
 migrune plan  --dir migrations --db app --namespace billing --digest-out plan.digest
@@ -50,7 +52,8 @@ flag, a run uses the default namespace. A namespace scopes:
 
 It doesn't scope collections or indexes: every namespace migrates the same
 database, and plan's index preview sees every index `listIndexes` returns,
-whichever namespace created it.
+whichever namespace created it. drift replays only its namespace's migrations,
+so another namespace's indexes are `index-extra` warnings there.
 
 ### Each namespace owns its collections
 
@@ -244,6 +247,38 @@ on one machine). Your timings depend on the documents, the pipeline, the
 indexes and the hardware: time plan against a copy of production, or read
 the durations in its report, before you choose the timeout.
 
+## Detecting index drift
+
+Indexes change outside migrations: someone drops a slow-to-build index during
+an incident, adds one by hand from the shell, or changes a TTL with `collMod`.
+`drift` finds these changes. It replays the migrations applied in the
+namespace and compares the result with `listIndexes` on every collection:
+
+```sh
+migrune drift --dir migrations --db app
+```
+
+An applied index that is missing or has other options is an error, and drift
+exits 1. An index no applied migration creates, or one under another name, is
+a warning. Findings print as lint's do; see [index drift](reference/drift.md)
+for what is compared and each finding.
+
+Run it on a schedule, such as a nightly CI job per environment, with a user
+with `read` and a checkout that has every applied migration file: the expected
+indexes come from the changelog, but a missing or edited file is an error. It
+takes no lock, so it can run while apply does; its findings may then show a
+half-applied run, so run it again before acting on them. Fix a finding with a migration, which also
+reviews the change, rather than by hand.
+
+What it can't see:
+
+- pending migrations: until apply runs them, their indexes aren't expected;
+- `collModCollection` validation changes, and data;
+- where an extra index comes from: another namespace, the application or a
+  person;
+- a collation field set by hand that the migration never gave (see
+  [collation](reference/drift.md#what-is-compared)).
+
 ## Credentials
 
 Pass the connection string as `MIGRUNE_URI`, from a secret or protected
@@ -279,7 +314,7 @@ db.getSiblingDB("app").createRole({
 db.getSiblingDB("app").grantRolesToUser("<user>", ["migruneCollMod"])
 ```
 
-For lint in pull requests, use another user with `read`.
+For lint in pull requests, and for drift, use another user with `read`.
 
 ### AWS IAM
 

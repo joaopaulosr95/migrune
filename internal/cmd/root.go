@@ -108,7 +108,7 @@ command line wins over the environment variable, which wins over the default.`,
 	pf.StringVar(&a.logFormat, "log-format", "text", "log format: text or json")
 	pf.StringVar(&a.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 
-	root.AddCommand(a.newLintCmd(), a.newPlanCmd(), a.newApplyCmd())
+	root.AddCommand(a.newLintCmd(), a.newPlanCmd(), a.newApplyCmd(), a.newDriftCmd())
 	// cobra adds these when it executes; adding them now puts them in the
 	// generated CLI reference too.
 	root.InitDefaultCompletionCmd()

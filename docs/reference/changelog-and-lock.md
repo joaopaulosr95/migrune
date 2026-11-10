@@ -19,7 +19,7 @@ Every changelog entry and every lock document carries its format version in
 `v`. This migrune writes and reads changelog entries v1 and lock documents
 v1. A document without `v`, such as one written by hand, reads as v1.
 
-Every command that connects (plan, apply, and lint with `--uri`)
+Every command that connects (plan, apply, drift, and lint with `--uri`)
 first looks for a changelog entry, in any namespace, or a lock document with
 a `v` higher than the one it knows, before it reads or writes anything else.
 If it finds one, a newer migrune has written to this database, and the run
@@ -42,7 +42,7 @@ anyway.
 
 ## Changelog: `migrations_changelog`
 
-apply writes an entry when a migration finishes or fails. plan and lint never
+apply writes an entry when a migration finishes or fails. plan, lint and drift never
 write an entry.
 
 plan and apply create the collection, empty, when it doesn't exist, before

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-01-002-wildcard",
+  "description": "Index the payload ids and kinds of events",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "createIndex",
+      "keys": { "$**": 1 },
+      "options": { "name": "payload_all", "wildcardProjection": { "payload.id": 1, "payload.kind": 1 } }
+    }
+  ]
+}

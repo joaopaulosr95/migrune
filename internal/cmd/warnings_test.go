@@ -23,6 +23,7 @@ func TestURIFlagWarning(t *testing.T) {
 	}{
 		{name: "plan flag", args: []string{"plan", "--dir", missing, "--uri", uri}, want: true},
 		{name: "apply flag", args: []string{"apply", "--no-digest", "--dir", missing, "--uri", uri}, want: true},
+		{name: "drift flag", args: []string{"drift", "--dir", missing, "--uri", uri}, want: true},
 		{name: "lint flag", args: []string{"lint", "--dir", passDir, "--uri", uri}, want: true},
 		{name: "flag over env", args: []string{"plan", "--dir", missing, "--uri", uri}, env: uri, want: true},
 		{name: "plan env", args: []string{"plan", "--dir", missing}, env: uri},

@@ -1,0 +1,8 @@
+[
+  { "collection": "users", "name": "_id_", "keys": { "_id": 1 } },
+  { "collection": "users", "name": "email_1", "keys": { "email": 1 }, "options": { "unique": true } },
+  { "collection": "accounts", "name": "name_ci", "keys": { "name": 1 }, "options": { "collation": { "locale": "en", "caseLevel": false, "caseFirst": "off", "strength": 2, "numericOrdering": false, "alternate": "non-ignorable", "maxVariable": "punct", "normalization": false, "backwards": false, "version": "57.1" } } },
+  { "collection": "sessions", "name": "expires_1", "keys": { "expiresAt": { "$numberLong": "1" } }, "options": { "expireAfterSeconds": 7200, "background": true } },
+  { "collection": "labels", "name": "label_1", "keys": { "label": 1 } },
+  { "collection": "projects", "name": "ownerId_1", "keys": { "ownerId": 1 } }
+]

@@ -375,7 +375,7 @@ func sharedCollationFields(a, b Index) int {
 // sameExpected compares an expected index, want, with a replayed one, got:
 // options exactly, except a collation as listIndexes shows it, recognised by
 // its version field, which createIndex doesn't accept. listIndexes fills in
-// every default, so that collation compares as a subset (collationWithin):
+// every default, so that collation compares as drift does (collationWithin):
 // every field the migrations give must have the same value in it.
 func sameExpected(want, got Index) bool {
 	w := want.Collation()
@@ -389,20 +389,6 @@ func sameExpected(want, got Index) bool {
 	}
 	g := got.Collation()
 	return g != nil && collationWithin(g, w)
-}
-
-// collationWithin reports whether every field of the collation given has the
-// same value in expanded, a collation as listIndexes returns it, with every
-// default filled in. The fields only expanded has count as defaults, so one
-// set to a non-default value outside given goes unnoticed.
-func collationWithin(given, expanded bson.D) bool {
-	for _, e := range given {
-		i := slices.IndexFunc(expanded, func(f bson.E) bool { return f.Key == e.Key })
-		if i < 0 || migration.Canonical(expanded[i].Value) != migration.Canonical(e.Value) {
-			return false
-		}
-	}
-	return true
 }
 
 // compareIndexes matches the replayed indexes with the expected ones (see

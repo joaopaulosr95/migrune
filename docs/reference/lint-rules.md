@@ -199,10 +199,10 @@ The options compare as MongoDB compares them:
 - A `false` boolean is the same as leaving it out, and so is a collation of
   just `{ "locale": "simple" }`.
 - A collation as `listIndexes` shows it, which has every default filled in
-  and a `version`, a field `createIndex` doesn't take, compares as a
-  subset: every field the migration gives must have the same value in it, and
-  the others count as defaults. So a non-default field the migration never
-  set, such as `caseLevel: true`, goes unnoticed. Any other collation compares
+  and a `version`, a field `createIndex` doesn't take, compares as
+  [drift compares collations](drift.md#what-is-compared): every
+  field the migration gives must have the same value in it, the others count
+  as defaults, and the same blind spot follows. Any other collation compares
   field for field, so give one as passed to `createIndex` to compare it
   exactly.
 - Fields inside an option that is a document, such as
@@ -226,3 +226,6 @@ The `_id_` index is skipped on both sides.
 | A migrated index with the expected keys but other options            | error    | `index-options` |
 | A migrated index that the file doesn't list                          | warning  | `index-extra`   |
 | A migrated index matching an expected one under another name         | warning  | `index-renamed` |
+
+[`drift`](drift.md) matches the indexes the applied migrations leave with the
+server's under these rules, with the same rule names.
