@@ -1,0 +1,36 @@
+{
+  "case": "update-dupkey",
+  "server": "9.0.4",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_1.users index: email_1 dup key: { email: \"ada@example.com\" }]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "11000"
+        },
+        "errmsg": "Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_1.users index: email_1 dup key: { email: \"ada@example.com\" }",
+        "keyPattern": {
+          "email": {
+            "$numberInt": "1"
+          }
+        },
+        "keyValue": {
+          "email": "ada@example.com"
+        }
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

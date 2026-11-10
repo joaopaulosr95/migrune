@@ -252,7 +252,7 @@ func TestAtomicChangelog(t *testing.T) {
 	ms := load(t, fixtureDir(t, "data", setFlag))
 
 	rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply})
-	if !errors.As(err, new(*MigrationError)) || !strings.Contains(err.Error(), "Document failed validation") {
+	if !errors.As(err, new(*MigrationError)) || !strings.Contains(err.Error(), "(DocumentValidationFailure, code 121)") {
 		t.Fatalf("Execute: %v, want the Finished entry's validation failure", err)
 	}
 	if got := statuses(rep); !slices.Equal(got, []string{setFlag + ":errored"}) {
@@ -639,7 +639,7 @@ func TestWithRelease(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := withRelease(tc.run, tc.release, discard())
+			got := withRelease(tc.run, tc.release, discard(), false)
 			if (got == nil) != (len(tc.want) == 0) {
 				t.Fatalf("withRelease = %v, want %v", got, tc.want)
 			}

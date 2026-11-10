@@ -1,0 +1,67 @@
+{
+  "case": "update-convert",
+  "server": "9.0.4",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [Plan executor error during update :: caused by :: Failed to parse number 'ada-secret-42' in $convert with no onError value: Did not consume whole string.]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "electionId": {
+      "$oid": "7fffffff0000000000000003"
+    },
+    "opTime": {
+      "ts": {
+        "$timestamp": {
+          "t": 1794433589,
+          "i": 3
+        }
+      },
+      "t": {
+        "$numberLong": "3"
+      }
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "241"
+        },
+        "errmsg": "Plan executor error during update :: caused by :: Failed to parse number 'ada-secret-42' in $convert with no onError value: Did not consume whole string."
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794433589,
+          "i": 3
+        }
+      },
+      "signature": {
+        "hash": {
+          "$binary": {
+            "base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "subType": "00"
+          }
+        },
+        "keyId": {
+          "$numberLong": "0"
+        }
+      }
+    },
+    "operationTime": {
+      "$timestamp": {
+        "t": 1794433589,
+        "i": 3
+      }
+    }
+  }
+}

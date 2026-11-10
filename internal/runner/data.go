@@ -86,7 +86,7 @@ func (r *Run) runData(m migration.Migration, apply bool, log *slog.Logger, row *
 	}
 	var ie *InterruptedError
 	if apply && !errors.As(err, &ie) {
-		if werr := r.WriteErrored(m, stepErrors(err)); werr != nil {
+		if werr := r.WriteErrored(m, r.stepErrors(err)); werr != nil {
 			err = errors.Join(err, werr)
 		}
 	}
@@ -131,14 +131,15 @@ func checkIdempotent(m migration.Migration, second []StepResult) error {
 }
 
 // stepErrors turns a migration failure into the errors of its Errored
-// changelog entry.
-func stepErrors(err error) []StepError {
+// changelog entry, whose messages are errorText's.
+func (r *Run) stepErrors(err error) []StepError {
+	msg := r.errText(err)
 	var sf *StepFailure
 	if errors.As(err, &sf) {
 		step := sf.Step
-		return []StepError{{Step: &step, Message: err.Error()}}
+		return []StepError{{Step: &step, Message: msg}}
 	}
-	return []StepError{{Message: err.Error()}}
+	return []StepError{{Message: msg}}
 }
 
 func runDataStep(ctx context.Context, coll *mongo.Collection, s migration.Step) (StepResult, error) {

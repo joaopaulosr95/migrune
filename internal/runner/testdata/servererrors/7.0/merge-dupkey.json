@@ -1,0 +1,24 @@
+{
+  "case": "merge-dupkey",
+  "server": "7.0.35",
+  "type": "mongo.CommandError",
+  "error": "(DuplicateKey) PlanExecutor error during aggregation :: caused by :: $merge failed due to a DuplicateKey error :: caused by :: E11000 duplicate key error collection: probe_m4_4.target index: email_1 dup key: { email: \"ada@example.com\" }",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "PlanExecutor error during aggregation :: caused by :: $merge failed due to a DuplicateKey error :: caused by :: E11000 duplicate key error collection: probe_m4_4.target index: email_1 dup key: { email: \"ada@example.com\" }",
+    "code": {
+      "$numberInt": "11000"
+    },
+    "codeName": "DuplicateKey",
+    "keyPattern": {
+      "email": {
+        "$numberInt": "1"
+      }
+    },
+    "keyValue": {
+      "email": "ada@example.com"
+    }
+  }
+}

@@ -41,9 +41,10 @@ type Config struct {
 	ReplicaSet string
 	// SampleValues puts the before and after values of the differing
 	// fields in merge samples, in the logs and the report, each cut to
-	// MaxSampleValueChars characters. Without it, samples show only field
-	// names, BSON types and nested paths, so production data stays out of
-	// CI logs. It isn't part of the digest.
+	// MaxSampleValueChars characters, and servers' messages in error text
+	// (errorText). Without it, samples show only field names, BSON types
+	// and nested paths, and errors only servers' code names and codes, so
+	// production data stays out of CI logs. It isn't part of the digest.
 	SampleValues bool
 }
 
@@ -64,6 +65,8 @@ func (e *MigrationError) Unwrap() error { return e.Err }
 // It returns a report whenever it got as far as holding the lock, failure or
 // interruption included; the error tells the outcome. An interrupted run
 // returns an *InterruptedError and writes no changelog entry.
+// Without c.SampleValues, the error's text, the report's and the logs'
+// leave out servers' messages (errorText).
 func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Migration, o Options, c Config) (*Report, error) {
 	if c.Mode != ModePlan && c.Mode != ModeApply {
 		return nil, fmt.Errorf("unknown mode %q", c.Mode)
@@ -72,11 +75,11 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	// Read before the lock, the same way by plan and apply.
 	onlyOwn, deployment, err := readTarget(ctx, db)
 	if err != nil {
-		return nil, interruption(ctx, err)
+		return nil, redact(interruption(ctx, err), c.SampleValues)
 	}
 	hasEntries, err := changelogHasEntries(ctx, db)
 	if err != nil {
-		return nil, interruption(ctx, err)
+		return nil, redact(interruption(ctx, err), c.SampleValues)
 	}
 	// New: no collection but migrune's, and no changelog entry.
 	newDB := onlyOwn && !hasEntries
@@ -89,17 +92,16 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	// plans, with the same names, would give the same digest.
 	if deployment == DeploymentNone {
 		if err := createChangelog(ctx, db); err != nil {
-			return nil, interruption(ctx, err)
+			return nil, redact(interruption(ctx, err), c.SampleValues)
 		}
 		if deployment, err = ChangelogDeployment(ctx, db); err != nil {
-			return nil, interruption(ctx, err)
+			return nil, redact(interruption(ctx, err), c.SampleValues)
 		}
 	}
-	run, err := Start(ctx, db, o)
+	run, err := startWith(ctx, db, o, c.SampleValues)
 	if err != nil {
-		return nil, err
+		return nil, redact(err, c.SampleValues)
 	}
-	run.sampleValues = c.SampleValues
 	rep := &Report{
 		Command:           string(c.Mode),
 		Database:          db.Name(),
@@ -114,20 +116,22 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 		rep.ApprovedBy = &o.ApprovedBy
 	}
 	err = run.execute(migrations, c, deployment, rep)
-	err = withRelease(err, run.Close(), run.log)
+	// Errors leave the runner, for the report and the caller, without
+	// servers' messages (errorText).
+	err = redact(withRelease(err, run.Close(), run.log, c.SampleValues), c.SampleValues)
 	rep.finish(time.Since(start), err)
 	return rep, err
 }
 
 // withRelease combines a run's outcome err with the error of releasing its
 // lock. After a successful run, a failed release is only logged: the lock
-// expires on its own.
-func withRelease(err, release error, log *slog.Logger) error {
+// expires on its own, with errorText for values.
+func withRelease(err, release error, log *slog.Logger, values bool) error {
 	switch {
 	case release == nil:
 		return err
 	case err == nil:
-		log.Warn("could not release the migration lock: it expires on its own", "error", release)
+		log.Warn("could not release the migration lock: it expires on its own", "error", errorText(release, values))
 		return nil
 	default:
 		return errors.Join(err, release)
@@ -244,7 +248,7 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 		return nil
 	case errors.As(err, &ie):
 		row.Status = RowInterrupted
-		row.Error = err.Error()
+		row.Error = r.errText(err)
 		switch m.Kind {
 		case migration.KindIndex:
 			log.Warn("migration interrupted: it stays pending; an index command in progress is left to the server, " +
@@ -258,8 +262,8 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 		return err
 	default:
 		row.Status = RowErrored
-		row.Error = err.Error()
-		log.Error("migration failed", "error", err)
+		row.Error = r.errText(err)
+		log.Error("migration failed", "error", row.Error)
 		return &MigrationError{ID: m.ID, Err: err}
 	}
 }

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-07-002-negative-age",
+  "description": "Set an age the collection's validator refuses",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "updateOne",
+      "filter": { "_id": 1 },
+      "update": { "$set": { "age": -3 } }
+    }
+  ]
+}

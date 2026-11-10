@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-07-001-copy-email",
+  "description": "Give user 2 the email of user 1, which the unique index on email refuses",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "updateOne",
+      "filter": { "_id": 2 },
+      "update": { "$set": { "email": "ada@example.com" } }
+    }
+  ]
+}

@@ -132,6 +132,9 @@ type Lock struct {
 	interval time.Duration
 	ttl      time.Duration
 	log      *slog.Logger
+	// sampleValues keeps servers' messages in the heartbeat's logs
+	// (errorText).
+	sampleValues bool
 	// token is set by a successful Acquire.
 	token string
 	// now is the clock the local lease is measured with: time.Now, or a
@@ -465,11 +468,11 @@ func (l *Lock) StartHeartbeat(ctx context.Context, lost context.CancelCauseFunc)
 				return
 			case l.leaseExpired():
 				l.log.Error("migration lock lost: no heartbeat succeeded within the lock expiry, less its margin",
-					"runner", l.owner, "error", err)
+					"runner", l.owner, "error", errorText(err, l.sampleValues))
 				lost(fmt.Errorf("%w: %w", ErrLockLost, err))
 				return
 			default:
-				l.log.Warn("migration lock heartbeat failed, retrying", "runner", l.owner, "error", err)
+				l.log.Warn("migration lock heartbeat failed, retrying", "runner", l.owner, "error", errorText(err, l.sampleValues))
 			}
 		}
 	}()

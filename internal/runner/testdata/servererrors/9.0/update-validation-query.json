@@ -1,0 +1,43 @@
+{
+  "case": "update-validation-query",
+  "server": "9.0.4",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [Plan executor error during update :: caused by :: Document failed validation: {\"failingDocumentId\": {\"$numberInt\":\"1\"},\"details\": {\"operatorName\": \"$regex\",\"specifiedAs\": {\"email\": {\"$regex\": \"@\"}},\"reason\": \"regular expression did not match\",\"consideredValue\": \"ada.example.com\"}}]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "121"
+        },
+        "errmsg": "Plan executor error during update :: caused by :: Document failed validation",
+        "errInfo": {
+          "failingDocumentId": {
+            "$numberInt": "1"
+          },
+          "details": {
+            "operatorName": "$regex",
+            "specifiedAs": {
+              "email": {
+                "$regex": "@"
+              }
+            },
+            "reason": "regular expression did not match",
+            "consideredValue": "ada.example.com"
+          }
+        }
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

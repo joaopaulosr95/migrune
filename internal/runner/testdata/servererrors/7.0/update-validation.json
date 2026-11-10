@@ -1,0 +1,60 @@
+{
+  "case": "update-validation",
+  "server": "7.0.35",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [Document failed validation: {\"failingDocumentId\": {\"$numberInt\":\"1\"},\"details\": {\"operatorName\": \"$jsonSchema\",\"schemaRulesNotSatisfied\": [{\"operatorName\": \"properties\",\"propertiesNotSatisfied\": [{\"propertyName\": \"age\",\"details\": [{\"operatorName\": \"minimum\",\"specifiedAs\": {\"minimum\": {\"$numberInt\":\"0\"}},\"reason\": \"comparison failed\",\"consideredValue\": {\"$numberInt\":\"-3\"}}]}]}]}}]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "121"
+        },
+        "errmsg": "Document failed validation",
+        "errInfo": {
+          "failingDocumentId": {
+            "$numberInt": "1"
+          },
+          "details": {
+            "operatorName": "$jsonSchema",
+            "schemaRulesNotSatisfied": [
+              {
+                "operatorName": "properties",
+                "propertiesNotSatisfied": [
+                  {
+                    "propertyName": "age",
+                    "details": [
+                      {
+                        "operatorName": "minimum",
+                        "specifiedAs": {
+                          "minimum": {
+                            "$numberInt": "0"
+                          }
+                        },
+                        "reason": "comparison failed",
+                        "consideredValue": {
+                          "$numberInt": "-3"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

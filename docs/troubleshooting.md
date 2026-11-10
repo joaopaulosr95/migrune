@@ -75,7 +75,7 @@ command it isn't allowed to run. For plan and apply, that is usually taking
 the lock, with exit 1 and no report:
 
 ```txt
-Error: acquire migration lock: (Unauthorized) not authorized on app to execute command { findAndModify: "migrations_lock", … }
+Error: acquire migration lock: (Unauthorized, code 13); server message hidden; rerun plan with --sample-values to see it
 ```
 
 plan and apply need `readWrite` on the target database; a `collModIndex` or
@@ -99,6 +99,11 @@ under the same id**, and run again.
    ```txt
    2026-11-05-001-set-trial-days  data  errored  13ms  /steps/0 (updateMany on plans, second run): not idempotent: running the migration again modified 2 documents; …
    ```
+
+   A server error shows its code name and code but not the server's
+   message; rerun plan with `--sample-values` where its output is as
+   protected as the data, such as locally, to read it (see
+   [values in errors](reference/report.md#values-in-errors)).
 
    The `Errored` changelog entry stores the same messages in `errors`
    (`{step, message}`), with the migration as it ran:

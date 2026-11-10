@@ -31,7 +31,7 @@ migrune plan [flags]
       --lock-wait duration           how long to keep trying, with backoff, to take a migration lock held by another runner; 0 fails at once. A lock still held after the wait exits with code 3
       --namespace string             set of migrations this directory holds in the database, for several apps sharing one database: scopes the changelog reads, the lock and the digest; 1 to 64 lowercase letters, digits, _ or -; empty is the default namespace. lint checks it always but uses it only with --uri
   -o, --output string                report format: table or json (default "table")
-      --sample-values[=true|false]   show the values of the fields that differ in merge samples, in the logs and the report, each cut to 200 characters; by default samples show only the on fields, field names, BSON types and nested paths, so data stays out of CI logs
+      --sample-values[=true|false]   show document values: those of the fields that differ in merge samples, each cut to 200 characters, server errors' messages, which can quote them, and the duplicate keys of a unique conversion, in the logs, the report and the changelog; by default samples show only the on fields, field names, BSON types and nested paths, and server errors only their code names, codes and _ids, so data stays out of CI logs
       --uri string                   MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
 ```
 

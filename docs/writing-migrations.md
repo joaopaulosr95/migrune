@@ -271,8 +271,10 @@ migrations:
 3. `"set": { "unique": true }`. MongoDB refuses it on an index without
    `prepareUnique` (lint's `unique-without-prepare`, and plan fails), and on
    duplicates. plan runs `collMod` with `dryRun` and fails the step on
-   duplicates, with how many keys, how many documents share them, and up to
-   five of the keys.
+   duplicates, with how many keys, how many documents share them, and the
+   `_id`s of the documents sharing up to five of the keys (the keys
+   themselves with `--sample-values`, see
+   [values in errors](reference/report.md#values-in-errors)).
 
 plan checks the data as it is, so ship the third migration in a later
 release than the second: while the data migration is still pending, plan

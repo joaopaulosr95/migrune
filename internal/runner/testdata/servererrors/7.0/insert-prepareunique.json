@@ -1,0 +1,33 @@
+{
+  "case": "insert-prepareunique",
+  "server": "7.0.35",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [E11000 duplicate key error collection: probe_m4_9.users index: email_1 dup key: { email: \"bob@example.com\" }]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "11000"
+        },
+        "errmsg": "E11000 duplicate key error collection: probe_m4_9.users index: email_1 dup key: { email: \"bob@example.com\" }",
+        "keyPattern": {
+          "email": {
+            "$numberInt": "1"
+          }
+        },
+        "keyValue": {
+          "email": "bob@example.com"
+        }
+      }
+    ],
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

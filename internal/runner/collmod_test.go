@@ -211,17 +211,18 @@ func TestCollModHidden(t *testing.T) {
 // TestCollModUnique converts an index with duplicates to unique, in three
 // migrations: prepareUnique, a data migration removing the duplicates, then
 // unique. plan fails unique on an index that isn't prepareUnique, and on
-// duplicates, with their count and keys.
+// duplicates, with their count and the documents' _ids, or their keys with
+// SampleValues.
 func TestCollModUnique(t *testing.T) {
 	ctx := testCtx(t)
 	db := testDB(t)
 	users := db.Collection("users")
 	insert(t, ctx, users,
-		bson.D{{Key: "email", Value: "a@example.com"}},
-		bson.D{{Key: "email", Value: "a@example.com"}, {Key: "duplicate", Value: true}},
-		bson.D{{Key: "email", Value: "b@example.com"}},
-		bson.D{{Key: "email", Value: "b@example.com"}, {Key: "duplicate", Value: true}},
-		bson.D{{Key: "email", Value: "c@example.com"}})
+		bson.D{{Key: "_id", Value: 1}, {Key: "email", Value: "a@example.com"}},
+		bson.D{{Key: "_id", Value: 2}, {Key: "email", Value: "a@example.com"}, {Key: "duplicate", Value: true}},
+		bson.D{{Key: "_id", Value: 3}, {Key: "email", Value: "b@example.com"}},
+		bson.D{{Key: "_id", Value: 4}, {Key: "email", Value: "b@example.com"}, {Key: "duplicate", Value: true}},
+		bson.D{{Key: "_id", Value: 5}, {Key: "email", Value: "c@example.com"}})
 	createIndex(t, ctx, users, "email_1", bson.D{{Key: "email", Value: 1}})
 
 	// Without prepareUnique, MongoDB refuses the conversion.
@@ -263,15 +264,28 @@ func TestCollModUnique(t *testing.T) {
 		t.Errorf("insert of a duplicate after prepareUnique: %v, want a duplicate key error", err)
 	}
 
-	// The duplicates fail the plan, with their count and keys.
-	rep, err = collModRun(t, ctx, db, ModePlan, prepareEmail, uniqueEmail)
-	want := `index email_1 has 2 duplicate keys, shared by 4 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: ` +
-		"MongoDB would refuse to make it unique (CannotConvertIndexToUnique)"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("plan with duplicates: %v, want %q", err, want)
-	}
-	if got := indexChanges(rep, uniqueEmail); !slices.Equal(got, []string{`modify email_1 {"unique":true} {"unique":false} conflict`}) {
-		t.Errorf("plan with duplicates: %v", got)
+	// The duplicates fail the plan, with their count and the _ids of the
+	// documents sharing each key; their keys only with SampleValues.
+	for _, values := range []bool{false, true} {
+		rep, err = execute(t, ctx, db, load(t, fixtureDir(t, "collmod", prepareEmail, uniqueEmail)), Options{},
+			Config{Mode: ModePlan, SampleValues: values})
+		such := "the documents with the _ids [1,2], [3,4]"
+		if values {
+			such = `{"email":"a@example.com"}, {"email":"b@example.com"}`
+		}
+		want := "index email_1 has 2 duplicate keys, shared by 4 documents, such as " + such + ": " +
+			"MongoDB would refuse to make it unique (CannotConvertIndexToUnique)"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("plan with duplicates, SampleValues %t: %v, want %q", values, err, want)
+		}
+		if got := indexChanges(rep, uniqueEmail); !slices.Equal(got, []string{`modify email_1 {"unique":true} {"unique":false} conflict`}) {
+			t.Errorf("plan with duplicates: %v", got)
+		}
+		for _, text := range []string{rep.Error, rep.row(uniqueEmail).Error, rep.row(uniqueEmail).Indexes[0].Conflict} {
+			if strings.Contains(text, "@example.com") != values {
+				t.Errorf("SampleValues %t, but the report has %q", values, text)
+			}
+		}
 	}
 
 	if _, err := collModRun(t, ctx, db, ModeApply, prepareEmail, dedupeEmails); err != nil {

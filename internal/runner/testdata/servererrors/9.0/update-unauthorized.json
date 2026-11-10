@@ -1,0 +1,16 @@
+{
+  "case": "update-unauthorized",
+  "server": "9.0.4",
+  "type": "mongo.CommandError",
+  "error": "(Unauthorized) not authorized on probe_m7 to execute command { update: \"users\", ordered: true, lsid: { id: UUID(\"40734f8e-a8e6-41c4-993c-a90f4e2e1ed1\") }, $db: \"probe_m7\" }",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "not authorized on probe_m7 to execute command { update: \"users\", ordered: true, lsid: { id: UUID(\"40734f8e-a8e6-41c4-993c-a90f4e2e1ed1\") }, $db: \"probe_m7\" }",
+    "code": {
+      "$numberInt": "13"
+    },
+    "codeName": "Unauthorized"
+  }
+}

@@ -388,15 +388,16 @@ func (r *Run) collModAllowed(coll string) (bool, error) {
 }
 
 // maxDuplicateSamples is how many duplicate keys a failed unique conversion
-// shows.
+// shows, and how many _ids of each.
 const maxDuplicateSamples = 5
 
 // uniqueDryRun checks whether MongoDB would convert have, an index of coll
 // that plan sees as prepareUnique, to unique: collMod's dryRun lists the
 // documents that share a key. dup describes the duplicates, if any, with
-// their count and a few of their keys. When the server's index isn't
-// prepareUnique yet, because an earlier pending step sets it, dryRun can't
-// run: warning says so, and apply finds out.
+// their count and, for a few keys, the _ids of the documents sharing it; with
+// --sample-values, the keys themselves instead. When the server's index
+// isn't prepareUnique yet, because an earlier pending step sets it, dryRun
+// can't run: warning says so, and apply finds out.
 func (r *Run) uniqueDryRun(coll string, have migration.Index) (warning string, dup, err error) {
 	server := r.serverIndexes[coll]
 	j := slices.IndexFunc(server, func(ix migration.Index) bool { return ix.Name == have.Name })
@@ -418,7 +419,7 @@ func (r *Run) uniqueDryRun(coll string, have migration.Index) (warning string, d
 	}
 	var res struct {
 		Violations []struct {
-			IDs []any `bson:"ids"`
+			IDs bson.A `bson:"ids"`
 		} `bson:"violations"`
 	}
 	if err := bson.Unmarshal(ce.Raw, &res); err != nil {
@@ -429,6 +430,10 @@ func (r *Run) uniqueDryRun(coll string, have migration.Index) (warning string, d
 	for _, v := range res.Violations {
 		docs += len(v.IDs)
 		if len(samples) == maxDuplicateSamples || len(v.IDs) == 0 {
+			continue
+		}
+		if !r.sampleValues {
+			samples = append(samples, idsText(v.IDs))
 			continue
 		}
 		key, err := r.indexKey(coll, have, v.IDs[0])
@@ -442,12 +447,25 @@ func (r *Run) uniqueDryRun(coll string, have migration.Index) (warning string, d
 		}
 	}
 	such := ""
-	if len(samples) > 0 {
+	switch {
+	case len(samples) == 0:
+	case r.sampleValues:
 		such = ", such as " + strings.Join(samples, ", ")
+	default:
+		such = ", such as the documents with the _ids " + strings.Join(samples, ", ")
 	}
 	return "", fmt.Errorf("index %s has %d duplicate %s, shared by %d documents%s: MongoDB would refuse to make it unique "+
 		"(CannotConvertIndexToUnique). Remove the duplicates in a data migration first",
 		have.Name, len(res.Violations), plural(len(res.Violations), "key"), docs, such), nil
+}
+
+// idsText renders the _ids of documents sharing a key as relaxed Extended
+// JSON, the first maxDuplicateSamples of them.
+func idsText(ids bson.A) string {
+	if len(ids) <= maxDuplicateSamples {
+		return extJSON(ids)
+	}
+	return fmt.Sprintf("%s and %d more", extJSON(ids[:maxDuplicateSamples]), len(ids)-maxDuplicateSamples)
 }
 
 // indexKey renders the fields of ix's keys of the document of coll whose _id

@@ -58,7 +58,7 @@ func (a *app) drift(cmd *cobra.Command, o driftOptions) error {
 	if err := checkNamespace(o.namespace); err != nil {
 		return err
 	}
-	db, _, disconnect, err := a.connect(cmd.Context(), o.conn)
+	db, _, disconnect, err := a.connect(cmd.Context(), o.conn, true)
 	if err != nil {
 		return err
 	}

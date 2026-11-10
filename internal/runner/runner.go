@@ -97,7 +97,8 @@ type Run struct {
 	runnerID   string
 	approvedBy ApprovedBy
 	log        *slog.Logger
-	// sampleValues puts values in merge samples; set by Execute.
+	// sampleValues puts document values in merge samples, and servers'
+	// messages in error text (errorText); set by Execute.
 	sampleValues bool
 	// planIndexes are, in plan, the indexes of each collection as the
 	// pending index migrations planned so far would leave them, read with
@@ -127,8 +128,14 @@ type Run struct {
 // its heartbeat. When another runner holds the lock it returns an error
 // matching ErrLockHeld. The returned Run's Context is cancelled when ctx is
 // (an interruption) or when the lock is lost (cause ErrLockLost). Call Close
-// when done, whatever the outcome.
+// when done, whatever the outcome. Its logs leave servers' messages out
+// (errorText).
 func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
+	return startWith(ctx, db, o, false)
+}
+
+// startWith is Start, with values for --sample-values.
+func startWith(ctx context.Context, db *mongo.Database, o Options, values bool) (*Run, error) {
 	if o.RunnerID == "" {
 		o.RunnerID = DefaultRunnerID()
 	}
@@ -152,6 +159,7 @@ func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
 	if err != nil {
 		return nil, err
 	}
+	lock.sampleValues = values
 	if err := lock.Acquire(ctx, o.LockWait); err != nil {
 		return nil, interruption(ctx, err)
 	}
@@ -165,6 +173,7 @@ func Start(ctx context.Context, db *mongo.Database, o Options) (*Run, error) {
 		runnerID:      o.RunnerID,
 		approvedBy:    o.ApprovedBy,
 		log:           log,
+		sampleValues:  values,
 		ctx:           runCtx,
 		cancel:        cancel,
 		stopHeartbeat: lock.StartHeartbeat(runCtx, cancel),

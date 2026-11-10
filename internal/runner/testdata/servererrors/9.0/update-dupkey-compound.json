@@ -1,0 +1,42 @@
+{
+  "case": "update-dupkey-compound",
+  "server": "9.0.4",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_2.users index: tenant_1_name_1 dup key: { tenant: 7, name: \"a} \"x\" dup key: {\" }]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "11000"
+        },
+        "errmsg": "Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_2.users index: tenant_1_name_1 dup key: { tenant: 7, name: \"a} \"x\" dup key: {\" }",
+        "keyPattern": {
+          "tenant": {
+            "$numberInt": "1"
+          },
+          "name": {
+            "$numberInt": "1"
+          }
+        },
+        "keyValue": {
+          "tenant": {
+            "$numberInt": "7"
+          },
+          "name": "a} \"x\" dup key: {"
+        }
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

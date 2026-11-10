@@ -36,7 +36,7 @@ migrune apply [flags]
       --no-digest[=true|false]       run without a plan digest (local use only)
   -o, --output string                report format: table or json (default "table")
       --runner-id string             runner id used for the lock and logs (default: hostname, PID and a random suffix)
-      --sample-values[=true|false]   show the values of the fields that differ in merge samples, in the logs and the report, each cut to 200 characters; by default samples show only the on fields, field names, BSON types and nested paths, so data stays out of CI logs
+      --sample-values[=true|false]   show document values: those of the fields that differ in merge samples, each cut to 200 characters, server errors' messages, which can quote them, and the duplicate keys of a unique conversion, in the logs, the report and the changelog; by default samples show only the on fields, field names, BSON types and nested paths, and server errors only their code names, codes and _ids, so data stays out of CI logs
       --uri string                   MongoDB connection string; prefer MIGRUNE_URI to keep credentials out of process arguments
 ```
 

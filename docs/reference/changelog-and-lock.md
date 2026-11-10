@@ -112,7 +112,7 @@ Example `Finished` entry for a data migration:
 | `status`           | string    | `Finished` or `Errored`.                                                                            |
 | `migration`        | document  | The migration as it ran: `id`, `description` and `steps`, parsed from the file. Not byte-identical to the file. |
 | `results`          | array     | `Finished` only. One item per step, in file order; see below.                                       |
-| `errors`           | array     | `Errored` only. `{step, message}` items; `step` is the failed step's index in file order, absent when the error isn't tied to a step. |
+| `errors`           | array     | `Errored` only. `{step, message}` items; `step` is the failed step's index in file order, absent when the error isn't tied to a step; `message` is the report's error text, without the server's message unless `--sample-values` is set (see [values in errors](report.md#values-in-errors)). |
 
 Each item of `results` has `collection` and `operation`, plus what MongoDB
 returned for that kind of step:

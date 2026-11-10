@@ -23,7 +23,7 @@ func (a *app) runMigrations(cmd *cobra.Command, conn connFlags, output string, o
 	if err != nil {
 		return nil, err
 	}
-	db, srv, disconnect, err := a.connect(cmd.Context(), conn)
+	db, srv, disconnect, err := a.connect(cmd.Context(), conn, c.SampleValues)
 	if err != nil {
 		return nil, err
 	}

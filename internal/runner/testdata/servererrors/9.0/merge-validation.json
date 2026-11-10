@@ -1,0 +1,48 @@
+{
+  "case": "merge-validation",
+  "server": "9.0.4",
+  "type": "mongo.CommandError",
+  "error": "(DocumentValidationFailure) Executor error during aggregate command on namespace: probe_m4_8.source :: caused by :: Document failed validation",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "Executor error during aggregate command on namespace: probe_m4_8.source :: caused by :: Document failed validation",
+    "code": {
+      "$numberInt": "121"
+    },
+    "codeName": "DocumentValidationFailure",
+    "errInfo": {
+      "failingDocumentId": {
+        "$numberInt": "1"
+      },
+      "details": {
+        "operatorName": "$jsonSchema",
+        "schemaRulesNotSatisfied": [
+          {
+            "operatorName": "properties",
+            "propertiesNotSatisfied": [
+              {
+                "propertyName": "age",
+                "details": [
+                  {
+                    "operatorName": "minimum",
+                    "specifiedAs": {
+                      "minimum": {
+                        "$numberInt": "0"
+                      }
+                    },
+                    "reason": "comparison failed",
+                    "consideredValue": {
+                      "$numberInt": "-3"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

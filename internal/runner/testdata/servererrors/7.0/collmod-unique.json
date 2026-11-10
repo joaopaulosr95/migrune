@@ -1,0 +1,28 @@
+{
+  "case": "collmod-unique",
+  "server": "7.0.35",
+  "type": "mongo.CommandError",
+  "error": "(CannotConvertIndexToUnique) Cannot convert the index to unique. Please resolve conflicting documents before running collMod again.",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "Cannot convert the index to unique. Please resolve conflicting documents before running collMod again.",
+    "code": {
+      "$numberInt": "359"
+    },
+    "codeName": "CannotConvertIndexToUnique",
+    "violations": [
+      {
+        "ids": [
+          {
+            "$numberInt": "1"
+          },
+          {
+            "$numberInt": "2"
+          }
+        ]
+      }
+    ]
+  }
+}

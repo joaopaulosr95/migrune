@@ -71,7 +71,7 @@ func (a *app) lint(cmd *cobra.Command, o lintOptions) error {
 	}
 	var applied map[string]migration.Applied
 	if o.conn.uri != "" {
-		db, _, disconnect, err := a.connect(cmd.Context(), o.conn)
+		db, _, disconnect, err := a.connect(cmd.Context(), o.conn, true)
 		if err != nil {
 			return err
 		}

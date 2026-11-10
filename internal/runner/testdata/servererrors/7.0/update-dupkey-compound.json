@@ -1,0 +1,42 @@
+{
+  "case": "update-dupkey-compound",
+  "server": "7.0.35",
+  "type": "mongo.WriteException",
+  "error": "write exception: write errors: [E11000 duplicate key error collection: probe_m4_2.users index: tenant_1_name_1 dup key: { tenant: 7, name: \"a} \"x\" dup key: {\" }]",
+  "raw": {
+    "n": {
+      "$numberInt": "0"
+    },
+    "writeErrors": [
+      {
+        "index": {
+          "$numberInt": "0"
+        },
+        "code": {
+          "$numberInt": "11000"
+        },
+        "errmsg": "E11000 duplicate key error collection: probe_m4_2.users index: tenant_1_name_1 dup key: { tenant: 7, name: \"a} \"x\" dup key: {\" }",
+        "keyPattern": {
+          "tenant": {
+            "$numberInt": "1"
+          },
+          "name": {
+            "$numberInt": "1"
+          }
+        },
+        "keyValue": {
+          "tenant": {
+            "$numberInt": "7"
+          },
+          "name": "a} \"x\" dup key: {"
+        }
+      }
+    ],
+    "nModified": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    }
+  }
+}

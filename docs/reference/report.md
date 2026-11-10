@@ -95,6 +95,64 @@ its report and logs often end up in CI logs and artifacts. `--sample-values`
 alike, each cut to 200 characters. Use it where those logs are as protected
 as the data, such as locally.
 
+The `on` fields are shown whatever `--sample-values` says, since without
+them a sample can't be traced to its document. When `on` is a natural key,
+such as an email address, those values reach the CI logs: merge on `_id`
+or another opaque key where that matters.
+
+## Values in errors
+
+A row's `error`, the run's `error`, the logs and the `message` of an
+`Errored` [changelog entry](changelog-and-lock.md#changelog-migrations_changelog) can
+quote a server error. A server's message can quote document values (the key
+of a duplicate key error, the value `$convert` failed on, the document an
+update path ran into, a validation failure's details), so plan and apply,
+without `--sample-values`, show none of the server's text. Each server
+error shows only:
+
+- its code name and code, such as `(DuplicateKey, code 11000)` (a write
+  error's code name is shown for the codes migrations commonly meet, since
+  the server sends only the code);
+- for a write error whose details give it, such as a document validation
+  failure (code 121), the failing document's `_id`.
+
+migrune's own text around it stays: the migration, the step, and any hint
+migrune adds. The text then ends with
+`server message hidden; rerun plan with --sample-values to see it`. Errors
+that don't come from the server, such as a network error, a timeout or one
+of migrune's own checks, are shown whole: they quote no document values.
+So are the errors of connecting (reaching the server, authenticating,
+checking its version and topology), which come before any migration runs.
+
+This covers plan and apply only. `drift` and `lint --uri` have no
+`--sample-values`: they show server errors as the server and the driver word
+them.
+
+`_id`s are always shown, here and in a failed unique conversion's
+duplicates, since they are what finds the documents. When `_id` is a natural
+key, such as an email address, it reaches the CI logs too.
+
+For example, an update that breaks a unique index:
+
+```txt
+/steps/0 (updateOne on users): write exception: write errors: [(DuplicateKey, code 11000)]; server message hidden; rerun plan with --sample-values to see it
+```
+
+And one that breaks the collection's validator:
+
+```txt
+/steps/0 (updateOne on users): write exception: write errors: [(DocumentValidationFailure, code 121) {"failingDocumentId":1}]; server message hidden; rerun plan with --sample-values to see it
+```
+
+plan's check of a unique conversion (a `collModIndex` setting `unique`)
+names, for up to five duplicate keys, the `_id`s of up to five of the
+documents sharing each, not the keys. `_id`s are shown, as `on` fields are
+in merge samples, so the documents can be found.
+
+With `--sample-values`, errors read as the server and the driver word them,
+the server's message and the values it quotes included, and the unique
+conversion check shows the keys instead of the `_id`s.
+
 ## JSON
 
 ```json
@@ -163,7 +221,7 @@ as the data, such as locally.
 | `migrations[].kind`       | string           | `data`, `index` or `merge`.                                                                                  |
 | `migrations[].status`     | string           | `applied`, `errored`, `interrupted` or `skipped`.                                                            |
 | `migrations[].durationMs` | integer          | How long the migration ran, in milliseconds. 0 when skipped.                                                 |
-| `migrations[].error`      | string, optional | Why the migration errored or was interrupted. Absent otherwise.                                              |
+| `migrations[].error`      | string, optional | Why the migration errored or was interrupted, without the server's message unless `--sample-values` is set (see [values in errors](#values-in-errors)). Absent otherwise. |
 | `migrations[].steps`      | array, optional  | Data migrations only: one item per step, in file order, with the first run's counts (see below). Absent for other kinds, for `skipped` rows, and when the first run failed. |
 | `migrations[].indexes`    | array, optional  | Index migrations only: one item per step that ran, in file order (see below). Absent for other kinds and for `skipped` rows. |
 | `migrations[].diffCountBefore`  | integer, optional | Merge migrations only: the documents `$merge` would change, counted before it ran. Absent for other kinds and for `skipped` rows. |
@@ -187,7 +245,7 @@ as the data, such as locally.
 | `totals.interrupted`      | integer          | Rows with status `interrupted`.                                                                              |
 | `totals.skipped`          | integer          | Rows with status `skipped`.                                                                                  |
 | `totals.durationMs`       | integer          | How long the whole run took, in milliseconds.                                                                |
-| `error`                   | string, optional | Why the run failed. Absent when it succeeded.                                                                |
+| `error`                   | string, optional | Why the run failed, without the server's message unless `--sample-values` is set (see [values in errors](#values-in-errors)). Absent when it succeeded. |
 
 ### Data steps
 
@@ -383,7 +441,7 @@ MIGRATION                   KIND   STATUS   DURATION  ERROR
 2026-11-06-002-hide-legacy    index  applied  2ms
   index already present: legacy_1 on items, keys {"legacy":1}, set {"hidden":true}, before {"hidden":true}
 2026-11-06-004-unique-email   index  errored  9ms       /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, ...
-  index to modify, would fail: email_1 on users, keys {"email":1}, set {"unique":true}, before {"unique":false}: index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: ...
+  index to modify, would fail: email_1 on users, keys {"email":1}, set {"unique":true}, before {"unique":false}: index email_1 has 2 duplicate keys, shared by 5 documents, such as the documents with the _ids [1,2,3], [4,5]: ...
 ```
 
 `collModCollection` steps read like this:

@@ -1,0 +1,24 @@
+{
+  "case": "merge-dupkey",
+  "server": "9.0.4",
+  "type": "mongo.CommandError",
+  "error": "(DuplicateKey) Executor error during aggregate command on namespace: probe_m4_4.source :: caused by :: $merge failed due to a DuplicateKey error :: caused by :: Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_4.target index: email_1 dup key: { email: \"ada@example.com\" }",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "Executor error during aggregate command on namespace: probe_m4_4.source :: caused by :: $merge failed due to a DuplicateKey error :: caused by :: Plan executor error during update :: caused by :: E11000 duplicate key error collection: probe_m4_4.target index: email_1 dup key: { email: \"ada@example.com\" }",
+    "code": {
+      "$numberInt": "11000"
+    },
+    "codeName": "DuplicateKey",
+    "keyPattern": {
+      "email": {
+        "$numberInt": "1"
+      }
+    },
+    "keyValue": {
+      "email": "ada@example.com"
+    }
+  }
+}

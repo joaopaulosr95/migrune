@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-07-003-email-index",
+  "description": "A unique index on email, which the duplicates refuse",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "createIndex",
+      "keys": { "email": 1 },
+      "options": { "name": "email_1", "unique": true }
+    }
+  ]
+}

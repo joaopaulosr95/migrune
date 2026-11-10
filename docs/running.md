@@ -129,9 +129,15 @@ opens transactions it aborts. Give it the same credentials as apply, and run
 it only in pipelines you trust with them, such as tag or default-branch
 pipelines, never in pull request pipelines that run the branch's own CI file.
 
-The plan report and logs are meant to be published, so merge samples show
-field names and BSON types, never values. Leave `--sample-values` off in CI
-unless its logs and artifacts are as protected as the database.
+The plan report and logs are meant to be published, so they leave document
+values out: merge samples show field names and BSON types, and server errors
+show their code name and code but not the server's message, which can quote
+values (see [values in errors](reference/report.md#values-in-errors)). Two things are
+shown anyway, so a document can be found: `_id`s in errors, and the `on`
+fields of [merge samples](reference/report.md#merge-samples), which are
+values when `on` is a natural key such as an email address. Leave
+`--sample-values` off in CI unless its logs and artifacts are as protected
+as the database.
 
 Run lint before plan in every pipeline that plans: in pull requests, and in
 the release or tag pipeline too, as the first step of the plan job, as both

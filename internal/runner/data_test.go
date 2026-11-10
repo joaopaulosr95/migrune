@@ -126,7 +126,7 @@ func TestCheckIdempotent(t *testing.T) {
 			if !strings.Contains(err.Error(), "not idempotent") || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q, want %q", err, tc.want)
 			}
-			if errs := stepErrors(err); len(errs) != 1 || *errs[0].Step != tc.step {
+			if errs := (&Run{}).stepErrors(err); len(errs) != 1 || *errs[0].Step != tc.step {
 				t.Errorf("stepErrors = %+v, want step %d", errs, tc.step)
 			}
 		})

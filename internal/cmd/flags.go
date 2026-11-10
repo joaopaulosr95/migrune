@@ -83,12 +83,14 @@ func (l *lockFlags) check() error {
 	return nil
 }
 
-// sampleValuesFlag registers the merge sample values flag shared by plan and
+// sampleValuesFlag registers the document values flag shared by plan and
 // apply.
 func sampleValuesFlag(fs *pflag.FlagSet, p *bool) {
 	fs.BoolVar(p, "sample-values", false, fmt.Sprintf(
-		"show the values of the fields that differ in merge samples, in the logs and the report, each cut to %d characters; "+
-			"by default samples show only the on fields, field names, BSON types and nested paths, so data stays out of CI logs",
+		"show document values: those of the fields that differ in merge samples, each cut to %d characters, "+
+			"server errors' messages, which can quote them, and the duplicate keys of a unique conversion, in the logs, the report and the changelog; "+
+			"by default samples show only the on fields, field names, BSON types and nested paths, and server errors only their code names, codes and _ids, "+
+			"so data stays out of CI logs",
 		runner.MaxSampleValueChars))
 }
 

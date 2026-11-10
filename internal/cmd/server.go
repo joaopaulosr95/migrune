@@ -77,7 +77,10 @@ func uriError(err error) error {
 // before it reads or writes anything else. The
 // returned function disconnects, on its own short context so it works after
 // an interruption. It logs the hosts and the database, never the URI.
-func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, server, func(), error) {
+// values is plan and apply's --sample-values: without it, the format check's
+// error leaves out the server's message (runner.RedactError); drift and lint
+// have no such flag and pass true.
+func (a *app) connect(ctx context.Context, c connFlags, values bool) (*mongo.Database, server, func(), error) {
 	opts, ignoredMode, err := clientOptions(c.uri)
 	if err != nil {
 		return nil, server{}, nil, err
@@ -106,7 +109,7 @@ func (a *app) connect(ctx context.Context, c connFlags) (*mongo.Database, server
 	db := client.Database(c.db)
 	if err := runner.CheckFormats(ctx, db); err != nil {
 		disconnect()
-		return nil, server{}, nil, err
+		return nil, server{}, nil, runner.RedactError(err, values)
 	}
 	return db, srv, disconnect, nil
 }

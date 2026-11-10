@@ -234,7 +234,7 @@ func (r *Run) stepFailed(m migration.Migration, i int, s migration.Step, err err
 	}
 	sf := &StepFailure{Step: i, Operation: s.Operation, Collection: s.Collection, Err: err}
 	if apply {
-		if werr := r.WriteErrored(m, stepErrors(sf)); werr != nil {
+		if werr := r.WriteErrored(m, r.stepErrors(sf)); werr != nil {
 			return errors.Join(sf, werr)
 		}
 	}

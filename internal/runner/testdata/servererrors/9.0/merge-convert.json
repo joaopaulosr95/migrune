@@ -1,0 +1,41 @@
+{
+  "case": "merge-convert",
+  "server": "9.0.4",
+  "type": "mongo.CommandError",
+  "error": "(ConversionFailure) Executor error during aggregate command on namespace: probe_m7.source :: caused by :: Failed to parse number 'ada-secret-42' in $convert with no onError value: Did not consume whole string.",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "Executor error during aggregate command on namespace: probe_m7.source :: caused by :: Failed to parse number 'ada-secret-42' in $convert with no onError value: Did not consume whole string.",
+    "code": {
+      "$numberInt": "241"
+    },
+    "codeName": "ConversionFailure",
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794433589,
+          "i": 5
+        }
+      },
+      "signature": {
+        "hash": {
+          "$binary": {
+            "base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "subType": "00"
+          }
+        },
+        "keyId": {
+          "$numberLong": "0"
+        }
+      }
+    },
+    "operationTime": {
+      "$timestamp": {
+        "t": 1794433589,
+        "i": 5
+      }
+    }
+  }
+}

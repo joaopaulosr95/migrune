@@ -73,7 +73,7 @@ func (r *Run) transaction(fn func(ctx context.Context) error, commit bool, entry
 		}
 		pause := transactionBackoff << attempt
 		r.log.Warn("transient transaction error: running the transaction again",
-			"attempt", attempt+2, "retryIn", pause, "error", err)
+			"attempt", attempt+2, "retryIn", pause, "error", r.errText(err))
 		t := time.NewTimer(pause)
 		select {
 		case <-r.ctx.Done():
@@ -141,7 +141,7 @@ func (r *Run) commit(sess *mongo.Session, entry *bson.ObjectID) error {
 	defer cancel()
 	err := sess.CommitTransaction(ctx)
 	for i := 0; i < maxCommitRetries && err != nil && hasErrorLabel(err, labelUnknownCommit) && ctx.Err() == nil; i++ {
-		r.log.Warn("transaction commit outcome unknown: committing again", "error", err)
+		r.log.Warn("transaction commit outcome unknown: committing again", "error", r.errText(err))
 		err = sess.CommitTransaction(ctx)
 	}
 	if err == nil {
@@ -156,7 +156,7 @@ func (r *Run) commit(sess *mongo.Session, entry *bson.ObjectID) error {
 	lctx, lcancel := context.WithTimeout(context.WithoutCancel(r.ctx), CommitTimeout)
 	defer lcancel()
 	if kerr := killSession(lctx, r.client, sess); kerr != nil {
-		r.log.Warn("could not kill the session of a commit with an unknown outcome", "error", kerr)
+		r.log.Warn("could not kill the session of a commit with an unknown outcome", "error", r.errText(kerr))
 	}
 	// A linearizable read sees the commit if it landed on the primary and
 	// can't be rolled back; a majority read could miss one still
@@ -169,7 +169,7 @@ func (r *Run) commit(sess *mongo.Session, entry *bson.ObjectID) error {
 		return fmt.Errorf("commit transaction: outcome unknown, and reading the changelog to find out failed: %w",
 			errors.Join(err, lerr))
 	case n > 0:
-		r.log.Warn("transaction commit outcome was unknown: its changelog entry is there, so it committed", "error", err)
+		r.log.Warn("transaction commit outcome was unknown: its changelog entry is there, so it committed", "error", r.errText(err))
 		return nil
 	default:
 		return fmt.Errorf("commit transaction: outcome unknown, and its changelog entry is missing, so it didn't commit: %w", err)
@@ -227,7 +227,7 @@ func (r *Run) killSession(sess *mongo.Session, log *slog.Logger) {
 	ctx, cancel := cleanupContext(r.ctx)
 	defer cancel()
 	if err := killSession(ctx, r.client, sess); err != nil {
-		log.Warn("could not cancel the aggregate in progress", "error", err)
+		log.Warn("could not cancel the aggregate in progress", "error", r.errText(err))
 		return
 	}
 	log.Info("aggregate in progress cancelled")

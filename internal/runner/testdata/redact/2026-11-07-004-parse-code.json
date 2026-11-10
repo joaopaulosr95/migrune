@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-07-004-parse-code",
+  "description": "Turn code into a number, which $convert refuses for a code that isn't one",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "updateOne",
+      "filter": { "_id": 1 },
+      "update": [{ "$set": { "code": { "$convert": { "input": "$code", "to": "int" } } } }]
+    }
+  ]
+}

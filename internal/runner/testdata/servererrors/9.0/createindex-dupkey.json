@@ -1,0 +1,24 @@
+{
+  "case": "createindex-dupkey",
+  "server": "9.0.4",
+  "type": "mongo.CommandError",
+  "error": "(DuplicateKey) Index build failed: 6c55bfe4-b67c-4d89-b583-cd51f0e7f9ae: Collection probe_m4_5.users ( cccba3c6-0330-40af-be57-7c22d6eca1ef ) :: caused by :: E11000 duplicate key error collection: probe_m4_5.users index: email_1 dup key: { email: \"ada@example.com\" }",
+  "raw": {
+    "ok": {
+      "$numberDouble": "0.0"
+    },
+    "errmsg": "Index build failed: 6c55bfe4-b67c-4d89-b583-cd51f0e7f9ae: Collection probe_m4_5.users ( cccba3c6-0330-40af-be57-7c22d6eca1ef ) :: caused by :: E11000 duplicate key error collection: probe_m4_5.users index: email_1 dup key: { email: \"ada@example.com\" }",
+    "code": {
+      "$numberInt": "11000"
+    },
+    "codeName": "DuplicateKey",
+    "keyPattern": {
+      "email": {
+        "$numberInt": "1"
+      }
+    },
+    "keyValue": {
+      "email": "ada@example.com"
+    }
+  }
+}
