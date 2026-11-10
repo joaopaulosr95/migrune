@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-069-validation-with-name",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "name": "users", "set": { "validationLevel": "strict" } }
+  ]
+}

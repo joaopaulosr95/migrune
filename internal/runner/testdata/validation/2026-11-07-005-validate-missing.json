@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-07-005-validate-missing",
+  "description": "Validate a collection that doesn't exist",
+  "steps": [{ "collection": "nope", "operation": "collModCollection", "set": { "validationLevel": "moderate" } }]
+}

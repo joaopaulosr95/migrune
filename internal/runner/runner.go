@@ -106,6 +106,14 @@ type Run struct {
 	// serverIndexes are, in plan, the indexes of each collection as
 	// listIndexes returned them, before any planned step.
 	serverIndexes map[string][]migration.Index
+	// planCollections are, in plan, what listCollections says of each
+	// collection a collModCollection names, nil for a missing one, as the
+	// pending index migrations planned so far would leave it (see
+	// planCollection).
+	planCollections map[string]*collectionInfo
+	// planCreated are, in plan, the collections without indexes, missing
+	// on the server, that a planned createIndex creates.
+	planCreated map[string]bool
 	// version is the server's MongoDB version, read on first use (see
 	// serverVersion).
 	version string

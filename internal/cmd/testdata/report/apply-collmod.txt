@@ -1,9 +1,11 @@
 Database: app
 
-MIGRATION                     KIND   STATUS   DURATION  ERROR
-2026-11-06-001-expire-events  index  applied  15ms
+MIGRATION                         KIND   STATUS   DURATION  ERROR
+2026-11-05-001-require-user-name  index  applied  11ms
+  validation modified on users, set {"validator":{"$jsonSchema":{"required":["name"]}},"validationLevel":"strict"}, before {"validator":{},"validationLevel":"strict"}
+2026-11-06-001-expire-events      index  applied  15ms
   index modified: createdAt_1 on events, keys {"createdAt":1}, set {"expireAfterSeconds":2592000}, before {"expireAfterSeconds":null}
-2026-11-06-002-hide-legacy    index  applied  4ms
+2026-11-06-002-hide-legacy        index  applied  4ms
   index already present: legacy_1 on items, keys {"legacy":1}, set {"hidden":true}, before {"hidden":true}
 
-Total: 2 migrations: 2 applied, 0 errored, 0 interrupted, 0 skipped in 20ms
+Total: 3 migrations: 3 applied, 0 errored, 0 interrupted, 0 skipped in 31ms

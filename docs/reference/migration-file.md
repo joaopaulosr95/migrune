@@ -53,7 +53,7 @@ mixes kinds:
 | Kind    | Operations                             | Runs                                                                |
 | ------- | -------------------------------------- | ------------------------------------------------------------------- |
 | `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. |
-| `index` | `createIndex`, `dropIndex`, `collModIndex` | Step by step, outside a transaction.                            |
+| `index` | `createIndex`, `dropIndex`, `collModIndex`, `collModCollection` | Step by step, outside a transaction.                    |
 | `merge` | `aggregate`                            | Step by step, outside a transaction; the pipeline ends in `$merge`. |
 
 There is no `insert*`, `deleteOne`, `replaceOne` or `bulkWrite`: inserts and
@@ -97,11 +97,11 @@ The schema rejects `$merge` and `$out` as stages of an update pipeline, as Mongo
 | Field        | Type   | Required             | Description                                                                     |
 | ------------ | ------ | -------------------- | ------------------------------------------------------------------------------- |
 | `collection` | string | yes                  | The collection, not empty.                                                      |
-| `operation`  | string | yes                  | `createIndex`, `dropIndex` or `collModIndex`.                                   |
+| `operation`  | string | yes                  | `createIndex`, `dropIndex`, `collModIndex` or `collModCollection`.              |
 | `keys`       | object | `createIndex` only   | The index keys, in order, at least one.                                         |
 | `options`    | object | `createIndex` only   | The index options. `name` is required; every other option is passed to MongoDB as given. |
 | `name`       | string | `dropIndex`, `collModIndex` | The name of the index to drop or change.                                 |
-| `set`        | object | `collModIndex` only  | The options to change on the index, at least one; see below.                    |
+| `set`        | object | `collModIndex`, `collModCollection` | The options to change on the index, or the collection's validation options, at least one; see below. |
 
 `collModIndex` runs MongoDB's `collMod` with `index: {name, ...set}`. `set`
 takes these fields and no other:
@@ -116,6 +116,18 @@ takes these fields and no other:
 There is no way to remove a TTL, make an index non-unique or clear
 `prepareUnique`. How to use each option is in
 [changing an index in place](../writing-migrations.md#changing-an-index-in-place).
+
+`collModCollection` runs MongoDB's `collMod` on the step's collection with
+the fields of `set`, which takes these and no other:
+
+| Field              | Value                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `validator`        | An object: a `$jsonSchema` document or query operators. `{}` removes the validator.  |
+| `validationLevel`  | `off`, `strict` or `moderate`.                                                       |
+| `validationAction` | `error` or `warn`.                                                                   |
+
+It takes no `name`, `keys` or `options`. How to use it is in
+[changing a collection's validation](../writing-migrations.md#changing-a-collections-validation).
 
 ## Merge steps
 

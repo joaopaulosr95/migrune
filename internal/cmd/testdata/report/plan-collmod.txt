@@ -1,16 +1,20 @@
 Plan: each status is what apply would do. Nothing was committed.
 Database: app
 
-MIGRATION                     KIND   STATUS   DURATION  ERROR
-2026-11-06-001-expire-events  index  applied  6ms
+MIGRATION                         KIND   STATUS   DURATION  ERROR
+2026-11-05-001-require-user-name  index  applied  5ms
+  validation to modify on users, set {"validator":{"$jsonSchema":{"required":["name"]}},"validationLevel":"strict"}, before {"validator":{},"validationLevel":"strict"}, nonMatching 3: warning: 3 documents of users don't match the new validator: MongoDB keeps them as they are, and rejects every update to them that leaves them not matching: fix them in a data migration first, or start with validationLevel moderate
+2026-11-05-002-moderate-accounts  index  applied  1ms
+  validation already set on accounts, set {"validationLevel":"moderate"}, before {"validationLevel":"moderate"}
+2026-11-06-001-expire-events      index  applied  6ms
   index to modify: createdAt_1 on events, keys {"createdAt":1}, set {"expireAfterSeconds":2592000}, before {"expireAfterSeconds":null}, wouldExpire 12
-2026-11-06-002-hide-legacy    index  applied  2ms
+2026-11-06-002-hide-legacy        index  applied  2ms
   index already present: legacy_1 on items, keys {"legacy":1}, set {"hidden":true}, before {"hidden":true}
-2026-11-06-003-prepare-email  index  applied  3ms
+2026-11-06-003-prepare-email      index  applied  3ms
   index to modify: email_1 on users, keys {"email":1}, set {"prepareUnique":true}, before {"prepareUnique":false}: warning: once index email_1 is prepareUnique, MongoDB rejects every insert and update that would add a duplicate key to it: make sure the application doesn't write any
-2026-11-06-004-unique-email   index  errored  9ms       /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first
+2026-11-06-004-unique-email       index  errored  9ms       /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first
   index to modify, would fail: email_1 on users, keys {"email":1}, set {"unique":true}, before {"unique":false}: index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first
 
-Total: 4 migrations: 3 applied, 1 errored, 0 interrupted, 0 skipped in 25ms
+Total: 6 migrations: 5 applied, 1 errored, 0 interrupted, 0 skipped in 31ms
 
 Error: migration 2026-11-06-004-unique-email failed: /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first

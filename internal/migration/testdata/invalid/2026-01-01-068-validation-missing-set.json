@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-068-validation-missing-set",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection" }
+  ]
+}

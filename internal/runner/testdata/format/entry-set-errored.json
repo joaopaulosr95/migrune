@@ -116,6 +116,21 @@
           }
         },
         {
+          "collection": "events",
+          "operation": "collModCollection",
+          "set": {
+            "validator": {
+              "$jsonSchema": {
+                "required": [
+                  "dedupeKey"
+                ]
+              }
+            },
+            "validationLevel": "moderate",
+            "validationAction": "error"
+          }
+        },
+        {
           "collection": "accounts",
           "operation": "aggregate",
           "pipeline": [

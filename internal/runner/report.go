@@ -314,16 +314,18 @@ const (
 	// or fail.
 	IndexDiffers IndexAction = "differs"
 	// IndexModify is a collModIndex that changes at least one option of its
-	// index. A collModIndex whose index already has every value it sets is
-	// IndexPresent.
+	// index, or a collModCollection that changes at least one validation
+	// option of its collection. One that finds every value it sets already
+	// set is IndexPresent.
 	IndexModify IndexAction = "modify"
 )
 
-// IndexChange is one index step in a report.
+// IndexChange is one index step in a report. A collModCollection step changes
+// no index: it has no Name, Keys or Options.
 type IndexChange struct {
 	Action     IndexAction `json:"action"`
 	Collection string      `json:"collection"`
-	Name       string      `json:"name"`
+	Name       string      `json:"name,omitempty"`
 	// Keys is the key pattern, as relaxed Extended JSON: the step's for a
 	// createIndex, the existing index's for a drop or a collModIndex.
 	// Absent when the index is already absent, or missing.
@@ -332,13 +334,15 @@ type IndexChange struct {
 	// JSON, for a createIndex or a drop, in the same way as Keys. Absent
 	// when there are none, and for a collModIndex.
 	Options json.RawMessage `json:"options,omitempty"`
-	// Set is, for a collModIndex, the options the step sets: the values
-	// after it. As relaxed Extended JSON.
+	// Set is, for a collModIndex or collModCollection, the options the step
+	// sets: the values after it. As relaxed Extended JSON.
 	Set json.RawMessage `json:"set,omitempty"`
 	// Before is, for a collModIndex whose index exists, the index's value
 	// of each option in Set before the step: null for no
 	// expireAfterSeconds, false for an absent boolean, and prepareUnique
-	// true on a unique index.
+	// true on a unique index. For a collModCollection whose collection
+	// exists, the collection's value of each: {} for no validator, and
+	// MongoDB's defaults, strict and error, for an absent level or action.
 	Before json.RawMessage `json:"before,omitempty"`
 	// Conflict is why MongoDB would reject the step. plan only.
 	Conflict string `json:"conflict,omitempty"`
@@ -350,6 +354,10 @@ type IndexChange struct {
 	// index would delete as soon as it is built or modified: those whose
 	// indexed date is older than now less expireAfterSeconds. plan only.
 	WouldExpire *int64 `json:"wouldExpire,omitempty"`
+	// NonMatching is, for a collModCollection plan would apply that leaves a
+	// validator in force (not empty, validationLevel not off), how many
+	// documents of the collection don't match that validator. plan only.
+	NonMatching *int64 `json:"nonMatching,omitempty"`
 }
 
 // Totals counts the rows of a report by status.

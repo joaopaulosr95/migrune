@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-07-003-warn",
+  "description": "Only warn about invalid users",
+  "steps": [{ "collection": "users", "operation": "collModCollection", "set": { "validationAction": "warn" } }]
+}

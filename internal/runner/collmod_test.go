@@ -300,8 +300,8 @@ func TestCollModUnique(t *testing.T) {
 	}
 }
 
-// TestCollModPrivilege checks plan fails a collModIndex step for a user with
-// readWrite only, which lacks the collMod action, and passes once a role
+// TestCollModPrivilege checks plan fails a collModIndex or collModCollection
+// step for a user with readWrite only, which lacks the collMod action, and passes once a role
 // grants it on the database.
 func TestCollModPrivilege(t *testing.T) {
 	ctx := testCtx(t)
@@ -333,6 +333,11 @@ func TestCollModPrivilege(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "lacks the collMod action on "+db.Name()+".items") {
 		t.Fatalf("plan with readWrite only: %v", err)
 	}
+	seedUsers(t, ctx, db)
+	_, err = validationRun(t, ctx, asUser, ModePlan, requireName)
+	if err == nil || !strings.Contains(err.Error(), "lacks the collMod action on "+db.Name()+".users") {
+		t.Fatalf("plan of a collModCollection with readWrite only: %v", err)
+	}
 	run(bson.D{{Key: "createRole", Value: "collMod"}, {Key: "roles", Value: bson.A{}},
 		{Key: "privileges", Value: bson.A{bson.D{
 			{Key: "resource", Value: bson.D{{Key: "db", Value: db.Name()}, {Key: "collection", Value: ""}}},
@@ -340,6 +345,9 @@ func TestCollModPrivilege(t *testing.T) {
 	run(bson.D{{Key: "grantRolesToUser", Value: "migrator"}, {Key: "roles", Value: bson.A{"collMod"}}})
 	if _, err := collModRun(t, ctx, asUser, ModePlan, hideName); err != nil {
 		t.Fatalf("plan with the collMod role: %v", err)
+	}
+	if _, err := validationRun(t, ctx, asUser, ModePlan, requireName); err != nil {
+		t.Fatalf("plan of a collModCollection with the collMod role: %v", err)
 	}
 }
 

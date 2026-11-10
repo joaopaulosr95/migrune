@@ -53,10 +53,13 @@ func (r *Run) runIndex(m migration.Migration, apply bool, log *slog.Logger, row 
 	return r.writeFinishedAlone(m, results)
 }
 
-// runIndexStep runs one createIndex, dropIndex or collModIndex step and
-// returns what it did to the index. A dropIndex of an index or a collection
-// that doesn't exist succeeds; a collModIndex of one fails. A collModIndex
-// whose index already has every value it sets sends nothing. check runs
+// runIndexStep runs one createIndex, dropIndex, collModIndex or
+// collModCollection step and returns what it did to the index, or to the
+// collection's validation. A dropIndex of an index or a collection that
+// doesn't exist succeeds; a collModIndex of one fails, and so does a
+// collModCollection of a missing collection. A collModIndex or
+// collModCollection that finds every value it sets already set sends
+// nothing. check runs
 // right before the createIndexes, dropIndexes or collMod command, which isn't
 // sent when it fails.
 func runIndexStep(ctx context.Context, db *mongo.Database, s migration.Step, check func() error, log *slog.Logger) (StepResult, IndexChange, error) {
@@ -163,6 +166,10 @@ func runIndexStep(ctx context.Context, db *mongo.Database, s migration.Step, che
 		change.Action = IndexModify
 		log.Info("index modified", "collection", s.Collection, "index", s.Name,
 			"before", extJSON(indexes[j].Current(set)), "set", extJSON(set))
+	case "collModCollection":
+		out.Set = s.Set
+		change, err := runCollModCollection(ctx, db, s, check, log)
+		return out, change, err
 	default:
 		return out, change, fmt.Errorf("operation %q is not an index operation", s.Operation)
 	}

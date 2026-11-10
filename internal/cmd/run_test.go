@@ -255,11 +255,25 @@ func TestWriteReport(t *testing.T) {
 		uniqueEmail   = "2026-11-06-004-unique-email"
 		dupsError     = "index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first"
 		prepareNotice = "once index email_1 is prepareUnique, MongoDB rejects every insert and update that would add a duplicate key to it: make sure the application doesn't write any"
+		requireName   = "2026-11-05-001-require-user-name"
+		moderateAccts = "2026-11-05-002-moderate-accounts"
+		invalidUsers  = "3 documents of users don't match the new validator: MongoDB keeps them as they are, and rejects every update to them that leaves them not matching: fix them in a data migration first, or start with validationLevel moderate"
 	)
 	collModPlan := &runner.Report{
 		Command: "plan",
 		Runner:  "ci-42",
 		Migrations: []runner.Row{
+			{ID: requireName, Kind: "index", Status: runner.RowApplied, DurationMs: 5,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "users",
+						Set:    raw(`{"validator":{"$jsonSchema":{"required":["name"]}},"validationLevel":"strict"}`),
+						Before: raw(`{"validator":{},"validationLevel":"strict"}`), NonMatching: n(3), Warning: invalidUsers},
+				}},
+			{ID: moderateAccts, Kind: "index", Status: runner.RowApplied, DurationMs: 1,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexPresent, Collection: "accounts",
+						Set: raw(`{"validationLevel":"moderate"}`), Before: raw(`{"validationLevel":"moderate"}`)},
+				}},
 			{ID: expireEvents, Kind: "index", Status: runner.RowApplied, DurationMs: 6,
 				Indexes: []runner.IndexChange{
 					{Action: runner.IndexModify, Collection: "events", Name: "createdAt_1", Keys: raw(`{"createdAt":1}`),
@@ -283,13 +297,19 @@ func TestWriteReport(t *testing.T) {
 				}},
 		},
 		AppliedButMissing: []migration.Applied{},
-		Totals:            runner.Totals{Migrations: 4, Applied: 3, Errored: 1, DurationMs: 25},
+		Totals:            runner.Totals{Migrations: 6, Applied: 5, Errored: 1, DurationMs: 31},
 		Error:             "migration " + uniqueEmail + " failed: /steps/0 (collModIndex on users): " + dupsError,
 	}
 	collModApply := &runner.Report{
 		Command: "apply",
 		Runner:  "ci-42",
 		Migrations: []runner.Row{
+			{ID: requireName, Kind: "index", Status: runner.RowApplied, DurationMs: 11,
+				Indexes: []runner.IndexChange{
+					{Action: runner.IndexModify, Collection: "users",
+						Set:    raw(`{"validator":{"$jsonSchema":{"required":["name"]}},"validationLevel":"strict"}`),
+						Before: raw(`{"validator":{},"validationLevel":"strict"}`)},
+				}},
 			{ID: expireEvents, Kind: "index", Status: runner.RowApplied, DurationMs: 15,
 				Indexes: []runner.IndexChange{
 					{Action: runner.IndexModify, Collection: "events", Name: "createdAt_1", Keys: raw(`{"createdAt":1}`),
@@ -302,7 +322,7 @@ func TestWriteReport(t *testing.T) {
 				}},
 		},
 		AppliedButMissing: []migration.Applied{},
-		Totals:            runner.Totals{Migrations: 2, Applied: 2, DurationMs: 20},
+		Totals:            runner.Totals{Migrations: 3, Applied: 3, DurationMs: 31},
 	}
 	const (
 		copyLabel      = "2026-11-03-001-copy-label"

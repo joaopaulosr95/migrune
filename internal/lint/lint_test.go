@@ -102,7 +102,7 @@ func TestRules(t *testing.T) {
 			`2026-11-01-006-string-form.json: error: schema: /steps/0/pipeline/0/$merge: got string, want object: $merge takes into`,
 			"2026-11-01-007-data-then-index.json: error: schema: /steps/1/operation: createIndex belongs to index migrations, but the file's first operation, deleteMany, belongs to data migrations; a file holds one kind of migration",
 			"2026-11-01-007-data-then-index.json: error: schema: /steps/2/operation: aggregate belongs to merge migrations",
-			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex or collModIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert",
+			"2026-11-01-008-insert-many.json: error: schema: /steps/0/operation: insertMany is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex, collModIndex or collModCollection (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert",
 			"2026-11-01-009-merge-in-update.json: error: schema: /steps/0/update/1: $merge is only allowed as the last stage of an aggregate step in a merge migration",
 			// Two problems, two findings.
 			"2026-11-01-010-out-and-replace.json: error: schema: /steps/0/pipeline/1: $out is not allowed",

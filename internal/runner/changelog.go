@@ -129,7 +129,8 @@ type StepResult struct {
 	UpsertedCount *int64 `bson:"upsertedCount,omitempty"`
 	DeletedCount  *int64 `bson:"deletedCount,omitempty"`
 	IndexName     string `bson:"indexName,omitempty"`
-	// Set is, for a collModIndex step, the options it set, as in the file.
+	// Set is, for a collModIndex or collModCollection step, the options it
+	// set, as in the file.
 	Set         bson.Raw `bson:"set,omitempty"`
 	MergeCounts `bson:",inline"`
 }

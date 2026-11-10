@@ -90,16 +90,17 @@ func SpecIndex(coll string, spec bson.D) Index {
 	return ix
 }
 
-// StepSet returns the options a collModIndex step sets, in file order. The
-// schema allows expireAfterSeconds, hidden, prepareUnique and unique, at
-// least one.
+// StepSet returns the options a collModIndex or collModCollection step sets,
+// in file order. The schema allows, at least one, expireAfterSeconds, hidden,
+// prepareUnique and unique for collModIndex, and validator, validationLevel
+// and validationAction for collModCollection.
 func StepSet(s Step) (bson.D, error) {
 	var set bson.D
 	if err := bson.Unmarshal(s.Set, &set); err != nil {
 		return nil, fmt.Errorf("set: %w", err)
 	}
 	if len(set) == 0 {
-		return nil, errors.New("collModIndex must change at least one option in set")
+		return nil, fmt.Errorf("%s must change at least one option in set", s.Operation)
 	}
 	return set, nil
 }

@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-073-validation-error-and-log",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "set": { "validationAction": "errorAndLog" } }
+  ]
+}

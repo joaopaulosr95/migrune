@@ -34,13 +34,14 @@ const (
 
 // kinds maps each allowed operation to the kind of migration it belongs to.
 var kinds = map[string]Kind{
-	"updateOne":    KindData,
-	"updateMany":   KindData,
-	"deleteMany":   KindData,
-	"createIndex":  KindIndex,
-	"dropIndex":    KindIndex,
-	"collModIndex": KindIndex,
-	"aggregate":    KindMerge,
+	"updateOne":         KindData,
+	"updateMany":        KindData,
+	"deleteMany":        KindData,
+	"createIndex":       KindIndex,
+	"dropIndex":         KindIndex,
+	"collModIndex":      KindIndex,
+	"collModCollection": KindIndex,
+	"aggregate":         KindMerge,
 }
 
 // Errors wrapped by LoadFile and LoadDir when a file can't be read or parsed.
@@ -77,10 +78,11 @@ type Step struct {
 	Update  bson.RawValue `bson:"update,omitempty"`
 	Options bson.Raw      `bson:"options,omitempty"`
 	// Index steps: createIndex uses Keys and Options, dropIndex uses Name,
-	// collModIndex uses Name and Set.
+	// collModIndex uses Name and Set, collModCollection uses Set.
 	Keys bson.Raw `bson:"keys,omitempty"`
 	Name string   `bson:"name,omitempty"`
-	// Set holds the index options a collModIndex step changes.
+	// Set holds the index options a collModIndex step changes, or the
+	// validation options a collModCollection step changes.
 	Set bson.Raw `bson:"set,omitempty"`
 	// Merge steps.
 	Pipeline []bson.Raw `bson:"pipeline,omitempty"`

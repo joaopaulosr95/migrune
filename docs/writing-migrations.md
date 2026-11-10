@@ -135,8 +135,11 @@ committed.
 ## Index migrations
 
 MongoDB can't build, change or drop indexes on existing collections in a
-transaction, so index steps run one by one, outside a transaction, and the
-`Finished` entry is written after the last one.
+transaction, nor run `collMod`, so index steps run one by one, outside a
+transaction, and the `Finished` entry is written after the last one. A
+collection's validation changes with `collMod` too, so its step
+(`collModCollection`) belongs to index migrations, and can share a file with
+the index steps.
 
 ```json
 {
@@ -162,6 +165,8 @@ transaction, so index steps run one by one, outside a transaction, and the
 - `dropIndex` takes only the index `name`.
 - `collModIndex` takes the index `name` and, in `set`, the options to change
   in place: see [changing an index in place](#changing-an-index-in-place).
+- `collModCollection` takes, in `set`, the collection's validation options to
+  change: see [changing a collection's validation](#changing-a-collections-validation).
 
 Always name indexes: `dropIndex`, `collModIndex` and lint work by name, and
 generated names change with the keys.
@@ -280,6 +285,59 @@ already `prepareUnique`: it warns, and apply fails on duplicates.
 takes: the index stays a TTL index but deletes nothing in practice. If your
 application declares its indexes, declare the same value there, or
 `--expected-indexes` reports the index (`index-options`).
+
+### Changing a collection's validation
+
+`collModCollection` sets a collection's
+[schema validation](https://www.mongodb.com/docs/manual/core/schema-validation/)
+with MongoDB's `collMod`:
+
+```json
+{
+  "collection": "users",
+  "operation": "collModCollection",
+  "set": {
+    "validator": { "$jsonSchema": { "required": ["email"], "properties": { "email": { "bsonType": "string" } } } },
+    "validationLevel": "moderate",
+    "validationAction": "error"
+  }
+}
+```
+
+`set` takes one or more of `validator`, `validationLevel` and
+`validationAction` (see the [reference](reference/migration-file.md#index-steps));
+`"validator": {}` removes the validator. A step whose collection already has
+every value it sets does nothing (`present`); validators are compared
+field by field, in any order, numbers by value. A step whose collection
+doesn't exist fails, in plan and apply, and so does one on a view or a
+time-series collection, which MongoDB refuses. plan reports the validation
+`to modify`, with each value before and after; a collection that never had
+one shows the defaults, `{}`, `strict` and `error`.
+
+MongoDB doesn't check the documents already there when the validator
+changes: they all stay, matching or not. plan counts those that don't match
+the new validator (`nonMatching`) whenever one applies after the step (not
+`{}`, and a level other than `off`), and warns when there are any, as what
+becomes of them depends on the level and action:
+
+- `strict` and `error`: every later update to one of them that leaves it not
+  matching fails, so writes the application thought routine start failing.
+  Fix them in a [data migration](#data-migrations) first, or start with
+  `moderate`.
+- `moderate` and `error`: updates to documents that don't match go through;
+  inserts, and updates to documents that match, must match.
+- `warn`: MongoDB writes everything, and logs each write that doesn't match.
+
+To bring in a validator on a collection with documents that don't match,
+start with `moderate` (or `warn`), fix the documents in data migrations, then
+switch to `strict` in a later release, once plan reports `nonMatching 0`. plan
+counts on the data as it is, so a pending data migration's fixes don't show
+until it is applied.
+
+plan sees what earlier pending steps would do to the collection's
+validation, and a collection an earlier pending `createIndex` would create,
+but not one a pending data or merge migration would create: that step fails
+in plan, and passes once the data migration is applied.
 
 ## Merge migrations
 

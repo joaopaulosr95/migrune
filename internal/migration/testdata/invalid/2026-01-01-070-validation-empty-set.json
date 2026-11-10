@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-070-validation-empty-set",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "set": {} }
+  ]
+}

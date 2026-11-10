@@ -64,7 +64,7 @@
       "type": "object",
       "properties": {
         "collection": { "$ref": "#/$defs/collection" },
-        "operation": { "enum": ["createIndex", "dropIndex", "collModIndex"] },
+        "operation": { "enum": ["createIndex", "dropIndex", "collModIndex", "collModCollection"] },
         "keys": { "type": "object", "minProperties": 1 },
         "options": {
           "type": "object",
@@ -72,7 +72,7 @@
           "required": ["name"]
         },
         "name": { "type": "string", "minLength": 1 },
-        "set": { "$ref": "#/$defs/indexSet" }
+        "set": { "type": "object" }
       },
       "additionalProperties": false,
       "required": ["collection", "operation"],
@@ -95,7 +95,16 @@
           "if": { "properties": { "operation": { "const": "collModIndex" } } },
           "then": {
             "required": ["name", "set"],
+            "properties": { "set": { "$ref": "#/$defs/indexSet" } },
             "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }] }
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "collModCollection" } } },
+          "then": {
+            "required": ["set"],
+            "properties": { "set": { "$ref": "#/$defs/collectionSet" } },
+            "not": { "anyOf": [{ "required": ["keys"] }, { "required": ["options"] }, { "required": ["name"] }] }
           }
         }
       ]
@@ -112,6 +121,17 @@
       "additionalProperties": false,
       "minProperties": 1,
       "not": { "required": ["prepareUnique"], "minProperties": 2 }
+    },
+    "collectionSet": {
+      "description": "The validation options a collModCollection step changes on an existing collection, at least one",
+      "type": "object",
+      "properties": {
+        "validator": { "type": "object" },
+        "validationLevel": { "enum": ["off", "strict", "moderate"] },
+        "validationAction": { "enum": ["error", "warn"] }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
     },
     "mergeStep": {
       "type": "object",

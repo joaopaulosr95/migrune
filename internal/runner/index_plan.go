@@ -16,13 +16,15 @@ import (
 )
 
 // planIndex logs and adds to row.Indexes, step by step, how m would change the
-// indexes as the pending migrations before it would leave them: it reads each
-// collection's indexes with listIndexes once per run, then applies every
-// planned step to them, so a migration sees what earlier pending ones create
-// and drop. It writes nothing. A step MongoDB would reject (a name or key
-// pattern already used by a different index, a collModIndex of a missing
-// index, or one the database user lacks the collMod action for) fails, and
-// its change carries the reason.
+// indexes, and the validation of collections, as the pending migrations
+// before it would leave them: it reads each collection's indexes with
+// listIndexes (or, for a collModCollection, its options with listCollections)
+// once per run, then applies every planned step to them, so a migration sees
+// what earlier pending ones create, change and drop. It writes nothing. A
+// step MongoDB would reject (a name or key pattern already used by a
+// different index, a collModIndex of a missing index, a collModCollection of
+// a missing collection or a view, or either that the database user lacks the
+// collMod action for) fails, and its change carries the reason.
 func (r *Run) planIndex(m migration.Migration, log *slog.Logger, row *Row) error {
 	if r.planIndexes == nil {
 		r.planIndexes = map[string][]migration.Index{}
@@ -32,6 +34,20 @@ func (r *Run) planIndex(m migration.Migration, log *slog.Logger, row *Row) error
 	for i, s := range m.Steps {
 		fail := func(err error) error {
 			return &StepFailure{Step: i, Operation: s.Operation, Collection: s.Collection, Err: err}
+		}
+		stepLog := log.With("step", i, "collection", s.Collection)
+		if s.Operation == "collModCollection" {
+			c, err := r.planCollModCollection(s, stepLog)
+			if c != nil {
+				row.Indexes = append(row.Indexes, *c)
+			}
+			if err != nil {
+				if rerr := r.Err(); rerr != nil {
+					return rerr
+				}
+				return fail(err)
+			}
+			continue
 		}
 		indexes, ok := live[s.Collection]
 		if !ok {
@@ -44,7 +60,6 @@ func (r *Run) planIndex(m migration.Migration, log *slog.Logger, row *Row) error
 			}
 			r.serverIndexes[s.Collection] = slices.Clone(indexes)
 		}
-		stepLog := log.With("step", i, "collection", s.Collection)
 		switch s.Operation {
 		case "createIndex":
 			want, err := migration.StepIndex(s)
@@ -95,6 +110,9 @@ func (r *Run) planIndex(m migration.Migration, log *slog.Logger, row *Row) error
 				stepLog.Info("index to create", attrs...)
 				if c.WouldExpire != nil && *c.WouldExpire > 0 {
 					stepLog.Warn("the TTL index would delete documents as soon as it is built", "index", want.Name, "wouldExpire", *c.WouldExpire)
+				}
+				if len(indexes) == 0 {
+					r.planCreates(s.Collection)
 				}
 				indexes = append(indexes, want)
 			}

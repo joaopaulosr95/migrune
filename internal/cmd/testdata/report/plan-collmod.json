@@ -7,6 +7,52 @@
   "newDatabase": false,
   "migrations": [
     {
+      "id": "2026-11-05-001-require-user-name",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 5,
+      "indexes": [
+        {
+          "action": "modify",
+          "collection": "users",
+          "set": {
+            "validator": {
+              "$jsonSchema": {
+                "required": [
+                  "name"
+                ]
+              }
+            },
+            "validationLevel": "strict"
+          },
+          "before": {
+            "validator": {},
+            "validationLevel": "strict"
+          },
+          "warning": "3 documents of users don't match the new validator: MongoDB keeps them as they are, and rejects every update to them that leaves them not matching: fix them in a data migration first, or start with validationLevel moderate",
+          "nonMatching": 3
+        }
+      ]
+    },
+    {
+      "id": "2026-11-05-002-moderate-accounts",
+      "kind": "index",
+      "status": "applied",
+      "durationMs": 1,
+      "indexes": [
+        {
+          "action": "present",
+          "collection": "accounts",
+          "set": {
+            "validationLevel": "moderate"
+          },
+          "before": {
+            "validationLevel": "moderate"
+          }
+        }
+      ]
+    },
+    {
       "id": "2026-11-06-001-expire-events",
       "kind": "index",
       "status": "applied",
@@ -101,12 +147,12 @@
   ],
   "appliedButMissing": [],
   "totals": {
-    "migrations": 4,
-    "applied": 3,
+    "migrations": 6,
+    "applied": 5,
     "errored": 1,
     "interrupted": 0,
     "skipped": 0,
-    "durationMs": 25
+    "durationMs": 31
   },
   "error": "migration 2026-11-06-004-unique-email failed: /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, shared by 5 documents, such as {\"email\":\"a@example.com\"}, {\"email\":\"b@example.com\"}: MongoDB would refuse to make it unique (CannotConvertIndexToUnique). Remove the duplicates in a data migration first"
 }

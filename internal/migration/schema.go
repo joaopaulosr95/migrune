@@ -207,6 +207,7 @@ var notMessages = map[string]string{
 	"#/$defs/indexStep/allOf/1/then/allOf/0": "keys and options are not allowed in dropIndex: it takes only the name of the index",
 	"#/$defs/indexStep/allOf/1/then/allOf/1": "set is not allowed in dropIndex: it takes only the name of the index",
 	"#/$defs/indexStep/allOf/2/then":         "keys and options are not allowed in collModIndex: it takes the name of the index and the options to change in set",
+	"#/$defs/indexStep/allOf/3/then":         "keys, options and name are not allowed in collModCollection: it takes the validation options to change in set",
 	"#/$defs/indexSet": "prepareUnique can't be combined with another option: MongoDB sets it in a collMod of its own. " +
 		"Set prepareUnique in one step, and the other options in another",
 }
@@ -245,7 +246,7 @@ func unknownOperation(op any) string {
 		name = jsonValue(op)
 	}
 	msg := name + " is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), " +
-		"createIndex, dropIndex or collModIndex (index), or aggregate (merge)"
+		"createIndex, dropIndex, collModIndex or collModCollection (index), or aggregate (merge)"
 	if strings.HasPrefix(name, "insert") {
 		msg += "; seed documents with updateOne, upsert: true and $setOnInsert"
 	}

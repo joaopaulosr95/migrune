@@ -263,10 +263,11 @@ URI with `secondaryPreferred` or `nearest` can be used as it is. A
 The database user needs `readWrite` on the target database: it covers data
 changes, `createIndex` and `dropIndex`, `$merge`, and the
 `migrations_changelog` and `migrations_lock` collections. `collModIndex`
-also needs the `collMod` action, which `readWrite` lacks: apply runs
-`collMod`, and plan runs it with `dryRun` for a step that sets `unique`.
-plan checks the user has it, from `connectionStatus`, and fails a
-`collModIndex` step that would change its index otherwise. Grant it with a
+and `collModCollection` also need the `collMod` action, which `readWrite`
+lacks: apply runs `collMod`, and plan runs it with `dryRun` for a
+`collModIndex` that sets `unique`. plan checks the user has it, from
+`connectionStatus`, and fails a step that would change its index or
+validation otherwise. Grant it with a
 role of its own, for example:
 
 ```js

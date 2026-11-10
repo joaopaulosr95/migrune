@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-071-validation-unknown-option",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "set": { "collation": { "locale": "en" } } }
+  ]
+}

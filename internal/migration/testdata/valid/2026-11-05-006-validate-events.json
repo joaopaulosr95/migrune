@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-05-006-validate-events",
+  "description": "Require a dedupe key on events, and make it unique",
+  "steps": [
+    {
+      "collection": "events",
+      "operation": "collModCollection",
+      "set": {
+        "validator": { "$jsonSchema": { "required": ["dedupeKey"], "properties": { "at": { "bsonType": "date" } } } },
+        "validationLevel": "moderate",
+        "validationAction": "error"
+      }
+    },
+    { "collection": "events", "operation": "collModIndex", "name": "dedupeKey_1", "set": { "unique": true } }
+  ]
+}

@@ -70,10 +70,12 @@ one line per step. Read them before approving a plan: a `deleteMany` whose
 filter matches far more documents than expected shows up here.
 
 Index rows (`kind` `index`) list their steps in `indexes`: in plan, what each
-step would do to the indexes as they are now, changed by the pending index
-migrations before it; in apply, what it did. A plan step predicted to fail, such as a
-name already used by an index with other keys or options, or a `collModIndex`
-of a missing index or that the database user lacks the
+step would do to the indexes, or to a collection's validation, as they are
+now, changed by the pending index migrations before it; in apply, what it
+did. A plan step predicted to fail, such as a
+name already used by an index with other keys or options, a `collModIndex`
+of a missing index, a `collModCollection` of a missing collection, or either
+that the database user lacks the
 [`collMod` action](../running.md#credentials) for, is the last item,
 with the reason in `conflict`, and makes the row `errored`. The same lines
 also go to the logs on stderr, one per step.
@@ -204,20 +206,23 @@ first of its two runs left it:
 
 ### Index steps
 
-Each item of `migrations[].indexes` is one step of an index migration:
+Each item of `migrations[].indexes` is one step of an index migration. A
+`collModCollection` step changes no index: its item has no `name`, `keys` or
+`options`.
 
 | Field        | Type             | Description                                                                                                                   |
 | ------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `action`     | string           | `create`, `drop`, `modify` (a `collModIndex` that changes at least one option), `present` (a `createIndex` whose index already exists with that definition, or a `collModIndex` whose index already has every value it sets) or `absent` (a `dropIndex` whose index doesn't exist). In plan, what the step would do; in apply, what it did. plan also says `differs`: a `createIndex` whose index exists with a collation plan can't compare with the step's, because `listIndexes` shows it with every default filled in; see `warning`. |
+| `action`     | string           | `create`, `drop`, `modify` (a `collModIndex` or `collModCollection` that changes at least one option), `present` (a `createIndex` whose index already exists with that definition, or a `collModIndex` or `collModCollection` that finds every value it sets already set) or `absent` (a `dropIndex` whose index doesn't exist). In plan, what the step would do; in apply, what it did. plan also says `differs`: a `createIndex` whose index exists with a collation plan can't compare with the step's, because `listIndexes` shows it with every default filled in; see `warning`. |
 | `collection` | string           | The step's collection.                                                                                                        |
-| `name`       | string           | The index name.                                                                                                               |
+| `name`       | string, optional | The index name. Absent for a `collModCollection`.                                                                             |
 | `keys`       | object, optional | The key pattern, as relaxed Extended JSON, in key order: the step's for a `createIndex`, the existing index's for `drop` and for a `collModIndex`. Absent for `absent`, and for a `collModIndex` of a missing index. |
 | `options`    | object, optional | The index options other than its name, the same way, for a `createIndex` or `drop`. Absent when there are none, and for a `collModIndex`. |
-| `set`        | object, optional | `collModIndex` only: the step's `set`, the values after it, as relaxed Extended JSON.                                         |
-| `before`     | object, optional | `collModIndex` only, when the index exists: its value of each option in `set` before the step. `expireAfterSeconds` is `null` when the index has no TTL; the booleans are `false` when absent. `unique` is `true` on `_id_`, and `prepareUnique` on a unique index, since setting them changes nothing. |
+| `set`        | object, optional | `collModIndex` and `collModCollection` only: the step's `set`, the values after it, as relaxed Extended JSON.                 |
+| `before`     | object, optional | `collModIndex` only, when the index exists: its value of each option in `set` before the step. `expireAfterSeconds` is `null` when the index has no TTL; the booleans are `false` when absent. `unique` is `true` on `_id_`, and `prepareUnique` on a unique index, since setting them changes nothing. For a `collModCollection` whose collection exists, its value of each field of `set`: `validator` is `{}` when it has none; `validationLevel` and `validationAction` are MongoDB's defaults, `strict` and `error`, when unset. |
 | `conflict`   | string, optional | plan only: why MongoDB would reject the step. Only on the last item of an `errored` row.                                      |
 | `wouldExpire`| integer, optional | plan only, on a `create` of a TTL index (`expireAfterSeconds`, one key), or a `modify` that adds a TTL or lowers it: the documents the index would delete as soon as it is built or changed, those whose indexed date is older than now, by migrune's clock, less `expireAfterSeconds`, among those its `partialFilterExpression` selects. |
-| `warning`    | string, optional | plan only: why apply may fail although plan found no conflict, on a `differs` step, on a `create` next to an index with the same keys and options and a collation plan can't compare, or on a `modify` setting `unique` that plan can't check for duplicates because an earlier pending step sets `prepareUnique`. On a `modify` setting `prepareUnique`, that MongoDB rejects new duplicate keys from then on. |
+| `warning`    | string, optional | plan only: why apply may fail although plan found no conflict, on a `differs` step, on a `create` next to an index with the same keys and options and a collation plan can't compare, or on a `modify` setting `unique` that plan can't check for duplicates because an earlier pending step sets `prepareUnique`. On a `modify` setting `prepareUnique`, that MongoDB rejects new duplicate keys from then on. On a `collModCollection` with `nonMatching` above 0, what becomes of those documents under the level and action set. |
+| `nonMatching`  | integer, optional | plan only, on a `collModCollection` that changes the validation and leaves a validator in force (not `{}`, `validationLevel` not `off`): the documents of the collection that don't match that validator. See [changing a collection's validation](../writing-migrations.md#changing-a-collections-validation). |
 
 ```json
 {
@@ -345,7 +350,10 @@ and collection, and the first run's counts.
 An index row is followed by one indented line per step, with what the step
 would do (plan: `to create`, `to modify`, `to drop`) or did (apply:
 `created`, `modified`, `dropped`), or `already present` / `already absent`.
-A `collModIndex` line gives its `set` and `before`. A step plan predicts to
+A `collModIndex` line gives its `set` and `before`. A `collModCollection`
+line starts with `validation` in place of `index` and the name, says
+`already set` rather than `already present`, and gives its `set`, `before`
+and `nonMatching`. A step plan predicts to
 fail says `would fail`, followed by the reason. A TTL index to create, or a
 TTL to add or lower, ends with its `wouldExpire` count. A `differs` step says
 `already present, collation not comparable`, and a step with a `warning`
@@ -376,6 +384,15 @@ MIGRATION                   KIND   STATUS   DURATION  ERROR
   index already present: legacy_1 on items, keys {"legacy":1}, set {"hidden":true}, before {"hidden":true}
 2026-11-06-004-unique-email   index  errored  9ms       /steps/0 (collModIndex on users): index email_1 has 2 duplicate keys, ...
   index to modify, would fail: email_1 on users, keys {"email":1}, set {"unique":true}, before {"unique":false}: index email_1 has 2 duplicate keys, shared by 5 documents, such as {"email":"a@example.com"}, {"email":"b@example.com"}: ...
+```
+
+`collModCollection` steps read like this:
+
+```txt
+2026-11-05-001-require-user-name  index  applied  5ms
+  validation to modify on users, set {"validator":{"$jsonSchema":{"required":["name"]}},"validationLevel":"strict"}, before {"validator":{},"validationLevel":"strict"}, nonMatching 3: warning: 3 documents of users don't match the new validator: ...
+2026-11-05-002-moderate-accounts  index  applied  1ms
+  validation already set on accounts, set {"validationLevel":"moderate"}, before {"validationLevel":"moderate"}
 ```
 
 A merge row is followed by its counts, then one line per sample: the step,

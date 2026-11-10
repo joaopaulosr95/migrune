@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-072-validation-bad-level",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "set": { "validationLevel": "lenient" } }
+  ]
+}

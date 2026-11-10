@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-07-002-moderate",
+  "description": "Validate users moderately",
+  "steps": [{ "collection": "users", "operation": "collModCollection", "set": { "validationLevel": "moderate" } }]
+}

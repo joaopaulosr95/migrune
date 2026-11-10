@@ -1,0 +1,5 @@
+{
+  "id": "2026-11-07-004-remove-validator",
+  "description": "Stop validating users",
+  "steps": [{ "collection": "users", "operation": "collModCollection", "set": { "validator": {}, "validationAction": "error" } }]
+}

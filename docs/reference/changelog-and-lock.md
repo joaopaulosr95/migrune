@@ -120,7 +120,7 @@ returned for that kind of step:
 | Kind  | Fields                                                                                 |
 | ----- | -------------------------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs. |
-| index | `indexName`, and for `collModIndex` its `set`, as in the file.                         |
+| index | `indexName` (not for `collModCollection`), and for `collModIndex` and `collModCollection` their `set`, as in the file. |
 | merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
 To read the latest `Finished` entry of a migration, steps included (in a

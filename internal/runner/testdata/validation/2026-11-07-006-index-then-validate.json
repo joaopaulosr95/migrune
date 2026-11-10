@@ -1,0 +1,8 @@
+{
+  "id": "2026-11-07-006-index-then-validate",
+  "description": "Create the audit collection with an index, then require an action",
+  "steps": [
+    { "collection": "audit", "operation": "createIndex", "keys": { "at": 1 }, "options": { "name": "at_1" } },
+    { "collection": "audit", "operation": "collModCollection", "set": { "validator": { "action": { "$exists": true } } } }
+  ]
+}

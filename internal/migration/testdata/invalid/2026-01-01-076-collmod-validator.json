@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-076-collmod-validator",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModIndex", "name": "email_1", "set": { "validator": {} } }
+  ]
+}

@@ -82,7 +82,8 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 }
 
 // writeRowDetails writes the lines under a row: for a data migration, one
-// per step with its counts; for an index migration, one per index step; for a
+// per step with its counts; for an index migration, one per step, a
+// collModCollection's starting with "validation"; for a
 // merge migration, its counts and samples.
 func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	for _, s := range row.Steps {
@@ -100,6 +101,10 @@ func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	}
 	for _, c := range row.Indexes {
 		line := fmt.Sprintf("  index %s: %s on %s", indexLabel(command, c), c.Name, c.Collection)
+		if c.Name == "" {
+			// A collModCollection step.
+			line = fmt.Sprintf("  validation %s on %s", indexLabel(command, c), c.Collection)
+		}
 		if c.Keys != nil {
 			line += ", keys " + string(c.Keys)
 		}
@@ -114,6 +119,9 @@ func writeRowDetails(w io.Writer, command string, row runner.Row) {
 		}
 		if c.WouldExpire != nil {
 			line += fmt.Sprintf(", wouldExpire %d", *c.WouldExpire)
+		}
+		if c.NonMatching != nil {
+			line += fmt.Sprintf(", nonMatching %d", *c.NonMatching)
 		}
 		if c.Conflict != "" {
 			line += ": " + c.Conflict
@@ -132,6 +140,8 @@ func indexLabel(command string, c runner.IndexChange) string {
 	switch {
 	case c.Conflict != "":
 		return "to " + string(c.Action) + ", would fail"
+	case c.Action == runner.IndexPresent && c.Name == "":
+		return "already set"
 	case c.Action == runner.IndexPresent:
 		return "already present"
 	case c.Action == runner.IndexAbsent:

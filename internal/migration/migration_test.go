@@ -48,6 +48,7 @@ func TestLoadValid(t *testing.T) {
 		{id: "2026-11-05-003-account-name-ci-index", kind: KindIndex, operations: []string{"createIndex", "dropIndex"}},
 		{id: "2026-11-05-004-denormalize-project-owner-name", kind: KindMerge, operations: []string{"aggregate"}},
 		{id: "2026-11-05-005-prepare-dedupe-key", kind: KindIndex, operations: []string{"createIndex", "collModIndex"}},
+		{id: "2026-11-05-006-validate-events", kind: KindIndex, operations: []string{"collModCollection", "collModIndex"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -160,6 +161,7 @@ func TestLoadDirectory(t *testing.T) {
 		"2026-11-05-003-account-name-ci-index",
 		"2026-11-05-004-denormalize-project-owner-name",
 		"2026-11-05-005-prepare-dedupe-key",
+		"2026-11-05-006-validate-events",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -228,7 +230,7 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-009-steps-not-array", pointer: "/steps", want: "got object, want array"},
 		// Unknown or undetectable kind.
 		{file: "2026-01-01-010-mixed-kinds", pointer: "/steps/1/operation", want: "createIndex belongs to index migrations, but the file's first operation, updateMany, belongs to data migrations"},
-		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex or collModIndex (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert"},
+		{file: "2026-01-01-011-insert-operation", pointer: "/steps/0/operation", want: "insertOne is not an operation migrune runs: use updateOne, updateMany or deleteMany (data), createIndex, dropIndex, collModIndex or collModCollection (index), or aggregate (merge); seed documents with updateOne, upsert: true and $setOnInsert"},
 		{file: "2026-01-01-012-delete-one", pointer: "/steps/0/operation", want: "deleteOne is not an operation migrune runs"},
 		{file: "2026-01-01-013-replace-one", pointer: "/steps/0/operation", want: "replaceOne is not an operation migrune runs"},
 		{file: "2026-01-01-014-missing-operation", pointer: "/steps/0", want: "missing property 'operation'"},
@@ -266,6 +268,15 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-061-collmod-ttl-too-large", pointer: "/steps/0/set/expireAfterSeconds", want: "maximum"},
 		{file: "2026-01-01-062-collmod-ttl-not-integer", pointer: "/steps/0/set/expireAfterSeconds", want: "want integer"},
 		{file: "2026-01-01-063-collmod-prepare-unique-combined", pointer: "/steps/0/set", want: "prepareUnique can't be combined with another option"},
+		{file: "2026-01-01-076-collmod-validator", pointer: "/steps/0/set", want: "additional properties 'validator' not allowed"},
+		{file: "2026-01-01-068-validation-missing-set", pointer: "/steps/0", want: "missing property 'set'"},
+		{file: "2026-01-01-069-validation-with-name", pointer: "/steps/0", want: "keys, options and name are not allowed in collModCollection"},
+		{file: "2026-01-01-070-validation-empty-set", pointer: "/steps/0/set", want: "minProperties"},
+		{file: "2026-01-01-071-validation-unknown-option", pointer: "/steps/0/set", want: "additional properties 'collation' not allowed"},
+		{file: "2026-01-01-072-validation-bad-level", pointer: "/steps/0/set/validationLevel", want: "value must be one of 'off', 'strict', 'moderate'"},
+		{file: "2026-01-01-073-validation-error-and-log", pointer: "/steps/0/set/validationAction", want: "value must be one of 'error', 'warn'"},
+		{file: "2026-01-01-074-validation-validator-array", pointer: "/steps/0/set/validator", want: "got array, want object"},
+		{file: "2026-01-01-075-validation-index-option", pointer: "/steps/0/set", want: "additional properties 'hidden' not allowed"},
 		// Merge steps.
 		{file: "2026-01-01-034-merge-missing-pipeline", pointer: "/steps/0", want: "missing property 'pipeline'"},
 		{file: "2026-01-01-035-merge-empty-pipeline", pointer: "/steps/0/pipeline", want: "minItems"},

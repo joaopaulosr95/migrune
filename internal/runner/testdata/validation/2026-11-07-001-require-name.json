@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-07-001-require-name",
+  "description": "Require a string name on users",
+  "steps": [
+    {
+      "collection": "users",
+      "operation": "collModCollection",
+      "set": {
+        "validator": { "$jsonSchema": { "required": ["name"], "properties": { "name": { "bsonType": "string" } } } },
+        "validationLevel": "strict"
+      }
+    }
+  ]
+}

@@ -55,6 +55,7 @@ func TestFormatGolden(t *testing.T) {
 		{Collection: "accounts", Operation: "createIndex", IndexName: "name_1_ci"},
 		{Collection: "accounts", Operation: "dropIndex", IndexName: "name_1"},
 		{Collection: "events", Operation: "collModIndex", IndexName: "dedupeKey_1", Set: set(`{"unique": true}`)},
+		{Collection: "events", Operation: "collModCollection", Set: set(`{"validationLevel": "moderate"}`)},
 		{Collection: "accounts", Operation: "aggregate", MergeCounts: MergeCounts{
 			DiffCountBefore: n(5), DiffCountAfter: n(0), UnmatchedCount: n(1), TypeChangedCount: n(2),
 			DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),

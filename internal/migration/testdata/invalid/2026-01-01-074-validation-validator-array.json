@@ -1,0 +1,7 @@
+{
+  "id": "2026-01-01-074-validation-validator-array",
+  "description": "test fixture",
+  "steps": [
+    { "collection": "users", "operation": "collModCollection", "set": { "validator": [] } }
+  ]
+}
