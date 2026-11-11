@@ -184,6 +184,36 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 2, Applied: 2, DurationMs: 30},
 	}
+	// Batched data migrations: plan checks the first batch only; apply
+	// commits batches, here two of them before the third failed.
+	const backfill = "2026-11-01-010-backfill-tier"
+	batchedPlan := &runner.Report{
+		Command: "plan",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: backfill, Kind: "data", Status: runner.RowApplied, DurationMs: 120, BatchSize: 1000,
+				Matched: n(2314000), Checked: n(1000), Steps: []runner.DataStep{
+					{Index: 0, Operation: "updateMany", Collection: "accounts", Matched: n(1000), Modified: n(1000), Upserted: n(0)},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 130},
+	}
+	batchedError := "/steps/0 (updateMany on accounts): write exception: write errors: [(DocumentValidationFailure, code 121) " +
+		`{"failingDocumentId":7}]; committed 2 of 3 batches; server message hidden; rerun plan with --sample-values to see it`
+	batchedApply := &runner.Report{
+		Command: "apply",
+		Runner:  "ci-42",
+		Migrations: []runner.Row{
+			{ID: backfill, Kind: "data", Status: runner.RowErrored, DurationMs: 950, BatchSize: 10000, Batches: n(2),
+				Error: batchedError, Steps: []runner.DataStep{
+					{Index: 0, Operation: "updateMany", Collection: "accounts", Matched: n(20000), Modified: n(20000), Upserted: n(0)},
+				}},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Errored: 1, DurationMs: 960},
+		Error:             "migration " + backfill + " failed: " + batchedError,
+	}
 	// Written by hand: no runner, no createdAt.
 	byHand := migration.Applied{ID: "2026-10-03-001-by-hand", Description: "Fix by hand"}
 	unknown := &runner.Report{
@@ -446,6 +476,10 @@ func TestWriteReport(t *testing.T) {
 		{name: "empty plan json", rep: empty, output: "json", golden: "plan-empty.json"},
 		{name: "data plan table", rep: dataPlan, output: "table", golden: "plan-data.txt"},
 		{name: "data plan json", rep: dataPlan, output: "json", golden: "plan-data.json"},
+		{name: "batched plan table", rep: batchedPlan, output: "table", golden: "plan-batched.txt"},
+		{name: "batched plan json", rep: batchedPlan, output: "json", golden: "plan-batched.json"},
+		{name: "batched apply table", rep: batchedApply, output: "table", golden: "apply-batched.txt"},
+		{name: "batched apply json", rep: batchedApply, output: "json", golden: "apply-batched.json"},
 		{name: "applied but missing table", rep: missing, output: "table", golden: "plan-missing.txt"},
 		{name: "applied but missing json", rep: missing, output: "json", golden: "plan-missing.json"},
 		{name: "two failed checks table", rep: checks, output: "table", golden: "apply-checks.txt"},

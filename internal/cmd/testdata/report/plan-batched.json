@@ -1,0 +1,39 @@
+{
+  "version": "0.1.0",
+  "command": "plan",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "firstApply": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-010-backfill-tier",
+      "kind": "data",
+      "status": "applied",
+      "durationMs": 120,
+      "steps": [
+        {
+          "index": 0,
+          "operation": "updateMany",
+          "collection": "accounts",
+          "matched": 1000,
+          "modified": 1000,
+          "upserted": 0
+        }
+      ],
+      "batchSize": 1000,
+      "matched": 2314000,
+      "checked": 1000
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 1,
+    "errored": 0,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 130
+  }
+}

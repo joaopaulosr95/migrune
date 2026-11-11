@@ -1,0 +1,6 @@
+{
+  "id": "2026-01-01-078-batch-size-too-large",
+  "description": "test fixture",
+  "batchSize": 10001,
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": { "stale": true } }]
+}

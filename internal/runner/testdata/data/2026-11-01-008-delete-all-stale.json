@@ -1,0 +1,11 @@
+{
+  "id": "2026-11-01-008-delete-all-stale",
+  "description": "Delete every stale item",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "deleteMany",
+      "filter": { "stale": true }
+    }
+  ]
+}

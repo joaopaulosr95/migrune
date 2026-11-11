@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-09-003-mark-seen",
+  "description": "Mark items of the target kind seen; they still match the filter after",
+  "batchSize": 2,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "$expr": { "$eq": ["$kind", "$$target"] } },
+      "update": { "$set": { "seen": true } },
+      "options": { "let": { "target": "a" } }
+    }
+  ]
+}

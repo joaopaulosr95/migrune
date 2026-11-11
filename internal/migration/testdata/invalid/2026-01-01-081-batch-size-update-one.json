@@ -1,0 +1,6 @@
+{
+  "id": "2026-01-01-081-batch-size-update-one",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [{ "collection": "items", "operation": "updateOne", "filter": { "_id": 1 }, "update": { "$set": { "flag": false } } }]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "2026-11-09-005-delete-stale",
+  "description": "Delete stale items, four at a time",
+  "batchSize": 4,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "deleteMany",
+      "filter": { "stale": true }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-085-batch-size-collation",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } },
+      "options": { "collation": { "locale": "en", "strength": 2 } }
+    }
+  ]
+}

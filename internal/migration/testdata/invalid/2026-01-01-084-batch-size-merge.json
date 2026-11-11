@@ -1,0 +1,12 @@
+{
+  "id": "2026-01-01-084-batch-size-merge",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "aggregate",
+      "pipeline": [{ "$merge": { "into": "items", "whenMatched": "merge", "whenNotMatched": "discard" } }]
+    }
+  ]
+}

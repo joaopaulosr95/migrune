@@ -89,6 +89,13 @@ idempotency check shows them too. The same counts go to the logs on stderr,
 one line per step. Read them before approving a plan: a `deleteMany` whose
 filter matches far more documents than expected shows up here.
 
+A [batched](../writing-migrations.md#batched-data-migrations) data row also
+has its `batchSize`. In plan, which runs only the first batch, its step
+counts are that batch's, `matched` is how many documents the filter matches
+in all, and `checked` how many of them the first batch holds. In apply, its
+step counts are summed over the batches that committed, and `batches` is how
+many did: all of them when the row is `applied`.
+
 Index rows (`kind` `index`) list their steps in `indexes`: in plan, what each
 step would do to the indexes, or to a collection's validation, as they are
 now, changed by the pending index migrations before it; in apply, what it
@@ -136,8 +143,8 @@ error shows only:
 - for a write error whose details give it, such as a document validation
   failure (code 121), the failing document's `_id`.
 
-migrune's own text around it stays: the migration, the step, and any hint
-migrune adds. The text then ends with
+migrune's own text around it stays: the migration, the step, any hint
+migrune adds, and a batched migration's `committed N of M batches`. The text then ends with
 `server message hidden; rerun plan with --sample-values to see it`. Errors
 that don't come from the server, such as a network error, a timeout or one
 of migrune's own checks, are shown whole: they quote no document values.
@@ -244,7 +251,11 @@ conversion check shows the keys instead of the `_id`s.
 | `migrations[].status`     | string           | `applied`, `errored`, `interrupted` or `skipped`.                                                            |
 | `migrations[].durationMs` | integer          | How long the migration ran, in milliseconds. 0 when skipped.                                                 |
 | `migrations[].error`      | string, optional | Why the migration errored or was interrupted, without the server's message unless `--sample-values` is set (see [values in errors](#values-in-errors)). Absent otherwise. |
-| `migrations[].steps`      | array, optional  | Data migrations only: one item per step, in file order, with the first run's counts (see below). Absent for other kinds, for `skipped` rows, and when the first run failed. |
+| `migrations[].steps`      | array, optional  | Data migrations only: one item per step, in file order, with the first run's counts (see below; for a batched migration, see [statuses](#statuses)). Absent for other kinds, for `skipped` rows, and when the first run failed. |
+| `migrations[].batchSize`  | integer, optional | Batched data migrations only: the file's `batchSize`. Absent for other migrations and for `skipped` rows. |
+| `migrations[].matched`    | integer, optional | Batched data migrations, plan only: the documents the step's filter matches, counted before the first batch. |
+| `migrations[].checked`    | integer, optional | Batched data migrations, plan only: the documents of the first batch, the only one plan runs. |
+| `migrations[].batches`    | integer, optional | Batched data migrations, apply only: the batches that committed, each in a transaction of its own; all of them when the row is `applied`. |
 | `migrations[].indexes`    | array, optional  | Index migrations only: one item per step that ran, in file order (see below). Absent for other kinds and for `skipped` rows. |
 | `migrations[].diffCountBefore`  | integer, optional | Merge migrations only: the documents `$merge` would change, counted before it ran. Absent for other kinds and for `skipped` rows. |
 | `migrations[].diffCountAfter`   | integer, optional | Merge migrations, apply only: the documents that still differed after `$merge` ran. 0 once the merge settled. Absent in plan. |
@@ -428,7 +439,10 @@ JSON. A run that failed several checks at once has one line per check, the
 lines after the first indented.
 
 A data row is followed by one indented line per step: its index, operation
-and collection, and the first run's counts.
+and collection, and the first run's counts. A batched row then has a
+`batched:` line: in plan, `batched: checked 1,000 of 2,314,000 matching
+documents`; in apply, `batched: committed 3 batches of up to 1,000
+documents`.
 
 An index row is followed by one indented line per step, with what the step
 would do (plan: `to create`, `to modify`, `to drop`) or did (apply:

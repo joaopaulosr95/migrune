@@ -56,7 +56,8 @@ and the empty collection if it was missing.
 
 - **`Finished`**: written when the migration succeeds. For a data migration,
   inside its transaction, together with its data changes, so the entry and
-  the data commit or abort together. For index and merge migrations, right
+  the data commit or abort together; for a batched one, inside its last
+  batch's transaction. For index and merge migrations, right
   after the last step; if the run dies between the two, the next run repeats
   the steps, which is harmless.
 - **`Errored`**: written after the migration failed, in a transaction of
@@ -112,8 +113,9 @@ Example `Finished` entry for a data migration:
 | `runner`           | string    | The runner id that held the lock (`--runner-id`).                                                   |
 | `approvedBy`       | document  | `{name, email}` from `--approved-by-name` and `--approved-by-email`. Empty strings when not given.  |
 | `status`           | string    | `Finished` or `Errored`.                                                                            |
-| `migration`        | document  | The migration as it ran: `id`, `description` and `steps`, parsed from the file. Not byte-identical to the file. |
+| `migration`        | document  | The migration as it ran: `id`, `description`, `batchSize` when the file has one, and `steps`, parsed from the file. Not byte-identical to the file. |
 | `results`          | array     | `Finished` only. One item per step, in file order; see below.                                       |
+| `batches`          | int       | `Finished` entries of [batched](../writing-migrations.md#batched-data-migrations) data migrations only: how many batches ran, each in a transaction of its own; 1 when the filter matched nothing. |
 | `errors`           | array     | `Errored` only. `{step, message}` items; `step` is the failed step's index in file order, absent when the error isn't tied to a step; `message` is the report's error text, without the server's message unless `--sample-values` is set (see [values in errors](report.md#values-in-errors)). |
 
 Each item of `results` has `collection` and `operation`, plus what MongoDB
@@ -121,9 +123,14 @@ returned for that kind of step:
 
 | Kind  | Fields                                                                                 |
 | ----- | -------------------------------------------------------------------------------------- |
-| data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs. |
+| data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs; for a batched migration, summed over its batches. |
 | index | `indexName` (not for `collModCollection`), and for `collModIndex` and `collModCollection` their `set`, as in the file. |
 | merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
+
+A batched migration's summed counts can undercount: when the commit outcome
+of a batch other than the last is unknown, apply runs the batch again, and
+if the first commit had in fact landed, the sums take the rerun's counts,
+which find the batch's documents already changed: 0 modified or deleted.
 
 To read the latest `Finished` entry of a migration, steps included (in a
 named namespace, add `namespace: "<name>"` to the filter):

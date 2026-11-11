@@ -36,6 +36,7 @@ how to write each kind, and [lint rules](lint-rules.md) lists every check.
 | `id`          | string | yes      | The file name without `.json`. A different value is an error.       |
 | `description` | string | yes      | What the migration does, not empty. Stored in the changelog.        |
 | `steps`       | array  | yes      | The operations, at least one, run in order.                         |
+| `batchSize`   | integer | no      | Data migrations only, from 1 to 10,000: run the step in [batches](#batched-data-migrations) of this many documents. |
 
 No other field is allowed, and no object may repeat a key: JSON parsers
 disagree on which value wins, so the file fails to load, naming the key's
@@ -52,7 +53,7 @@ mixes kinds:
 
 | Kind    | Operations                             | Runs                                                                |
 | ------- | -------------------------------------- | ------------------------------------------------------------------- |
-| `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. |
+| `data`  | `updateOne`, `updateMany`, `deleteMany` | All steps in one transaction, twice; the second run must change nothing. With `batchSize`, one transaction per batch. |
 | `index` | `createIndex`, `dropIndex`, `collModIndex`, `collModCollection` | Step by step, outside a transaction.                    |
 | `merge` | `aggregate`                            | Step by step, outside a transaction; the pipeline ends in `$merge`. |
 
@@ -91,6 +92,22 @@ when it runs:
 | `deleteMany`                | `collation`, `hint`, `let`                                |
 
 The schema rejects `$merge` and `$out` as stages of an update pipeline, as MongoDB does.
+
+### Batched data migrations
+
+A data migration with `batchSize` must have exactly one step, an
+`updateMany` or a `deleteMany`, without the `upsert` or `collation` option. A file that
+breaks one of these rules fails to load, in lint (`schema`), plan and apply
+alike, with a message naming the rule, such as:
+
+```txt
+/steps: batchSize allows exactly one step, got 2: put each step in a migration of its own
+```
+
+`batchSize` on an index or merge migration is refused the same way
+(`batchSize is only allowed in data migrations`). How a batched migration
+runs, and what it gives up, is in
+[batched data migrations](../writing-migrations.md#batched-data-migrations).
 
 ## Index steps
 
@@ -164,7 +181,9 @@ each problem is reported once, as a `schema` finding in lint. The checks a
 schema can't express, such as the position of `$merge`, nested pipelines, Extended
 JSON values, the file name and the prefix, are [lint](lint-rules.md) code;
 the reserved collections a pipeline reads or writes are also checked when
-plan and apply load the files.
+plan and apply load the files. So are the rules of
+[`batchSize`](#batched-data-migrations) beyond its range and kind (one step,
+`updateMany` or `deleteMany`, no `upsert` or `collation`), reported as `schema` findings.
 
 [`examples/migrations/`](../../examples/migrations/) has one migration of each
 kind.

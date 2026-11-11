@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
@@ -37,6 +38,34 @@ func (e *StepFailure) Error() string {
 
 func (e *StepFailure) Unwrap() error { return e.Err }
 
+// MaxTransactionDocs is the most documents an updateMany or deleteMany step
+// of a data migration may match: the migration's one transaction holds every
+// document it writes until it commits.
+const MaxTransactionDocs = 10000
+
+// TransactionSizeError reports a data migration step that matches more than
+// MaxTransactionDocs documents.
+type TransactionSizeError struct {
+	// Step is the step's index in file order.
+	Step       int
+	Operation  string
+	Collection string
+}
+
+func (e *TransactionSizeError) Error() string {
+	return fmt.Sprintf("/steps/%d (%s on %s) matches more than 10,000 documents: one transaction would hold them all; "+
+		"set batchSize (1 to 10,000) to run it in batches", e.Step, e.Operation, e.Collection)
+}
+
+// codeTransactionExceededLifetimeLimitSeconds is the error of an operation
+// the server interrupted because its transaction outlived
+// transactionLifetimeLimitSeconds.
+const codeTransactionExceededLifetimeLimitSeconds = 290
+
+// lifetimeHint follows the error of a data migration whose transaction
+// outlived transactionLifetimeLimitSeconds.
+const lifetimeHint = "lower batchSize, or set it"
+
 // runData runs a data migration in one transaction: the steps, the
 // same steps again, and a check that the second run changed nothing.
 // When apply is set, the Finished entry is written in the same transaction
@@ -46,7 +75,12 @@ func (e *StepFailure) Unwrap() error { return e.Err }
 //
 // The first run's counts, what the migration does, are logged and go into
 // row.Steps, whether or not the migration then passes.
+//
+// A migration with a batchSize runs in batches instead (runBatched).
 func (r *Run) runData(m migration.Migration, apply bool, log *slog.Logger, row *Row) error {
+	if m.BatchSize > 0 {
+		return r.runBatched(m, apply, log, row)
+	}
 	// SetCurrent shares a mutex with transaction: call it before.
 	if err := r.lock.SetCurrent(r.ctx, m.ID); err != nil {
 		return r.lockErr(err)
@@ -56,25 +90,29 @@ func (r *Run) runData(m migration.Migration, apply bool, log *slog.Logger, row *
 	entry := bson.NewObjectID()
 	// first is the last attempt's first run, when it got that far.
 	var first []StepResult
-	err := r.transaction(func(ctx context.Context) error {
-		first = nil
-		res, err := runDataSteps(ctx, r.db, m, false)
-		if err != nil {
-			return err
-		}
-		first = res
-		second, err := runDataSteps(ctx, r.db, m, true)
-		if err != nil {
-			return err
-		}
-		if err := checkIdempotent(m, second); err != nil {
-			return err
-		}
-		if !apply {
-			return nil
-		}
-		return r.WriteFinished(ctx, entry, m, first)
-	}, apply, &entry)
+	err := r.checkTransactionSize(m)
+	if err == nil {
+		err = r.transaction(func(ctx context.Context) error {
+			first = nil
+			res, err := runDataSteps(ctx, r.db, m, false)
+			if err != nil {
+				return err
+			}
+			first = res
+			second, err := runDataSteps(ctx, r.db, m, true)
+			if err != nil {
+				return err
+			}
+			if err := checkIdempotent(m, second); err != nil {
+				return err
+			}
+			if !apply {
+				return nil
+			}
+			return r.WriteFinished(ctx, entry, m, first)
+		}, apply, &entry)
+	}
+	err = withLifetimeHint(err)
 	for i, res := range first {
 		step := DataStep{Index: i, Operation: res.Operation, Collection: res.Collection,
 			Matched: res.MatchedCount, Modified: res.ModifiedCount, Upserted: res.UpsertedCount, Deleted: res.DeletedCount}
@@ -91,6 +129,70 @@ func (r *Run) runData(m migration.Migration, apply bool, log *slog.Logger, row *
 		}
 	}
 	return err
+}
+
+// checkTransactionSize fails with a *TransactionSizeError, before the
+// migration's transaction, when one of its updateMany or deleteMany steps
+// matches more than MaxTransactionDocs documents. It counts outside any
+// transaction, with read concern majority, up to MaxTransactionDocs+1. An
+// updateOne step writes one document and isn't counted.
+func (r *Run) checkTransactionSize(m migration.Migration) error {
+	for i, s := range m.Steps {
+		if s.Operation != "updateMany" && s.Operation != "deleteMany" {
+			continue
+		}
+		n, err := r.countMatching(s, MaxTransactionDocs+1)
+		if err != nil {
+			return r.cause(&StepFailure{Step: i, Operation: s.Operation, Collection: s.Collection,
+				Err: fmt.Errorf("count matching documents: %w", err)})
+		}
+		if n > MaxTransactionDocs {
+			return &TransactionSizeError{Step: i, Operation: s.Operation, Collection: s.Collection}
+		}
+	}
+	return nil
+}
+
+// countMatching counts the documents s's filter matches, up to limit (0:
+// all of them), with the step's collation, hint and let. It is
+// CountDocuments's pipeline, which takes no let.
+func (r *Run) countMatching(s migration.Step, limit int64) (int64, error) {
+	o, err := parseDataOptions(s)
+	if err != nil {
+		return 0, err
+	}
+	pipeline := []any{bson.D{{Key: "$match", Value: s.Filter}}}
+	if limit > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
+	}
+	pipeline = append(pipeline, bson.D{{Key: "$count", Value: "n"}})
+	coll := r.db.Collection(s.Collection, options.Collection().SetReadConcern(readconcern.Majority()))
+	opts := options.Aggregate().SetCollation(o.Collation).SetHint(o.Hint).SetLet(o.Let)
+	cur, err := coll.Aggregate(r.ctx, pipeline, opts)
+	if err != nil {
+		return 0, err
+	}
+	var res []struct {
+		N int64 `bson:"n"`
+	}
+	if err := cur.All(r.ctx, &res); err != nil {
+		return 0, err
+	}
+	if len(res) == 0 {
+		return 0, nil
+	}
+	return res[0].N, nil
+}
+
+// withLifetimeHint appends lifetimeHint to err when the server interrupted
+// the transaction for outliving transactionLifetimeLimitSeconds. err's text
+// stays quoted as is, so errorText hides the server's message and keeps the
+// hint.
+func withLifetimeHint(err error) error {
+	if !isCode(err, codeTransactionExceededLifetimeLimitSeconds) {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, lifetimeHint)
 }
 
 // runDataSteps runs every step of m once, in file order.
@@ -137,6 +239,11 @@ func (r *Run) stepErrors(err error) []StepError {
 	var sf *StepFailure
 	if errors.As(err, &sf) {
 		step := sf.Step
+		return []StepError{{Step: &step, Message: msg}}
+	}
+	var se *TransactionSizeError
+	if errors.As(err, &se) {
+		step := se.Step
 		return []StepError{{Step: &step, Message: msg}}
 	}
 	return []StepError{{Message: msg}}

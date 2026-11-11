@@ -1,0 +1,14 @@
+{
+  "id": "2026-01-01-082-batch-size-upsert",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } },
+      "options": { "upsert": false }
+    }
+  ]
+}

@@ -183,6 +183,10 @@ type Entry struct {
 	Results []StepResult `bson:"results,omitempty"`
 	// Errors is set on Errored entries only.
 	Errors []StepError `bson:"errors,omitempty"`
+	// Batches is, on the Finished entry of a migration with a batchSize,
+	// how many batches it ran, each in a transaction of its own: 1 when
+	// its filter matched nothing. Absent otherwise.
+	Batches int `bson:"batches,omitempty"`
 }
 
 // StepResult is what MongoDB returned for one step. Only the fields that apply
@@ -256,8 +260,9 @@ func snapshot(m migration.Migration) (bson.Raw, error) {
 	raw, err := bson.Marshal(struct {
 		ID          string           `bson:"id"`
 		Description string           `bson:"description"`
+		BatchSize   int              `bson:"batchSize,omitempty"`
 		Steps       []migration.Step `bson:"steps"`
-	}{m.ID, m.Description, m.Steps})
+	}{m.ID, m.Description, m.BatchSize, m.Steps})
 	if err != nil {
 		return nil, fmt.Errorf("snapshot migration %s: %w", m.ID, err)
 	}
@@ -278,6 +283,13 @@ func (r *Run) WriteFinished(ctx context.Context, id bson.ObjectID, m migration.M
 		results = []StepResult{}
 	}
 	return r.writeEntry(ctx, id, m, StatusFinished, bson.E{Key: "results", Value: results})
+}
+
+// writeFinishedBatches is WriteFinished for a migration with a batchSize,
+// with the step's counts summed over its batches, and how many it ran.
+func (r *Run) writeFinishedBatches(ctx context.Context, id bson.ObjectID, m migration.Migration, results []StepResult, batches int) error {
+	return r.writeEntry(ctx, id, m, StatusFinished, bson.E{Key: "results", Value: results},
+		bson.E{Key: "batches", Value: int32(batches)})
 }
 
 // writeFinishedAlone records m as Finished, with the results of its steps, as
@@ -332,8 +344,8 @@ func (r *Run) WriteErrored(m migration.Migration, errs []StepError) error {
 
 // writeEntry upserts the entry with _id id with an update pipeline, so
 // createdAt comes from the server's $$NOW (see entrySet).
-func (r *Run) writeEntry(ctx context.Context, id bson.ObjectID, m migration.Migration, status Status, outcome bson.E) error {
-	set, err := r.entrySet(m, status, outcome)
+func (r *Run) writeEntry(ctx context.Context, id bson.ObjectID, m migration.Migration, status Status, outcome ...bson.E) error {
+	set, err := r.entrySet(m, status, outcome...)
 	if err != nil {
 		return err
 	}
@@ -349,9 +361,9 @@ func (r *Run) writeEntry(ctx context.Context, id bson.ObjectID, m migration.Migr
 }
 
 // entrySet is the $set stage writeEntry writes an entry with: every field
-// but _id. Every client value goes through $literal, so operators in the
-// migration snapshot aren't evaluated.
-func (r *Run) entrySet(m migration.Migration, status Status, outcome bson.E) (bson.D, error) {
+// but _id, the outcome's last. Every client value goes through $literal, so
+// operators in the migration snapshot aren't evaluated.
+func (r *Run) entrySet(m migration.Migration, status Status, outcome ...bson.E) (bson.D, error) {
 	snap, err := snapshot(m)
 	if err != nil {
 		return nil, err
@@ -369,7 +381,9 @@ func (r *Run) entrySet(m migration.Migration, status Status, outcome bson.E) (bs
 		{Key: "approvedBy", Value: lit(r.approvedBy)},
 		{Key: "status", Value: lit(status)},
 		{Key: "migration", Value: lit(snap)},
-		{Key: outcome.Key, Value: lit(outcome.Value)},
 	}...)
+	for _, o := range outcome {
+		set = append(set, bson.E{Key: o.Key, Value: lit(o.Value)})
+	}
 	return set, nil
 }

@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-09-002-flag-mixed",
+  "description": "Default flag to false on every item without it, three at a time, through the _id index",
+  "batchSize": 3,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } },
+      "options": { "hint": "_id_" }
+    }
+  ]
+}

@@ -34,6 +34,8 @@ func TestFormatGolden(t *testing.T) {
 		Description: "One step of each operation",
 		Steps:       file.Steps,
 		Checksum:    "5f0c7e4a9d2b3c1e8f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e",
+		// Only a one-step data migration has one: set, to pin it.
+		BatchSize: 1000,
 	}
 	snap, err := snapshot(m)
 	if err != nil {
@@ -82,9 +84,14 @@ func TestFormatGolden(t *testing.T) {
 		// Only one of the two is set in a real entry: both are, to pin both.
 		Results: results,
 		Errors:  errs,
+		Batches: 3,
 	}
 	run := &Run{namespace: entry.Namespace, runnerID: entry.Runner, approvedBy: approvedBy}
 	finished, err := run.entrySet(m, StatusFinished, bson.E{Key: "results", Value: results})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batched, err := run.entrySet(m, StatusFinished, bson.E{Key: "results", Value: results}, bson.E{Key: "batches", Value: int32(3)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +117,7 @@ func TestFormatGolden(t *testing.T) {
 	}{
 		{golden: "entry.json", doc: entry},
 		{golden: "entry-set-finished.json", doc: finished},
+		{golden: "entry-set-finished-batched.json", doc: batched},
 		{golden: "entry-set-errored.json", doc: errored},
 		{golden: "lock.json", doc: lock},
 	}

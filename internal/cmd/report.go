@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -89,12 +90,24 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 }
 
 // writeRowDetails writes the lines under a row: for a data migration, one
-// per step with its counts; for an index migration, one per step, a
+// per step with its counts, and for a batched one what plan checked or how
+// many batches apply committed; for an index migration, one per step, a
 // collModCollection's starting with "validation"; for a
 // merge migration, its counts and samples.
 func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	for _, s := range row.Steps {
 		fmt.Fprintf(w, "  /steps/%d %s on %s: %s\n", s.Index, s.Operation, s.Collection, s.Counts())
+	}
+	switch {
+	case row.Matched != nil && row.Checked != nil:
+		fmt.Fprintf(w, "  batched: checked %s of %s matching documents\n", thousands(*row.Checked), thousands(*row.Matched))
+	case row.Batches != nil:
+		batches := "batches"
+		if *row.Batches == 1 {
+			batches = "batch"
+		}
+		fmt.Fprintf(w, "  batched: committed %s %s of up to %s documents\n",
+			thousands(*row.Batches), batches, thousands(int64(row.BatchSize)))
 	}
 	if counts := row.Counts(); counts != "" {
 		fmt.Fprintln(w, "  merge: "+counts)
@@ -165,6 +178,20 @@ func indexLabel(command string, c runner.IndexChange) string {
 		return "modified"
 	}
 	return string(c.Action)
+}
+
+// thousands renders n with a comma between each group of three digits, e.g.
+// 2,314,000.
+func thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	sign := ""
+	if n < 0 {
+		sign, s = "-", s[1:]
+	}
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return sign + s
 }
 
 func duration(ms int64) string { return (time.Duration(ms) * time.Millisecond).String() }

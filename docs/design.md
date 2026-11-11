@@ -7,16 +7,21 @@ how, where that stops, and why migrune works the way it does.
 
 ## Guarantees
 
-**Data and changelog commit together.** A data migration runs in one
-transaction, and its `Finished` changelog entry is written in that same
-transaction, so the changelog can't claim a migration that didn't happen or
-miss one that did. This is why migrune needs a replica set. Index builds and
-`$merge` can't run in a transaction, so those kinds write their entry right
-after their last step; if a run dies in between, the next run repeats steps
-that are idempotent by construction.
+**Data and changelog commit together.** Every data write runs in a fenced
+transaction, and a data migration is all-or-nothing unless it declares a
+`batchSize`. It runs in one transaction, and its `Finished` changelog entry
+is written in that same transaction, so the changelog can't claim a
+migration that didn't happen or miss one that did. This is why migrune needs
+a replica set. A [batched](writing-migrations.md#batched-data-migrations)
+migration commits one transaction per batch instead, and its last batch
+writes the `Finished` entry. Index builds and `$merge` can't run in a
+transaction, so those kinds write their entry right after their last step;
+if a run dies in between, the next run repeats steps that are idempotent by
+construction.
 
 **Idempotency is checked, not trusted.** Every data migration runs twice in
-its transaction and fails if the second run changes anything, which catches
+its transaction (a batched one, each batch in its own) and fails if the
+second run changes anything, which catches
 any non-idempotent update, pipeline updates included, without a list of
 allowed operators. Merges can't run twice in a transaction, so migrune counts
 the documents `$merge` would change before and after it, and requires 0 after.
@@ -101,6 +106,11 @@ and lock expiry already handle.
 - **Atomicity of index and merge migrations.** A failure leaves earlier steps
   done and a merge possibly half written; the next run completes them, as
   long as the merge converges.
+- **Atomicity of batched data migrations.** A failure or an interruption
+  leaves the batches before it committed; the next run picks up the
+  documents still matching the filter. plan runs only the first batch, so a
+  later one can fail on documents plan never ran (see
+  [a batched migration failed part-way](troubleshooting.md#a-batched-migration-failed-part-way)).
 - **Merges that don't converge.** A merge that computes a field from its own
   value writes a new result on every run. plan can't see that; apply detects
   it after writing and fails.

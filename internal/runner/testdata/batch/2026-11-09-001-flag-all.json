@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-09-001-flag-all",
+  "description": "Default flag to false on every item without it, in batches",
+  "batchSize": 10000,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } }
+    }
+  ]
+}

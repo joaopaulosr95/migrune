@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-01-009-slow-count",
+  "description": "Count to 200,000 on every slow item: slow enough to outlive a 1 second transaction",
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "slow": true },
+      "update": [
+        { "$set": { "n": { "$size": { "$filter": { "input": { "$range": [0, 200000] }, "cond": { "$gte": ["$$this", 0] } } } } } }
+      ]
+    }
+  ]
+}

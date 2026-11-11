@@ -1,0 +1,10 @@
+Database: app
+
+MIGRATION                     KIND  STATUS   DURATION  ERROR
+2026-11-01-010-backfill-tier  data  errored  950ms     /steps/0 (updateMany on accounts): write exception: write errors: [(DocumentValidationFailure, code 121) {"failingDocumentId":7}]; committed 2 of 3 batches; server message hidden; rerun plan with --sample-values to see it
+  /steps/0 updateMany on accounts: matched 20000, modified 20000, upserted 0
+  batched: committed 2 batches of up to 10,000 documents
+
+Total: 1 migration: 0 applied, 1 errored, 0 interrupted, 0 skipped in 960ms
+
+Error: migration 2026-11-01-010-backfill-tier failed: /steps/0 (updateMany on accounts): write exception: write errors: [(DocumentValidationFailure, code 121) {"failingDocumentId":7}]; committed 2 of 3 batches; server message hidden; rerun plan with --sample-values to see it

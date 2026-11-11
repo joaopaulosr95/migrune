@@ -1,0 +1,19 @@
+{
+  "id": "2026-11-01-007-seed-and-flag-all",
+  "description": "Seed a setting, then default flag to false on every item without it",
+  "steps": [
+    {
+      "collection": "settings",
+      "operation": "updateOne",
+      "filter": { "_id": "flags" },
+      "update": { "$set": { "seeded": true } },
+      "options": { "upsert": true }
+    },
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } }
+    }
+  ]
+}

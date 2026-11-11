@@ -75,8 +75,10 @@ type Row struct {
 	Error      string         `json:"error,omitempty"`
 	// Steps has one item per step of a data migration whose first run
 	// completed, with what MongoDB reported for it: in plan, what apply
-	// would do to the data as it is now; in apply, what it did. Absent for
-	// other kinds, for skipped rows, and when the first run failed.
+	// would do to the data as it is now; in apply, what it did. For a
+	// batched migration: in plan, what its first batch would do; in apply,
+	// the sum over the batches that committed. Absent for other kinds, for
+	// skipped rows, and when the first run failed.
 	Steps []DataStep `json:"steps,omitempty"`
 	// Indexes has one item per step of an index migration that ran: in
 	// plan, what the step would do to the indexes as they are now, changed
@@ -84,6 +86,18 @@ type Row struct {
 	// apply, what it did. A plan step predicted to fail is the last item,
 	// with its Conflict. Absent for other kinds and for skipped rows.
 	Indexes []IndexChange `json:"indexes,omitempty"`
+
+	// BatchSize is the batchSize of a data migration that has one, which
+	// runs in batches. Absent for the others and for skipped rows.
+	BatchSize int `json:"batchSize,omitempty"`
+	// Matched is, in plan, how many documents a batched migration's filter
+	// matched, and Checked how many of them its first batch, the only one
+	// plan runs, holds. Absent otherwise.
+	Matched *int64 `json:"matched,omitempty"`
+	Checked *int64 `json:"checked,omitempty"`
+	// Batches is, in apply, how many batches of a batched migration
+	// committed: all of them when it was applied. Absent otherwise.
+	Batches *int64 `json:"batches,omitempty"`
 
 	// MergeCounts are set for merge migrations only, summed over the steps
 	// that ran.

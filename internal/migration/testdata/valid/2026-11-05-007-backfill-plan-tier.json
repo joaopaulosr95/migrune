@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-05-007-backfill-plan-tier",
+  "description": "Default the plan tier to free on every account without one, in batches of 1,000",
+  "batchSize": 1000,
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "updateMany",
+      "filter": { "tier": { "$exists": false } },
+      "update": { "$set": { "tier": "free" } }
+    }
+  ]
+}

@@ -1,0 +1,256 @@
+{
+  "v": {
+    "$literal": {
+      "$numberInt": "1"
+    }
+  },
+  "namespace": {
+    "$literal": "api"
+  },
+  "migrationId": {
+    "$literal": "2026-11-05-001-every-step"
+  },
+  "checksum": {
+    "$literal": "5f0c7e4a9d2b3c1e8f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e"
+  },
+  "createdAt": "$$NOW",
+  "runner": {
+    "$literal": "ci-42-1-AB12CD34"
+  },
+  "approvedBy": {
+    "$literal": {
+      "name": "Ada Lovelace",
+      "email": "ada@example.com"
+    }
+  },
+  "status": {
+    "$literal": "Finished"
+  },
+  "migration": {
+    "$literal": {
+      "id": "2026-11-05-001-every-step",
+      "description": "One step of each operation",
+      "batchSize": {
+        "$numberInt": "1000"
+      },
+      "steps": [
+        {
+          "collection": "projects",
+          "operation": "updateOne",
+          "filter": {
+            "_id": {
+              "$numberInt": "1"
+            }
+          },
+          "update": {
+            "$set": {
+              "archived": false
+            }
+          },
+          "options": {
+            "upsert": true
+          }
+        },
+        {
+          "collection": "projects",
+          "operation": "updateMany",
+          "filter": {
+            "archived": {
+              "$exists": false
+            }
+          },
+          "update": [
+            {
+              "$set": {
+                "archived": false
+              }
+            }
+          ],
+          "options": {
+            "arrayFilters": [
+              {
+                "x.done": true
+              }
+            ],
+            "hint": {
+              "archived": {
+                "$numberInt": "1"
+              }
+            }
+          }
+        },
+        {
+          "collection": "projects",
+          "operation": "deleteMany",
+          "filter": {
+            "stale": true
+          }
+        },
+        {
+          "collection": "accounts",
+          "operation": "createIndex",
+          "options": {
+            "name": "name_1_ci",
+            "unique": true,
+            "collation": {
+              "locale": "en",
+              "strength": {
+                "$numberInt": "2"
+              }
+            }
+          },
+          "keys": {
+            "name": {
+              "$numberInt": "1"
+            }
+          }
+        },
+        {
+          "collection": "accounts",
+          "operation": "dropIndex",
+          "name": "name_1"
+        },
+        {
+          "collection": "events",
+          "operation": "collModIndex",
+          "name": "dedupeKey_1",
+          "set": {
+            "unique": true
+          }
+        },
+        {
+          "collection": "events",
+          "operation": "collModCollection",
+          "set": {
+            "validator": {
+              "$jsonSchema": {
+                "required": [
+                  "dedupeKey"
+                ]
+              }
+            },
+            "validationLevel": "moderate",
+            "validationAction": "error"
+          }
+        },
+        {
+          "collection": "accounts",
+          "operation": "aggregate",
+          "pipeline": [
+            {
+              "$project": {
+                "ownerName": "$owner.name"
+              }
+            },
+            {
+              "$merge": {
+                "into": "projects",
+                "on": "_id",
+                "whenMatched": "merge",
+                "whenNotMatched": "discard"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "results": {
+    "$literal": [
+      {
+        "collection": "projects",
+        "operation": "updateOne",
+        "matchedCount": {
+          "$numberLong": "0"
+        },
+        "modifiedCount": {
+          "$numberLong": "0"
+        },
+        "upsertedCount": {
+          "$numberLong": "1"
+        }
+      },
+      {
+        "collection": "projects",
+        "operation": "updateMany",
+        "matchedCount": {
+          "$numberLong": "3"
+        },
+        "modifiedCount": {
+          "$numberLong": "2"
+        },
+        "upsertedCount": {
+          "$numberLong": "0"
+        }
+      },
+      {
+        "collection": "projects",
+        "operation": "deleteMany",
+        "deletedCount": {
+          "$numberLong": "4"
+        }
+      },
+      {
+        "collection": "accounts",
+        "operation": "createIndex",
+        "indexName": "name_1_ci"
+      },
+      {
+        "collection": "accounts",
+        "operation": "dropIndex",
+        "indexName": "name_1"
+      },
+      {
+        "collection": "events",
+        "operation": "collModIndex",
+        "indexName": "dedupeKey_1",
+        "set": {
+          "unique": true
+        }
+      },
+      {
+        "collection": "events",
+        "operation": "collModCollection",
+        "set": {
+          "validationLevel": "moderate"
+        }
+      },
+      {
+        "collection": "accounts",
+        "operation": "aggregate",
+        "diffCountBefore": {
+          "$numberLong": "5"
+        },
+        "diffCountAfter": {
+          "$numberLong": "0"
+        },
+        "unmatchedCount": {
+          "$numberLong": "1"
+        },
+        "typeChangedCount": {
+          "$numberLong": "2"
+        },
+        "duplicateOnCount": {
+          "$numberLong": "0"
+        },
+        "nullOnCount": {
+          "$numberLong": "0"
+        },
+        "arrayOnCount": {
+          "$numberLong": "0"
+        },
+        "idMismatchCount": {
+          "$numberLong": "0"
+        },
+        "collationOnlyMatchCount": {
+          "$numberLong": "1"
+        }
+      }
+    ]
+  },
+  "batches": {
+    "$literal": {
+      "$numberInt": "3"
+    }
+  }
+}

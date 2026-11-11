@@ -42,6 +42,7 @@ func TestLoadValid(t *testing.T) {
 		id         string
 		kind       Kind
 		operations []string
+		batchSize  int
 	}{
 		{id: "2026-11-05-001-add-archived-flag", kind: KindData, operations: []string{"updateMany", "updateMany", "deleteMany"}},
 		{id: "2026-11-05-002-seed-price-table-v1", kind: KindData, operations: []string{"updateOne"}},
@@ -49,6 +50,7 @@ func TestLoadValid(t *testing.T) {
 		{id: "2026-11-05-004-denormalize-project-owner-name", kind: KindMerge, operations: []string{"aggregate"}},
 		{id: "2026-11-05-005-prepare-dedupe-key", kind: KindIndex, operations: []string{"createIndex", "collModIndex"}},
 		{id: "2026-11-05-006-validate-events", kind: KindIndex, operations: []string{"collModCollection", "collModIndex"}},
+		{id: "2026-11-05-007-backfill-plan-tier", kind: KindData, operations: []string{"updateMany"}, batchSize: 1000},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -72,6 +74,9 @@ func TestLoadValid(t *testing.T) {
 			}
 			if !slices.Equal(ops, tc.operations) {
 				t.Errorf("operations = %v, want %v", ops, tc.operations)
+			}
+			if m.BatchSize != tc.batchSize {
+				t.Errorf("batchSize = %d, want %d", m.BatchSize, tc.batchSize)
 			}
 		})
 	}
@@ -162,6 +167,7 @@ func TestLoadDirectory(t *testing.T) {
 		"2026-11-05-004-denormalize-project-owner-name",
 		"2026-11-05-005-prepare-dedupe-key",
 		"2026-11-05-006-validate-events",
+		"2026-11-05-007-backfill-plan-tier",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -277,6 +283,16 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-073-validation-error-and-log", pointer: "/steps/0/set/validationAction", want: "value must be one of 'error', 'warn'"},
 		{file: "2026-01-01-074-validation-validator-array", pointer: "/steps/0/set/validator", want: "got array, want object"},
 		{file: "2026-01-01-075-validation-index-option", pointer: "/steps/0/set", want: "additional properties 'hidden' not allowed"},
+		// batchSize.
+		{file: "2026-01-01-077-batch-size-zero", pointer: "/batchSize", want: "minimum"},
+		{file: "2026-01-01-078-batch-size-too-large", pointer: "/batchSize", want: "maximum"},
+		{file: "2026-01-01-079-batch-size-not-integer", pointer: "/batchSize", want: "want integer"},
+		{file: "2026-01-01-080-batch-size-two-steps", pointer: "/steps", want: "batchSize allows exactly one step, got 2"},
+		{file: "2026-01-01-081-batch-size-update-one", pointer: "/steps/0/operation", want: "batchSize allows only updateMany or deleteMany, got updateOne"},
+		{file: "2026-01-01-082-batch-size-upsert", pointer: "/steps/0/options/upsert", want: "batchSize doesn't allow upsert"},
+		{file: "2026-01-01-085-batch-size-collation", pointer: "/steps/0/options/collation", want: "batchSize doesn't allow collation"},
+		{file: "2026-01-01-083-batch-size-index", pointer: "", want: "batchSize is only allowed in data migrations"},
+		{file: "2026-01-01-084-batch-size-merge", pointer: "", want: "batchSize is only allowed in data migrations"},
 		// Merge steps.
 		{file: "2026-01-01-034-merge-missing-pipeline", pointer: "/steps/0", want: "missing property 'pipeline'"},
 		{file: "2026-01-01-035-merge-empty-pipeline", pointer: "/steps/0/pipeline", want: "minItems"},

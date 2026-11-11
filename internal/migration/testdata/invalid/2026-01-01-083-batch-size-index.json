@@ -1,0 +1,6 @@
+{
+  "id": "2026-01-01-083-batch-size-index",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [{ "collection": "items", "operation": "dropIndex", "name": "name_1" }]
+}

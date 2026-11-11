@@ -22,6 +22,9 @@
   "migration": {
     "id": "2026-11-05-001-every-step",
     "description": "One step of each operation",
+    "batchSize": {
+      "$numberInt": "1000"
+    },
     "steps": [
       {
         "collection": "projects",
@@ -244,5 +247,8 @@
     {
       "message": "no Errored changelog entry written: migration lock lost"
     }
-  ]
+  ],
+  "batches": {
+    "$numberInt": "3"
+  }
 }

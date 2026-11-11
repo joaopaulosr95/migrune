@@ -131,7 +131,9 @@ func violations(ve *jsonschema.ValidationError, inst any) []Violation {
 			if len(e.InstanceLocation) == 0 && fileKind != "" {
 				branch := "#/oneOf/" + strconv.Itoa(slices.Index(stepKinds, fileKind)) + "/"
 				for _, c := range e.Causes {
-					if strings.Contains(c.SchemaURL, branch) {
+					// A keyword of the branch itself, such as its not,
+					// has the branch's own location.
+					if strings.Contains(c.SchemaURL+"/", branch) {
 						walk(c)
 					}
 				}
@@ -199,6 +201,8 @@ func comparePointers(a, b string) int {
 // schema holding them.
 var notMessages = map[string]string{
 	"#/$defs/collection":                     "the collection is reserved: " + reservedMessage,
+	"#/oneOf/1":                              "batchSize is only allowed in data migrations",
+	"#/oneOf/2":                              "batchSize is only allowed in data migrations",
 	"#/$defs/noOut":                          "$out is not allowed: it replaces the whole target collection",
 	"#/$defs/noMerge":                        "$merge is only allowed as the last stage of an aggregate step in a merge migration",
 	"#/$defs/dataStep/else":                  "update is not allowed: deleteMany takes no update",

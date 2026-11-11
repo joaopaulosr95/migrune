@@ -1,0 +1,6 @@
+{
+  "id": "2026-01-01-077-batch-size-zero",
+  "description": "test fixture",
+  "batchSize": 0,
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": { "stale": true } }]
+}

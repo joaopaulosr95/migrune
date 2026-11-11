@@ -65,6 +65,11 @@ type Migration struct {
 	Steps       []Step
 	// Checksum is the hex SHA256 of the raw file bytes.
 	Checksum string
+	// BatchSize is the file's batchSize: 0 when absent. When set, the
+	// migration is a data migration with one updateMany or deleteMany step
+	// and no upsert option (checkBatchSize), run in batches of this many
+	// documents.
+	BatchSize int
 }
 
 // Step is one operation of a migration. Which fields are set depends on the
@@ -92,6 +97,7 @@ type file struct {
 	ID          string `bson:"id"`
 	Description string `bson:"description"`
 	Steps       []Step `bson:"steps"`
+	BatchSize   int    `bson:"batchSize,omitempty"`
 }
 
 // DateLayout is the layout of the date a migration id starts with.
@@ -192,7 +198,8 @@ func FileDate(id string) (string, error) {
 // LoadFile reads, validates and parses one migration file. The migration id
 // is the file name stem; LoadFile doesn't check the file name itself. A file
 // ReadFile refuses returns an error wrapping ErrNotRegular or ErrTooLarge. A
-// file that doesn't match the schema returns a *SchemaError; one that isn't
+// file that doesn't match the schema, or has a batchSize its steps don't
+// allow, returns a *SchemaError; one that isn't
 // JSON or Extended JSON returns an error wrapping ErrInvalidJSON or
 // ErrInvalidExtendedJSON, and one with a key twice in the same object an
 // error wrapping ErrDuplicateKey; one that names a reserved collection in a
@@ -234,6 +241,9 @@ func loadFile(path string) (Migration, string, error) {
 	if vs := ReservedCollections(f.Steps); len(vs) > 0 {
 		return Migration{}, "", &ReservedCollectionError{File: path, Violations: vs}
 	}
+	if vs := checkBatchSize(f); len(vs) > 0 {
+		return Migration{}, "", &SchemaError{File: path, Violations: vs}
+	}
 	return Migration{
 		ID:          id,
 		Path:        path,
@@ -241,7 +251,42 @@ func loadFile(path string) (Migration, string, error) {
 		Kind:        k,
 		Steps:       f.Steps,
 		Checksum:    Checksum(raw),
+		BatchSize:   f.BatchSize,
 	}, f.ID, nil
+}
+
+// checkBatchSize returns what the schema can't check of a file with a
+// batchSize, which the schema already allows only in data migrations: one
+// step, an updateMany or a deleteMany, without the upsert option. A batch
+// changes only documents the step's filter matched when the run started, by
+// _id, so one step has nothing to share a transaction with, and an upsert
+// has no document to batch.
+func checkBatchSize(f file) []Violation {
+	if f.BatchSize == 0 {
+		return nil
+	}
+	if len(f.Steps) != 1 {
+		return []Violation{{"/steps", fmt.Sprintf(
+			"batchSize allows exactly one step, got %d: put each step in a migration of its own", len(f.Steps))}}
+	}
+	var out []Violation
+	s := f.Steps[0]
+	if s.Operation != "updateMany" && s.Operation != "deleteMany" {
+		out = append(out, Violation{"/steps/0/operation", fmt.Sprintf(
+			"batchSize allows only updateMany or deleteMany, got %s", s.Operation)})
+	}
+	if s.Options != nil {
+		if _, err := s.Options.LookupErr("upsert"); err == nil {
+			out = append(out, Violation{"/steps/0/options/upsert",
+				"batchSize doesn't allow upsert: batches change only the documents the filter matched when the run started"})
+		}
+		if _, err := s.Options.LookupErr("collation"); err == nil {
+			out = append(out, Violation{"/steps/0/options/collation",
+				"batchSize doesn't allow collation: each batch selects its documents by _id, and through a collation " +
+					"that would also match string _ids outside the batch"})
+		}
+	}
+	return out
 }
 
 // Checksum returns the checksum of a migration file's raw bytes: their hex

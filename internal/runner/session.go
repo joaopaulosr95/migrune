@@ -14,6 +14,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
+// errCommitUnknown is the error of a commit whose outcome stayed unknown,
+// when there was no changelog entry to look up: the transaction may or may
+// not have committed, and its session was killed, so it won't commit later.
+var errCommitUnknown = errors.New("outcome unknown")
+
 // Transactions are retried on these error labels, and give up after these
 // bounds.
 const (
@@ -135,7 +140,7 @@ func (r *Run) transactionAttempt(fn func(ctx context.Context) error, commit bool
 // outcome is still unknown, the session is killed, so the transaction can't
 // commit later, and the changelog entry with _id entry is looked up: there,
 // the transaction committed; missing, it didn't. Without an entry an unknown
-// outcome is an error.
+// outcome is an error wrapping errCommitUnknown.
 func (r *Run) commit(sess *mongo.Session, entry *bson.ObjectID) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), CommitTimeout)
 	defer cancel()
@@ -150,13 +155,13 @@ func (r *Run) commit(sess *mongo.Session, entry *bson.ObjectID) error {
 	if !hasErrorLabel(err, labelUnknownCommit) && ctx.Err() == nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
-	if entry == nil {
-		return fmt.Errorf("commit transaction: outcome unknown: %w", err)
-	}
 	lctx, lcancel := context.WithTimeout(context.WithoutCancel(r.ctx), CommitTimeout)
 	defer lcancel()
 	if kerr := killSession(lctx, r.client, sess); kerr != nil {
 		r.log.Warn("could not kill the session of a commit with an unknown outcome", "error", r.errText(kerr))
+	}
+	if entry == nil {
+		return fmt.Errorf("commit transaction: %w: %w", errCommitUnknown, err)
 	}
 	// A linearizable read sees the commit if it landed on the primary and
 	// can't be rolled back; a majority read could miss one still

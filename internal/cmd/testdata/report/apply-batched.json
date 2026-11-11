@@ -1,0 +1,40 @@
+{
+  "version": "0.1.0",
+  "command": "apply",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "firstApply": false,
+  "migrations": [
+    {
+      "id": "2026-11-01-010-backfill-tier",
+      "kind": "data",
+      "status": "errored",
+      "durationMs": 950,
+      "error": "/steps/0 (updateMany on accounts): write exception: write errors: [(DocumentValidationFailure, code 121) {\"failingDocumentId\":7}]; committed 2 of 3 batches; server message hidden; rerun plan with --sample-values to see it",
+      "steps": [
+        {
+          "index": 0,
+          "operation": "updateMany",
+          "collection": "accounts",
+          "matched": 20000,
+          "modified": 20000,
+          "upserted": 0
+        }
+      ],
+      "batchSize": 10000,
+      "batches": 2
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 1,
+    "applied": 0,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 0,
+    "durationMs": 960
+  },
+  "error": "migration 2026-11-01-010-backfill-tier failed: /steps/0 (updateMany on accounts): write exception: write errors: [(DocumentValidationFailure, code 121) {\"failingDocumentId\":7}]; committed 2 of 3 batches; server message hidden; rerun plan with --sample-values to see it"
+}

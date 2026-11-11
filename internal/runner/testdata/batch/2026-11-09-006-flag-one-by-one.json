@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-09-006-flag-one-by-one",
+  "description": "Default flag to false on every item without it, one at a time",
+  "batchSize": 1,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "flag": { "$exists": false } },
+      "update": { "$set": { "flag": false } }
+    }
+  ]
+}

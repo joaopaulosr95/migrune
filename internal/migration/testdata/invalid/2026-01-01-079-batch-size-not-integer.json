@@ -1,0 +1,6 @@
+{
+  "id": "2026-01-01-079-batch-size-not-integer",
+  "description": "test fixture",
+  "batchSize": 10.5,
+  "steps": [{ "collection": "items", "operation": "deleteMany", "filter": { "stale": true } }]
+}

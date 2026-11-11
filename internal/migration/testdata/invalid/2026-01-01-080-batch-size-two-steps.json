@@ -1,0 +1,9 @@
+{
+  "id": "2026-01-01-080-batch-size-two-steps",
+  "description": "test fixture",
+  "batchSize": 100,
+  "steps": [
+    { "collection": "items", "operation": "deleteMany", "filter": { "stale": true } },
+    { "collection": "items", "operation": "updateMany", "filter": { "flag": { "$exists": false } }, "update": { "$set": { "flag": false } } }
+  ]
+}

@@ -119,10 +119,26 @@ To pass the double run:
 - **Use `deleteMany` with a precise filter.** There is no `deleteOne`: with a
   filter matching several documents, it deletes a different one on each run.
 
-Keep it small. MongoDB aborts transactions after 60 seconds by default
-(`transactionLifetimeLimitSeconds`), and large transactions hold old document
-versions in cache and conflict with live writes. For many documents, or data
-from another collection, write a merge migration.
+Keep it small. Large transactions hold old document versions in cache and
+conflict with live writes, so migrune limits what one can touch: before the
+transaction, in plan and in apply, it counts the documents each `updateMany`
+and `deleteMany` step's filter matches (with the step's `collation`, `hint`
+and `let`), and a step that matches more than 10,000 fails the migration
+before anything is written:
+
+```txt
+/steps/1 (updateMany on items) matches more than 10,000 documents: one transaction would hold them all; set batchSize (1 to 10,000) to run it in batches
+```
+
+`updateOne` steps aren't counted. The count is best effort: it runs outside
+the transaction, and before the migration's earlier steps, so documents
+those steps or other writers make match can take a step past the limit
+unseen. MongoDB also aborts a transaction that runs
+longer than `transactionLifetimeLimitSeconds`, 60 seconds by default; the
+error then contains `lower batchSize, or set it`. For more documents, set a
+[`batchSize`](#batched-data-migrations); for data from another collection,
+write a merge migration. Both errors are in
+[troubleshooting](troubleshooting.md#a-data-migration-is-too-large-for-one-transaction).
 
 plan runs the migration twice and aborts the transaction, so nothing is
 committed. Its report lists, for each step, what the first run matched,
@@ -130,7 +146,67 @@ modified, upserted or deleted: check those numbers before you approve, since
 a filter typo that matches every document still passes the double run. lint
 warns about a `deleteMany` or `updateMany` with the filter `{}`
 (`empty-filter`). If a data migration fails in apply, nothing of it was
-committed.
+committed, unless it has a `batchSize`.
+
+### Batched data migrations
+
+A backfill over more documents than one transaction may hold runs in
+batches: set `batchSize`, from 1 to 10,000, on a migration with a single
+`updateMany` or `deleteMany` step and no `upsert` or `collation` option.
+Each batch selects its documents by `_id`, and through a collation, such as a
+case-insensitive one, that would also match string `_id`s outside the batch.
+
+```json
+{
+  "id": "2026-11-05-007-backfill-plan-tier",
+  "description": "Default the plan tier to free on every account without one",
+  "batchSize": 1000,
+  "steps": [
+    {
+      "collection": "accounts",
+      "operation": "updateMany",
+      "filter": { "tier": { "$exists": false } },
+      "update": { "$set": { "tier": "free" } }
+    }
+  ]
+}
+```
+
+migrune reads the `_id`s the filter matches through one cursor, in `_id`
+order, outside any transaction (with the step's `hint` and `let`), and runs the step on each batch of `batchSize` of them, in a
+transaction of its own: the step
+restricted to the batch's `_id`s, the same again, and the check that the
+second run changed nothing. Each batch is fenced and committed on its own,
+and the last one writes the `Finished` entry, with the counts summed over the
+batches and how many there were. The 10,000-document limit doesn't apply: no
+batch holds more than `batchSize` documents. Every document is visited once,
+whatever the type of its `_id`, even when the update leaves it matching the
+filter.
+
+A migration with several dependent steps can't be batched: split it into one
+file per step, in the order they must run. Each file is then batched, and
+applied, on its own.
+
+What you give up:
+
+- **Atomicity.** A failure in a later batch leaves the earlier ones
+  committed, and the changelog says `Errored` with how many: see
+  [a batched migration failed part-way](troubleshooting.md#a-batched-migration-failed-part-way).
+  Every batch must leave the data valid for the running code, as any
+  migration must.
+- **plan's full check.** plan counts the matching documents and runs only
+  the first batch, so later batches can fail on documents plan never ran.
+  Its report says how many it checked:
+  `batched: checked 1,000 of 2,314,000 matching documents`.
+- **Documents written during the run.** A document inserted, or changed to
+  match the filter, while the run goes may not be visited, whatever its
+  `_id`: the server may sort the matching `_id`s up front. Deploy the code
+  that stops writing such documents first, or catch them with a later
+  migration.
+- **Very large `_id`s.** Each batch's step carries its `_id`s in an `$in`.
+  At a `batchSize` of 10,000, large custom `_id`s, such as long strings or
+  documents, can take the command near MongoDB's 16 MB limit; the batch then
+  fails with the server's error. Lower `batchSize` if so.
 
 ## Index migrations
 

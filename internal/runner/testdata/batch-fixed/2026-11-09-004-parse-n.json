@@ -1,0 +1,13 @@
+{
+  "id": "2026-11-09-004-parse-n",
+  "description": "Parse v into n, ten items at a time, -1 when it isn't a number",
+  "batchSize": 10,
+  "steps": [
+    {
+      "collection": "items",
+      "operation": "updateMany",
+      "filter": { "n": { "$exists": false } },
+      "update": [{ "$set": { "n": { "$convert": { "input": "$v", "to": "int", "onError": -1 } } } }]
+    }
+  ]
+}

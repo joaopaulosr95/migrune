@@ -143,6 +143,70 @@ under the same id**, and run again.
 If the migration shouldn't run at all, delete its file instead: a migration
 with only `Errored` entries isn't applied.
 
+## A data migration is too large for one transaction
+
+A data migration runs in one transaction, so migrune refuses one that would
+hold too many documents, or that runs too long. Either way the migration
+fails like any other (`Errored` in apply) and nothing of it is committed
+(for a batched migration, nothing of the failed batch).
+
+- A step matches more than 10,000 documents. plan and apply count each
+  `updateMany` and `deleteMany` step's matches before the transaction, and
+  fail before any write:
+
+  ```txt
+  /steps/1 (updateMany on items) matches more than 10,000 documents: one transaction would hold them all; set batchSize (1 to 10,000) to run it in batches
+  ```
+
+  `/steps/1` is the step's index in `steps`, from 0.
+  Batched migrations aren't counted: no batch holds more than its
+  `batchSize`.
+
+- The transaction ran longer than the server's
+  `transactionLifetimeLimitSeconds` (60 seconds by default), and the server
+  interrupted it. The error is the server's
+  `TransactionExceededLifetimeLimitSeconds` with a hint after it, which shows
+  with or without `--sample-values`:
+
+  ```txt
+  /steps/0 (updateMany on items, second run): (TransactionExceededLifetimeLimitSeconds, code 290); lower batchSize, or set it; server message hidden; rerun plan with --sample-values to see it
+  ```
+
+Run the step in batches: set
+[`batchSize`](writing-migrations.md#batched-data-migrations) on it, or a
+lower one if it has one, and move any other steps to files of their own,
+since a batched migration has one step. Filtering on the target state also
+keeps each second run cheap. Don't raise `transactionLifetimeLimitSeconds`
+for it: a long transaction holds old document versions in cache and conflicts
+with live writes.
+
+## A batched migration failed part-way
+
+A [batched migration](writing-migrations.md#batched-data-migrations) commits
+each batch on its own, so a failure in a later batch leaves the earlier ones
+applied. plan ran only the first batch, so a later one can fail on data plan
+never saw. apply records the migration as `Errored`, with how many batches
+committed after the step's error:
+
+```txt
+/steps/0 (updateMany on items): write exception: write errors: [(ConversionFailure, code 241)]; committed 1 of 3 batches; server message hidden; rerun plan with --sample-values to see it
+```
+
+The collection is partly migrated: the documents of the committed batches
+are changed, the rest aren't. The batch count is the number of batches the
+filter's matches made when the run started. The report row shows it too
+(`batched: committed 1 batch of up to 10 documents`, and `batches` in JSON).
+
+Fix the file and run again, as for any
+[migration that errored](#a-migration-errored): plan, then apply. That is
+safe, because every committed batch passed the double run: running the step
+again on its documents changes nothing, and a filter on the target state
+skips them. The rerun reads the matching `_id`s afresh and batches them from
+the start. Before a large backfill, run plan and apply against a staging copy
+of production data: plan's first batch is a sample, not the whole
+collection.
+
+
 ## A run was interrupted
 
 On the first SIGINT or SIGTERM (Ctrl+C, a cancelled job, a pod eviction),
@@ -150,8 +214,9 @@ migrune stops gracefully and exits 130 or 143:
 
 - no new migration starts;
 - the migration in progress is reported as `interrupted` and the rest as
-  `skipped`. A data migration's transaction is aborted; an index build is
-  left to finish on the server; a merge's aggregate is cancelled;
+  `skipped`. A data migration's transaction is aborted (a batched one's
+  earlier batches stay committed, and the error says how many); an index
+  build is left to finish on the server; a merge's aggregate is cancelled;
 - no changelog entry is written, so the migration stays pending; but a
   data migration whose commit was already sent lets it finish, for up to 30
   seconds, and is reported as `applied` if it committed;

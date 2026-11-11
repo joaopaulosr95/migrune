@@ -251,9 +251,16 @@ On large collections, both put the load of the migrations themselves on the
 primary, while holding the migration lock:
 
 - **Data migrations** run twice in their transaction, in plan and in apply,
-  and plan then aborts it. They are bounded by the server's transaction
-  lifetime, 60 seconds by default, which is why they
-  [stay small](writing-migrations.md#data-migrations).
+  and plan then aborts it. Before it, each `updateMany` and `deleteMany`
+  step's matching documents are counted, up to 10,001. A step matching more
+  than 10,000 documents fails, and the transaction is bounded by the
+  server's transaction lifetime, 60 seconds by default, which is why they
+  [stay small](writing-migrations.md#data-migrations). A
+  [batched](writing-migrations.md#batched-data-migrations) migration runs
+  each batch that way instead: plan counts every matching document and
+  runs the first batch; apply reads the matching `_id`s with one cursor and
+  runs every batch, a transaction each, so its run time grows with the
+  collection while each transaction stays small.
 - **Merge migrations**: plan runs each step's pipeline in full, without
   `$merge`, and compares every output document with its target. apply runs
   it up to three times: that comparison before, the pipeline with `$merge`,

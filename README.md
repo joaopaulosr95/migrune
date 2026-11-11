@@ -7,7 +7,7 @@ collection. Afterwards, `drift` checks that the indexes on the server are still
 the ones the applied migrations left.
 
 - **Three kinds of migration**: data (`updateOne`, `updateMany`,
-  `deleteMany` in one transaction), index (`createIndex`, `dropIndex`,
+  `deleteMany` in one transaction, or large backfills in batches), index (`createIndex`, `dropIndex`,
   `collModIndex`, and `collModCollection` for validation) and merge (an
   aggregation pipeline ending in `$merge`).
 - **Checked before they run**: lint works offline; plan runs every data
