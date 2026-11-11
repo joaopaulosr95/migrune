@@ -170,7 +170,8 @@ itself; the server does that during plan.
 
 Migrations are forward-only. To undo one, write a new migration that does the
 opposite; it goes through lint, plan, approval and the changelog like any
-other.
+other. plan and apply run lint's offline rules themselves, before connecting,
+so a pipeline that skips `migrune lint` can't run what lint rejects.
 
 Down migrations promise more than they deliver. They can't restore what a
 `$unset`, a `deleteMany` or a lossy conversion destroyed; they are rarely

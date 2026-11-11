@@ -2,9 +2,9 @@
 #
 # Add these jobs to your .gitlab-ci.yml and adjust the variables. In merge
 # request pipelines, migrate:lint checks the migration files, offline. On
-# every v* tag pipeline, migrate:plan lints them again, since plan and apply
-# don't run lint's rules and a tag can point at a commit no merge request
-# checked, then runs `migrune plan` and keeps the report and the plan digest
+# every v* tag pipeline, migrate:plan lints them again, which shows all of
+# lint's findings early (plan and apply also enforce lint's offline rules),
+# then runs `migrune plan` and keeps the report and the plan digest
 # as artifacts. migrate:apply is a manual job: whoever starts
 # it, after reading the plan, approves the run, and it runs
 # `migrune apply --digest-in`, which runs nothing unless the pending

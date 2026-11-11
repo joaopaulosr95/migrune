@@ -4,9 +4,28 @@
 directory, offline. Subdirectories are not read; lint warns about them
 (`ignored-entry`), as plan and apply do in their logs.
 
+The `checksum`, `applied-missing` and expected-indexes rules need a database
+or a file and run only in `migrune lint`.
+
 With `--uri` and `--db`, lint also reads the target database's changelog,
 read-only, and runs the `checksum` and `applied-missing` rules. `--uri` without `--db` is a usage
 error; `--db` alone keeps lint offline.
+
+## In plan and apply
+
+plan and apply run lint's offline rules too, before connecting, and log the
+warnings. An error finding fails them, printed as in [output](#output), with
+lint's exit status, unless its file is a migration the namespace has already applied: one
+with a `Finished` changelog entry of the same id and checksum. Such a file
+never runs again, so its errors can't reach the database: plan and apply log
+each one once, as a warning about an already-applied migration, and go on.
+Every other error fails the command after it connects and reads the changelog,
+before it takes the lock or writes anything. This covers an error in a
+pending file caused by an applied one, such as an `index-conflict` with an
+index an applied migration created: the finding is on the pending file. Under
+`--mutable`, an edited applied file runs again, and its checksum differs, so
+its errors fail the run too. `migrune lint` reports every file, applied or
+not.
 
 ## Output
 

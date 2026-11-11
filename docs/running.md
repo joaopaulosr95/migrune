@@ -164,10 +164,13 @@ values when `on` is a natural key such as an email address. Leave
 `--sample-values` off in CI unless its logs and artifacts are as protected
 as the database.
 
-Run lint before plan in every pipeline that plans: in pull requests, and in
-the release or tag pipeline too, as the first step of the plan job, as both
-examples do. plan and apply don't run lint's rules, such as `server-js` or
-`volatile-merge`, and a tag can point at a commit no pull request checked.
+plan and apply run lint's offline rules themselves: an error finding (such as
+`server-js`) in a file they could run prints like `migrune lint` does and
+fails the command with the same exit status, and warnings are logged. Errors in
+already-applied migrations are only logged (see
+[lint in plan and apply](reference/lint-rules.md#in-plan-and-apply)). Keep lint as a
+pull-request check, and in the release or tag pipeline as the first step of
+the plan job, as both examples do, so authors see findings before a deploy.
 lint needs no database; add `MIGRUNE_URI` and `--db`, with a read-only user
 in pull requests, to also catch edited or deleted applied migrations, and
 `--expected-indexes <file>` if your application declares indexes (see

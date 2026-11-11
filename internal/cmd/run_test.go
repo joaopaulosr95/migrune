@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -1023,4 +1025,201 @@ func TestInit(t *testing.T) {
 		!strings.HasSuffix(err.Error(), ": --init is only for a namespace's first apply; remove it") {
 		t.Fatalf("second apply --init: %v\n%s", err, out)
 	}
+}
+
+// copyDir copies the regular files of src into a new temporary directory.
+func copyDir(t *testing.T, src string) string {
+	t.Helper()
+	dst := t.TempDir()
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dst
+}
+
+// TestRunLintsOffline checks plan and apply run lint's offline rules before
+// connecting: an error finding doesn't fail them yet, since it may be in an
+// applied migration (TestRunLintApplied), so they go on to connect, with
+// nothing on stdout; a warning-only directory goes on to connect too. Both
+// fail there, on a canceled context. No database is needed.
+func TestRunLintsOffline(t *testing.T) {
+	rules := filepath.Join("..", "lint", "testdata", "rules")
+	for _, command := range []string{"plan", "apply"} {
+		t.Run(command+" error", func(t *testing.T) {
+			dir := copyDir(t, filepath.Join(rules, "server-js", "fail"))
+			var stdout, stderr bytes.Buffer
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err := Execute(ctx, append(localArgs(command), "--dir", dir, "--uri", "mongodb://127.0.0.1:1", "--db", "app"), &stdout, &stderr)
+			if err == nil || strings.Contains(err.Error(), "lint failed") || !errors.Is(err, context.Canceled) {
+				t.Fatalf("got %v, want a failure from connecting", err)
+			}
+			if stdout.Len() != 0 || strings.Contains(stderr.String(), "server-js") {
+				t.Errorf("stdout %q, stderr %q: want no findings before connecting", stdout.String(), stderr.String())
+			}
+		})
+		t.Run(command+" warning", func(t *testing.T) {
+			dir := copyDir(t, filepath.Join(rules, "ignored-entry", "fail"))
+			var stdout, stderr bytes.Buffer
+			// A canceled context makes the connection fail at once.
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err := Execute(ctx, append(localArgs(command), "--dir", dir, "--uri", "mongodb://127.0.0.1:1", "--db", "app"), &stdout, &stderr)
+			if err == nil || strings.Contains(err.Error(), "lint failed") {
+				t.Fatalf("got %v, want a failure after lint, from connecting", err)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("got %v, want the failure to come from connecting", err)
+			}
+			// Each ignored entry is warned about once, not by LoadDir and
+			// again by lint.
+			for _, name := range []string{"2026-11-05-002-upper.JSON", "2026-11-05-003-five.json5", "2026-11-05-004-commented.jsonc"} {
+				if got := strings.Count(stderr.String(), filepath.Join(dir, name)); got != 1 {
+					t.Errorf("%s logged %d times, want 1:\n%s", name, got, stderr.String())
+				}
+			}
+		})
+	}
+}
+
+// insertFinished writes a Finished changelog entry in the default namespace
+// for the migration file path, with its checksum, as an earlier run would
+// have.
+func insertFinished(t *testing.T, db *mongo.Database, path string) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	id := strings.TrimSuffix(filepath.Base(path), ".json")
+	_, err = db.Collection(runner.ChangelogCollection).InsertOne(context.Background(), bson.D{
+		{Key: "_id", Value: bson.NewObjectID()},
+		{Key: "v", Value: int32(1)},
+		{Key: "migrationId", Value: id},
+		{Key: "checksum", Value: hex.EncodeToString(sum[:])},
+		{Key: "createdAt", Value: time.Now()},
+		{Key: "runner", Value: "v1-runner"},
+		{Key: "approvedBy", Value: bson.D{{Key: "name", Value: ""}, {Key: "email", Value: ""}}},
+		{Key: "status", Value: "Finished"},
+		{Key: "migration", Value: bson.D{{Key: "id", Value: id}, {Key: "description", Value: "test fixture"}, {Key: "steps", Value: bson.A{}}}},
+		{Key: "results", Value: bson.A{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRunLintApplied checks plan and apply leave out lint's errors in an
+// applied migration, one with a Finished entry of the same checksum, logging
+// each once as a warning, and fail as before, with the findings on stdout and
+// before any write, on an error in a file that would run: a pending one, one
+// that conflicts with an applied one in the index replay, or an edited applied
+// one under --mutable.
+func TestRunLintApplied(t *testing.T) {
+	serverJS := filepath.Join("..", "lint", "testdata", "rules", "server-js", "fail")
+	const where, function = "2026-11-01-001-where-filter", "2026-11-01-002-function-update"
+	run := func(t *testing.T, uri string, db *mongo.Database, args ...string) (stdout, stderr string, err error) {
+		t.Helper()
+		t.Setenv("MIGRUNE_URI", uri)
+		t.Setenv("MIGRUNE_DB", db.Name())
+		var out, logs bytes.Buffer
+		_, err = Execute(context.Background(), args, &out, &logs)
+		t.Logf("migrune %s: %v\nstdout:\n%s\nstderr:\n%s", strings.Join(args, " "), err, out.String(), logs.String())
+		return out.String(), logs.String(), err
+	}
+	// wantLintFailure checks a run failed on lint with a finding on file
+	// only, and wrote nothing.
+	wantLintFailure := func(t *testing.T, db *mongo.Database, args []string, uri, file, rule string) {
+		t.Helper()
+		before := entries(t, db)
+		out, _, err := run(t, uri, db, append(args, "-o", "json")...)
+		if err == nil || !strings.HasPrefix(err.Error(), "lint failed: ") || errors.As(err, new(*UsageError)) {
+			t.Fatalf("got %v, want a lint failure", err)
+		}
+		var findings []map[string]string
+		if err := json.Unmarshal([]byte(out), &findings); err != nil {
+			t.Fatalf("findings aren't JSON: %v\n%s", err, out)
+		}
+		if len(findings) == 0 {
+			t.Fatalf("no findings")
+		}
+		for _, f := range findings {
+			if filepath.Base(f["file"]) != file+".json" || f["severity"] != "error" || f["rule"] != rule {
+				t.Errorf("finding %v, want a %s error on %s", f, rule, file)
+			}
+		}
+		if after := entries(t, db); len(after) != len(before) {
+			t.Errorf("%d changelog entries, had %d", len(after), len(before))
+		}
+		if n, err := db.Collection(runner.LockCollection).CountDocuments(context.Background(), bson.D{}); err != nil || n != 0 {
+			t.Errorf("took the lock: %d documents, %v", n, err)
+		}
+	}
+
+	t.Run("applied", func(t *testing.T) {
+		uri, db := testTarget(t)
+		dir := t.TempDir()
+		addMigration(t, dir, serverJS, where)
+		insertFinished(t, db, filepath.Join(dir, where+".json"))
+		addMigration(t, dir, runnerFixtures("data"), seed)
+		for _, command := range []string{"plan", "apply"} {
+			out, logs, err := run(t, uri, db, append(localArgs(command), "--dir", dir)...)
+			if err != nil {
+				t.Fatalf("%s: %v", command, err)
+			}
+			if !hasRow(out, seed, "applied") {
+				t.Errorf("%s report:\n%s\nwant %s run", command, out, seed)
+			}
+			if got := strings.Count(logs, "already-applied migration"); got != 1 ||
+				!strings.Contains(logs, where+".json: warning: server-js: ") {
+				t.Errorf("%s logged the applied migration's finding %d times, want once as a warning:\n%s", command, got, logs)
+			}
+		}
+
+		// The same error in a pending file fails, the applied one's
+		// left out.
+		addMigration(t, dir, serverJS, function)
+		for _, command := range []string{"plan", "apply"} {
+			wantLintFailure(t, db, append(localArgs(command), "--dir", dir), uri, function, "server-js")
+		}
+	})
+
+	t.Run("index replay", func(t *testing.T) {
+		uri, db := testTarget(t)
+		dir := copyDir(t, filepath.Join("..", "lint", "testdata", "replay", "conflict-same-definition"))
+		insertFinished(t, db, filepath.Join(dir, "2026-11-01-001-create.json"))
+		for _, command := range []string{"plan", "apply"} {
+			wantLintFailure(t, db, append(localArgs(command), "--dir", dir), uri, "2026-11-01-002-rename", "index-conflict")
+		}
+	})
+
+	t.Run("mutable", func(t *testing.T) {
+		uri, db := testTarget(t)
+		dir := t.TempDir()
+		addMigration(t, dir, serverJS, where)
+		path := filepath.Join(dir, where+".json")
+		insertFinished(t, db, path)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		wantLintFailure(t, db, []string{"apply", "--no-digest", "--mutable", "--dir", dir}, uri, where, "server-js")
+	})
 }

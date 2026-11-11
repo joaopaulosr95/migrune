@@ -2,8 +2,8 @@
 #
 # Copy this file to .github/workflows/migrate.yaml and adjust the env block.
 # On pull requests, the lint job checks the migration files, offline. On
-# every v* tag, the plan job lints them again, since plan and apply don't run
-# lint's rules and a tag can point at a commit no pull request checked, then
+# every v* tag, the plan job lints them again, which shows all of lint's
+# findings early (plan and apply also enforce lint's offline rules), then
 # runs `migrune plan` and uploads the report and the plan digest. The apply
 # job waits for someone to approve the `production` environment, then runs
 # `migrune apply --digest-in`, which runs nothing unless the pending

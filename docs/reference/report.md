@@ -14,6 +14,10 @@ The report is also written when the run fails or is interrupted; the
 No report is written when the run stops before it holds the migration lock:
 invalid flags, invalid migration files, an unreachable server, an apply
 refused for [`--init`](#first-apply), or a lock held by another runner.
+When plan or apply stop on a [lint](lint-rules.md#in-plan-and-apply)
+error, stdout has lint's error findings in place of the report, in lint's
+format: with `-o json`, lint's [JSON array](lint-rules.md#output) of
+findings, not a report object.
 
 `--output` (`-o`) picks the format: `table` (the default) or `json`.
 
