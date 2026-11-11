@@ -422,7 +422,7 @@ func TestCollModInterrupted(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		rep, err := Execute(ctx, db, load(t, fixtureDir(t, "collmod", hideName)), Options{Logger: testLogger(t)}, Config{Mode: ModeApply})
+		rep, err := Execute(ctx, db, load(t, fixtureDir(t, "collmod", hideName)), Options{Logger: testLogger(t)}, Config{Mode: ModeApply, Init: true})
 		done <- result{rep, err}
 	}()
 	waitFailPoint(t, parent, client, fired+1)

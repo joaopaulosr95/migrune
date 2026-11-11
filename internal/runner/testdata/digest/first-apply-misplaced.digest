@@ -1,0 +1,7 @@
+0000000000000000000000000000000000000000000000000000000000000000
+migrune-digest-v1
+database app
+replicaSet rs0
+deployment none
+migration 2026-11-01-001-a aaaa
+first-apply

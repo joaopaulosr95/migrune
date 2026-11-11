@@ -32,6 +32,14 @@ disappears; otherwise environments that applied different versions would
 silently disagree, and a revert would look like a rollback. Retiring a
 migration is an explicit act: delete its changelog entries.
 
+**A first apply is explicit.** A wrong `--db` or `--namespace` finds no
+changelog entries, so every migration would look pending and run again.
+apply refuses a namespace with no entries unless `--init` is set, and
+refuses `--init` once the namespace has entries, so a pipeline can't keep
+it on and lose the check; both refusals come before it takes the lock or
+writes anything. plan flags the first apply in its report and digest, so a
+reviewer sees it before approving (see [first deploy](running.md#first-deploy)).
+
 **Reads come from the primary.** migrune reads from the primary with read
 concern `majority`, whatever the URI's `readPreference` and
 `readConcernLevel` (see [credentials](running.md#credentials)). A
@@ -66,8 +74,8 @@ non-idempotent data migrations, type changes, duplicate merge keys and index
 conflicts against the actual data. It can't prove a merge converges: that
 shows only once apply has written (`diffCountAfter`). It then
 writes a digest of the target database and replica set names, the
-deployment (the UUID of its `migrations_changelog` collection), the pending
-ids and checksums. apply requires it (`--digest-in`, unless `--no-digest`
+deployment (the UUID of its `migrations_changelog` collection), whether it
+is the namespace's first apply, the pending ids and checksums. apply requires it (`--digest-in`, unless `--no-digest`
 for a local run) and runs nothing if its own digest differs, so a plan made
 on staging can't approve production, even when their names are the same.
 A snapshot clone of a database keeps the collection's UUID, so a plan

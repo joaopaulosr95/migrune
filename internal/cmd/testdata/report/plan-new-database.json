@@ -5,6 +5,7 @@
   "startedAt": "2026-11-08T10:30:00.125Z",
   "runner": "ci-42",
   "newDatabase": true,
+  "firstApply": true,
   "digest": "1d1ed6ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b",
   "migrations": [
     {

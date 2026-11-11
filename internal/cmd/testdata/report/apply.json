@@ -9,6 +9,7 @@
     "email": "ada@example.com"
   },
   "newDatabase": false,
+  "firstApply": false,
   "digest": "f5db59303fc5cbe2a1554003b52fff9a9837b972373428d889dc3c0726d274bc",
   "migrations": [
     {

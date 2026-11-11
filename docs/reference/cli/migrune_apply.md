@@ -11,7 +11,9 @@ Finished changelog entry only if the second run changed nothing. Index and
 merge migrations run outside a transaction; merges are checked before and
 after writing. apply stops at the first migration that fails. It first checks
 that its run matches the plan's digest (--digest-in); --no-digest skips that
-check, for local runs.
+check, for local runs. A namespace's first apply, when the changelog has
+no entries for it, needs --init, so a mistyped --db or --namespace can't run
+every migration.
 
 What apply checks and reports: docs/reference/report.md, in
 https://github.com/joaopaulosr95/migrune.
@@ -29,6 +31,7 @@ migrune apply [flags]
       --digest-in string             plan digest file (plan --digest-out) the run must match; required unless --no-digest
       --dir string                   directory holding the migration files
   -h, --help[=true|false]            help for apply
+      --init[=true|false]            allow the namespace's first apply, when the changelog has no entries for it; refused once it has
       --lock-ttl duration            shortest time the migration lock lives without a heartbeat, in whole seconds, at least 61s; it expires after the longer of this and 3 heartbeat intervals (30s). Keep it above the server's transactionLifetimeLimitSeconds (60s by default), so the lock can't expire while a migration's transaction is open (default 1m30s)
       --lock-wait duration           how long to keep trying, with backoff, to take a migration lock held by another runner; 0 fails at once. A lock still held after the wait exits with code 3
       --mutable[=true|false]         re-run finished migrations whose file changed instead of failing (local use only; needs --no-digest)

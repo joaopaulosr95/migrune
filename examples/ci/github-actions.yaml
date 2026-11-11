@@ -148,6 +148,9 @@ jobs:
           echo "MIGRUNE_APPROVED_BY_NAME=${login}" >> "$GITHUB_ENV"
           echo "MIGRUNE_APPROVED_BY_EMAIL=${id}+${login}@users.noreply.github.com" >> "$GITHUB_ENV"
 
+      # A namespace's first deploy to an environment needs --init, and every
+      # later one is refused with it: add --init for that one run only (see
+      # docs/running.md, First deploy).
       - name: Apply
         env:
           MIGRUNE_URI: ${{ secrets.MIGRUNE_URI }}

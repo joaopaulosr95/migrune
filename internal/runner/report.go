@@ -47,6 +47,10 @@ type Report struct {
 	// collection) and no changelog entry when the run started: a mistyped
 	// --db targets a new, empty database.
 	NewDatabase bool `json:"newDatabase"`
+	// FirstApply is set when the changelog had no entry, of any status,
+	// for the run's namespace when the run started: apply runs only with
+	// Config.Init then.
+	FirstApply bool `json:"firstApply"`
 	// Digest is the digest of DigestInput. plan writes both with
 	// --digest-out. Absent when the run stopped before reading the
 	// changelog.

@@ -50,6 +50,9 @@ flag, a run uses the default namespace. A namespace scopes:
 - **the [plan digest](reference/report.md#plan-digest)**: a plan made for one
   namespace doesn't approve another's apply.
 
+A new namespace's first apply needs `--init`, like any
+[first deploy](#first-deploy).
+
 It doesn't scope collections or indexes: every namespace migrates the same
 database, and plan's index preview sees every index `listIndexes` returns,
 whichever namespace created it. drift replays only its namespace's migrations,
@@ -106,14 +109,36 @@ migration blocks the deploy. Ready-to-adapt files:
 1. **plan** runs `migrune plan --digest-out plan.digest`. Once every
    migration passed, it writes the **plan digest**, a hash of the target
    database and replica set names, the deployment (the UUID of its
-   `migrations_changelog` collection), the pending migration ids and their
-   file checksums. Keep the report and the digest as job artifacts.
+   `migrations_changelog` collection), whether it is the namespace's
+   [first deploy](#first-deploy), the pending migration ids and their file
+   checksums. Keep the report and the digest as job artifacts.
 2. A person reads the report and approves the apply job.
 3. **apply** runs `migrune apply --digest-in plan.digest`. It computes the
    digest of its own run first; if a migration was added, edited or applied
    in between, or apply targets another deployment, database or replica set
    than plan did, the digests differ, apply runs nothing and exits 1, naming
    what differs: plan again (see [the digest](reference/report.md#plan-digest)).
+
+### First deploy
+
+A namespace's first apply, against a database whose changelog has no entries
+for it, runs every migration. So does an apply with a mistyped `--db` or
+`--namespace`, so apply refuses it unless `--init` (`MIGRUNE_INIT=true`) is
+set (see [first apply](reference/report.md#first-apply)). The first deploy
+of each namespace in each environment is:
+
+1. **plan**, as usual. It warns `first apply for namespace <name> on
+   database <db>`, its report says `First apply:` and its digest records it.
+2. **Review**: every migration is pending; check the database and namespace
+   are the ones you meant.
+3. **apply `--init`**, with the plan's digest. Set `--init` for this run
+   only, for instance as a manual input of the apply job: apply refuses
+   `--init` once the namespace has entries, so a pipeline that keeps it
+   fails on its next deploy instead of silently losing the check.
+
+Every later apply runs without `--init`. A plan made for the first apply
+doesn't match an apply after the namespace got entries, and the other way
+round.
 
 Both jobs need the same migrune version and the same commit. apply refuses
 to run without `--digest-in` (exit 2); `--no-digest` (`MIGRUNE_NO_DIGEST`)

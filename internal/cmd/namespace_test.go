@@ -50,14 +50,16 @@ func TestNamespaces(t *testing.T) {
 	api := migrationsDir(t, setFlag)
 	web := migrationsDir(t, seed)
 
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", api, "--namespace", "api"); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", api, "--namespace", "api"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("MIGRUNE_NAMESPACE", "web")
+	t.Setenv("MIGRUNE_INIT", "true")
 	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", web); err != nil {
-		t.Fatalf("apply from MIGRUNE_NAMESPACE: %v", err)
+		t.Fatalf("apply from MIGRUNE_NAMESPACE and MIGRUNE_INIT: %v", err)
 	}
 	t.Setenv("MIGRUNE_NAMESPACE", "")
+	os.Unsetenv("MIGRUNE_INIT")
 
 	got := map[string]string{}
 	for _, e := range entries(t, db) {
@@ -106,7 +108,7 @@ func TestNamespaces(t *testing.T) {
 func TestNamespaceErrored(t *testing.T) {
 	uri, db := testTarget(t)
 	seedItems(t, db)
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", migrationsDir(t, incCounter), "--namespace", "api"); err == nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", migrationsDir(t, incCounter), "--namespace", "api"); err == nil {
 		t.Fatal("apply of a non-idempotent migration succeeded")
 	}
 	es := entries(t, db)
@@ -160,17 +162,17 @@ func TestDefaultNamespace(t *testing.T) {
 	}
 	// Nor is the default entry applied but missing for a directory without
 	// its file.
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", migrationsDir(t, seed), "--namespace", "api"); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", migrationsDir(t, seed), "--namespace", "api"); err != nil {
 		t.Fatalf("apply in api without the default namespace's file: %v", err)
 	}
 
 	// A fresh database whose changelog holds only api's entries: the
 	// default namespace's directory has none of their files, and runs.
 	_, other := testTarget(t)
-	if _, err := migrune(t, uri, other, "apply", "--no-digest", "--dir", migrationsDir(t, setFlag), "--namespace", "api"); err != nil {
+	if _, err := migrune(t, uri, other, "apply", "--no-digest", "--init", "--dir", migrationsDir(t, setFlag), "--namespace", "api"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := migrune(t, uri, other, "apply", "--no-digest", "--dir", migrationsDir(t, seed))
+	out, err := migrune(t, uri, other, "apply", "--no-digest", "--init", "--dir", migrationsDir(t, seed))
 	if err != nil || !hasRow(out, seed, "applied") || strings.Contains(out, "Applied but missing") || strings.Contains(out, "Namespace:") {
 		t.Fatalf("default apply next to api's entries: %v\n%s", err, out)
 	}
@@ -206,12 +208,12 @@ func TestNamespaceDigest(t *testing.T) {
 		}
 		digests[namespace] = string(raw)
 	}
-	// Pinned: the version, database, replica set, deployment and migration
-	// lines, with no namespace line.
+	// Pinned: the version, database, replica set, deployment, first-apply
+	// and migration lines, with no namespace line.
 	lines := strings.Split(digests[""], "\n")
-	if len(lines) != 7 || lines[1] != runner.DigestVersion || lines[2] != "database "+db.Name() ||
-		!strings.HasPrefix(lines[3], "replicaSet ") || (!strings.HasPrefix(lines[4], "deployment ") || lines[4] == "deployment none") ||
-		!strings.HasPrefix(lines[5], "migration "+setFlag+" ") || lines[6] != "" {
+	if len(lines) != 8 || lines[1] != runner.DigestVersion || lines[2] != "database "+db.Name() ||
+		!strings.HasPrefix(lines[3], "replicaSet ") || (!strings.HasPrefix(lines[4], "deployment ") || lines[4] == "deployment none") || lines[5] != "first-apply" ||
+		!strings.HasPrefix(lines[6], "migration "+setFlag+" ") || lines[7] != "" {
 		t.Errorf("default digest file:\n%s", digests[""])
 	}
 	d, err := runner.ReadDigestFile(filepath.Join(tmp, "plan-.digest"))
@@ -228,12 +230,12 @@ func TestNamespaceDigest(t *testing.T) {
 		t.Error("two namespaces have the same digest")
 	}
 
-	_, err = migrune(t, uri, db, "apply", "--dir", dir, "--namespace", "web", "--digest-in", filepath.Join(tmp, "plan-api.digest"))
+	_, err = migrune(t, uri, db, "apply", "--init", "--dir", dir, "--namespace", "web", "--digest-in", filepath.Join(tmp, "plan-api.digest"))
 	var mismatch *runner.DigestMismatchError
 	if !errors.As(err, &mismatch) || !strings.Contains(err.Error(), `the namespace is "web", the plan's was "api"`) {
 		t.Fatalf("apply in web with api's plan: %v, want a digest mismatch naming the namespace", err)
 	}
-	if _, err := migrune(t, uri, db, "apply", "--dir", dir, "--namespace", "api", "--digest-in", filepath.Join(tmp, "plan-api.digest")); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--init", "--dir", dir, "--namespace", "api", "--digest-in", filepath.Join(tmp, "plan-api.digest")); err != nil {
 		t.Errorf("apply in api with api's plan: %v", err)
 	}
 }
@@ -242,7 +244,7 @@ func TestNamespaceDigest(t *testing.T) {
 // entries.
 func TestNamespaceOnlineLint(t *testing.T) {
 	uri, db := testTarget(t)
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", migrationsDir(t, setFlag), "--namespace", "api"); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", migrationsDir(t, setFlag), "--namespace", "api"); err != nil {
 		t.Fatal(err)
 	}
 	dir := migrationsDir(t, seed)
@@ -286,7 +288,7 @@ func TestChangelogIndex(t *testing.T) {
 					t.Fatalf("plan created the changelog index: %s", keys)
 				}
 			}
-			if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
+			if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir); err != nil {
 				t.Fatal(err)
 			}
 			if keys := changelogIndexKeys(t, coll); keys != want {

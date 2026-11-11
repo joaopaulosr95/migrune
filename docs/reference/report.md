@@ -12,8 +12,8 @@ The report is also written when the run fails or is interrupted; the
 [exit code](env-and-exit-codes.md#exit-codes) still tells the outcome.
 
 No report is written when the run stops before it holds the migration lock:
-invalid flags, invalid migration files, an unreachable server, or a lock held
-by another runner.
+invalid flags, invalid migration files, an unreachable server, an apply
+refused for [`--init`](#first-apply), or a lock held by another runner.
 
 `--output` (`-o`) picks the format: `table` (the default) or `json`.
 
@@ -38,14 +38,30 @@ by another runner.
 
 Migrations already applied with an unchanged file are left out.
 
-### New databases
+### First apply
 
-When the target database has no collections, apart from migrune's own,
-`migrations_lock` and an empty `migrations_changelog`, which an earlier plan
-leaves behind, plan and apply log a warning, set `newDatabase` to `true` and
-say `(new: it had no collections)` after the database name in the table.
-Migrations against a new database are expected on a first deploy; anywhere
-else, check `--db` for a typo before approving.
+A namespace's first apply is the one that finds no changelog entry, of any
+status, for its [namespace](../running.md#several-apps-on-one-database) in
+the target database: every migration is pending. A mistyped `--db` or
+`--namespace` looks the same, so apply refuses it unless `--init` is set, and
+refuses `--init` once the namespace has entries. Both refusals come before
+apply takes the lock or writes anything, with no report (see
+[troubleshooting](../troubleshooting.md#apply-needs---init)).
+
+plan, finding no entry, logs a warning, `first apply for namespace <name> on
+database <db>` (`the default namespace` in place of `namespace <name>`), sets
+`firstApply` to `true` and prints a `First apply:` line in the table; its
+[digest](#plan-digest) gets a `first-apply` line, so the plan matches only an
+apply that is still a first apply. apply with `--init` sets `firstApply` and
+prints the line too, and logs `first apply for namespace <name> on database
+<db> (--init)`, followed by the other namespaces the changelog has entries
+for, if any. Check `--db` and `--namespace` before approving such a plan.
+
+When the target database also has no collections at all, apart from
+migrune's own, `migrations_lock` and an empty `migrations_changelog`, which
+an earlier plan leaves behind, plan and apply set
+`newDatabase` to `true` and say `(new: it had no collections)` after the
+database name in the table.
 
 ## Statuses
 
@@ -164,6 +180,7 @@ conversion check shows the keys instead of the `_id`s.
   "runner": "ci-42",
   "approvedBy": { "name": "Ada Lovelace", "email": "ada@example.com" },
   "newDatabase": false,
+  "firstApply": false,
   "digest": "f5db59303fc5cbe2a1554003b52fff9a9837b972373428d889dc3c0726d274bc",
   "migrations": [
     {
@@ -214,7 +231,8 @@ conversion check shows the keys instead of the `_id`s.
 | `startedAt`               | string           | When the run started, RFC 3339 in UTC to the millisecond, e.g. `2026-11-08T10:30:00.125Z`.                   |
 | `runner`                  | string           | The runner id the run held the lock under, as in the logs and the changelog.                                 |
 | `approvedBy`              | object, optional | apply only: `name` and `email`, as given by `--approved-by-name` and `--approved-by-email`, and recorded in the changelog. Absent in plan and when neither is set. |
-| `newDatabase`             | boolean          | `true` when the target database had no collections, apart from `migrations_lock` and an empty `migrations_changelog`, when the run started. See [new databases](#new-databases). |
+| `newDatabase`             | boolean          | `true` when the target database had no collections, apart from `migrations_lock` and an empty `migrations_changelog`, when the run started. See [first apply](#first-apply). |
+| `firstApply`              | boolean          | `true` when the changelog had no entry, of any status, for the run's namespace when the run started: apply needs `--init`. See [first apply](#first-apply). |
 | `digest`                  | string, optional | The run's [plan digest](#plan-digest): in plan, what `--digest-out` writes; in apply, what `--digest-in` must match. Absent when the run failed before reading the changelog. |
 | `migrations`              | array            | One row per migration considered, in id order. Empty when nothing is pending.                                |
 | `migrations[].id`         | string           | The migration id: the file name without `.json`.                                                             |
@@ -393,8 +411,11 @@ Error: migration 2026-11-01-002-inc-counter failed: ...
 ```
 
 The table starts with the target database, followed by `(new: it had no
-collections)` for a [new database](#new-databases), then, in a named
-namespace, a `Namespace: <name>` line. With no row, the table prints `No
+collections)` for a [new database](#first-apply), then, in a named
+namespace, a `Namespace: <name>` line, then, on a [first apply](#first-apply),
+`First apply: the changelog has no entries for this namespace; apply needs
+--init` (plan) or `First apply: the changelog had no entries for this
+namespace` (apply). With no row, the table prints `No
 pending migrations.` in place of the header and rows; the JSON has
 `"migrations": []`.
 
@@ -537,6 +558,7 @@ database <name>
 replicaSet <name>
 deployment <uuid>
 namespace <name>
+first-apply
 migration <id> <checksum>
 ```
 
@@ -557,11 +579,16 @@ migration <id> <checksum>
   the original: harmless, since both hold the same changelog.
 - `namespace` is `--namespace`, only when it is set: a default-namespace
   digest has no such line.
+- `first-apply` is there only when the changelog has no entry for the
+  namespace ([first apply](#first-apply)), read before the lock like
+  `deployment`. A plan made for a first apply doesn't match once the
+  namespace has entries, and the other way round.
 - One `migration` line per pending migration, sorted by id, with the
   SHA-256 of its file.
 
 So apply against another deployment, database, replica set or namespace,
-with a migration added, edited or applied since, fails before running
+with a migration added, edited or applied since, or after the namespace's
+first apply happened elsewhere, fails before running
 anything, and its error names each part that differs, the deployment first.
 
 The file holds the digest on its first line, followed by the input:

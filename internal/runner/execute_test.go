@@ -31,10 +31,15 @@ const (
 )
 
 // execute runs Execute with a test logger and checks the lock is released.
+// An apply gets Config.Init when the namespace has no changelog entry, as a
+// first apply needs: TestInit checks the guard itself.
 func execute(t *testing.T, ctx context.Context, db *mongo.Database, ms []migration.Migration, o Options, c Config) (*Report, error) {
 	t.Helper()
 	if o.Logger == nil {
 		o.Logger = testLogger(t)
+	}
+	if c.Mode == ModeApply {
+		c.Init = !hasEntries(t, ctx, db, o.Namespace)
 	}
 	rep, err := Execute(ctx, db, ms, o, c)
 	if doc := readLock(t, ctx, db); doc != nil {
@@ -117,12 +122,12 @@ func TestExecuteDataMigrations(t *testing.T) {
 				t.Errorf("report %+v", rep)
 			}
 			// The changelog collection didn't exist before the run: the run
-			// created it.
+			// created it, and it's a first apply.
 			created, err := ChangelogDeployment(ctx, db)
 			if err != nil || created == DeploymentNone {
 				t.Fatalf("deployment after the run: %q, %v", created, err)
 			}
-			if want := NewDigestInput(db.Name(), "", created, ms).Sum(); rep.Digest != want {
+			if want := withFirstApply(NewDigestInput(db.Name(), "", created, ms), true).Sum(); rep.Digest != want {
 				t.Errorf("digest %s, want %s", rep.Digest, want)
 			}
 			// The first run's counts, the same whether committed or not.
@@ -547,7 +552,7 @@ func TestDigestCheck(t *testing.T) {
 	rep, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, Digest: planned.DigestInput})
 	var dm *DigestMismatchError
 	deployment := planned.DigestInput.Deployment
-	if !errors.As(err, &dm) || dm.Plan != planned.DigestInput || dm.Run.Sum() != NewDigestInput(db.Name(), "", deployment, ms).Sum() ||
+	if !errors.As(err, &dm) || dm.Plan != planned.DigestInput || dm.Run.Sum() != withFirstApply(NewDigestInput(db.Name(), "", deployment, ms), true).Sum() ||
 		!slices.Equal(dm.Differences(), []string{"pending since the plan: " + seed}) {
 		t.Fatalf("apply: %v, want a DigestMismatchError naming %s", err, seed)
 	}
@@ -562,7 +567,7 @@ func TestDigestCheck(t *testing.T) {
 	if got, err := ChangelogDeployment(ctx, db); err != nil || got != deployment {
 		t.Fatalf("deployment after the refused apply: %q, %v, want %s", got, err, deployment)
 	}
-	if _, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, Digest: NewDigestInput(db.Name(), "", deployment, ms)}); err != nil {
+	if _, err := execute(t, ctx, db, ms, Options{}, Config{Mode: ModeApply, Digest: withFirstApply(NewDigestInput(db.Name(), "", deployment, ms), true)}); err != nil {
 		t.Fatalf("apply with the matching digest: %v", err)
 	}
 }
@@ -586,7 +591,8 @@ func TestDigestDeployment(t *testing.T) {
 		return rep.DigestInput
 	}
 	first := plan()
-	if !deploymentPattern.MatchString(first.Deployment) || !strings.Contains(first.Text(), "\ndeployment "+first.Deployment+"\n") {
+	if !deploymentPattern.MatchString(first.Deployment) || !first.FirstApply ||
+		!strings.Contains(first.Text(), "\ndeployment "+first.Deployment+"\nfirst-apply\n") {
 		t.Fatalf("first plan's digest:\n%s", first.Text())
 	}
 	if deployment, err := ChangelogDeployment(ctx, db); err != nil || deployment != first.Deployment {
@@ -600,7 +606,7 @@ func TestDigestDeployment(t *testing.T) {
 	}
 	second := plan()
 	if second.Deployment == first.Deployment || second.Database != first.Database || second.ReplicaSet != first.ReplicaSet ||
-		second.Sum() == first.Sum() {
+		!second.FirstApply || second.Sum() == first.Sum() {
 		t.Fatalf("another deployment's first plan, same names: digest\n%s\nthen:\n%s", first.Text(), second.Text())
 	}
 

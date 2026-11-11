@@ -1,7 +1,7 @@
 # Examples
 
 - [`docker-compose.yaml`](docker-compose.yaml): a single-node MongoDB replica
-  set and a one-off `migrune apply --no-digest` service, built from the repository's
+  set and a one-off `migrune apply --no-digest --init` service (the database's first apply), built from the repository's
   `Dockerfile`. Run `docker compose up --build` here to apply the sample
   migrations, and `docker compose down -v` to discard everything. The
   [getting started guide](../docs/getting-started.md) walks through it.

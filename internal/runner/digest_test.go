@@ -31,6 +31,7 @@ func TestDigestInput(t *testing.T) {
 		replicaSet string
 		deployment string
 		namespace  string
+		firstApply bool
 		pending    []migration.Migration
 	}{
 		{golden: "nothing-pending.digest", database: "app", replicaSet: "rs0", deployment: testDeployment},
@@ -39,11 +40,14 @@ func TestDigestInput(t *testing.T) {
 		{golden: "namespace.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, namespace: "api", pending: []migration.Migration{a}},
 		{golden: "namespace-nothing-pending.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, namespace: "api"},
 		{golden: "deployment-none.digest", database: "app", replicaSet: "rs0", deployment: DeploymentNone, pending: []migration.Migration{a}},
+		{golden: "first-apply.digest", database: "app", replicaSet: "rs0", deployment: DeploymentNone, firstApply: true, pending: []migration.Migration{a}},
+		{golden: "namespace-first-apply.digest", database: "app", replicaSet: "rs0", deployment: testDeployment, namespace: "api", firstApply: true, pending: []migration.Migration{a}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.golden, func(t *testing.T) {
 			d := NewDigestInput(tc.database, tc.replicaSet, tc.deployment, tc.pending)
 			d.Namespace = tc.namespace
+			d.FirstApply = tc.firstApply
 			path := filepath.Join(t.TempDir(), "plan.digest")
 			if err := WriteDigestFile(path, d); err != nil {
 				t.Fatal(err)
@@ -66,7 +70,7 @@ func TestDigestInput(t *testing.T) {
 				t.Errorf("digest file:\n%s\nwant:\n%s", got, want)
 			}
 			back, err := ReadDigestFile(golden)
-			if err != nil || back.Sum() != d.Sum() || back.Namespace != tc.namespace {
+			if err != nil || back.Sum() != d.Sum() || back.Namespace != tc.namespace || back.FirstApply != tc.firstApply {
 				t.Errorf("ReadDigestFile: %+v, %v; want %+v", back, err, d)
 			}
 		})
@@ -77,8 +81,11 @@ func TestDigestInput(t *testing.T) {
 	edited.Checksum = "cccc"
 	namespaced := NewDigestInput("app", "rs0", testDeployment, []migration.Migration{a, b})
 	namespaced.Namespace = "api"
+	first := NewDigestInput("app", "rs0", testDeployment, []migration.Migration{a, b})
+	first.FirstApply = true
 	for name, d := range map[string]*DigestInput{
 		"namespace":    namespaced,
+		"first apply":  first,
 		"database":     NewDigestInput("app-staging", "rs0", testDeployment, []migration.Migration{a, b}),
 		"replica set":  NewDigestInput("app", "rs1", testDeployment, []migration.Migration{a, b}),
 		"deployment":   NewDigestInput("app", "rs0", "7c9e6679-7425-40de-944b-e07fc1f90ae7", []migration.Migration{a, b}),
@@ -122,6 +129,10 @@ func TestReadDigestFile(t *testing.T) {
 		{file: "sorted.digest"},
 		{file: "namespace.digest"},
 		{file: "deployment-none.digest"},
+		{file: "first-apply.digest"},
+		{file: "namespace-first-apply.digest"},
+		{file: "first-apply-misplaced.digest", err: `line 6: unexpected "first-apply"`},
+		{file: "first-apply-before-namespace.digest", err: `line 6: unexpected "namespace api"`},
 		{file: "namespace-invalid.digest", err: "line 5: want namespace <name>"},
 		{file: "namespace-empty.digest", err: "line 5: want namespace <name>"},
 		{file: "namespace-misplaced.digest", err: `line 6: unexpected "namespace api"`},
@@ -157,6 +168,7 @@ func TestDigestMismatchError(t *testing.T) {
 	plan := NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")})
 	cases := []struct {
 		name string
+		plan *DigestInput // nil means plan
 		run  *DigestInput
 		want []string
 	}{
@@ -169,20 +181,34 @@ func TestDigestMismatchError(t *testing.T) {
 				`the database is "app-prod", the plan's was "app"`}},
 		{name: "namespace", run: withNamespace(NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}), "api"),
 			want: []string{`the namespace is "api", the plan's was the default`}},
+		{name: "first apply in the plan", run: withFirstApply(NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}), false),
+			plan: withFirstApply(NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}), true),
+			want: []string{"the plan was made for the namespace's first apply, and the changelog has entries for it now"}},
+		{name: "first apply in the run", run: withFirstApply(NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("1-a", "a"), m("2-b", "b"), m("3-c", "c")}), true),
+			want: []string{"the plan was made when the changelog had entries for the namespace, and it has none now"}},
 		{name: "migrations", run: NewDigestInput("app", "rs0", testDeployment, []migration.Migration{m("2-b", "edited"), m("3-c", "c"), m("4-d", "d")}),
 			want: []string{"pending since the plan: 4-d", "edited since the plan: 2-b", "no longer pending (applied, or removed, since the plan): 1-a"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := &DigestMismatchError{Plan: plan, Run: tc.run}
+			p := plan
+			if tc.plan != nil {
+				p = tc.plan
+			}
+			e := &DigestMismatchError{Plan: p, Run: tc.run}
 			if got := e.Differences(); !slices.Equal(got, tc.want) {
 				t.Errorf("Differences() = %q, want %q", got, tc.want)
 			}
-			if !strings.Contains(e.Error(), plan.Sum()) || !strings.Contains(e.Error(), tc.run.Sum()) {
+			if !strings.Contains(e.Error(), p.Sum()) || !strings.Contains(e.Error(), tc.run.Sum()) {
 				t.Errorf("Error() = %q, want both digests", e.Error())
 			}
 		})
 	}
+}
+
+func withFirstApply(d *DigestInput, firstApply bool) *DigestInput {
+	d.FirstApply = firstApply
+	return d
 }
 
 func withNamespace(d *DigestInput, namespace string) *DigestInput {

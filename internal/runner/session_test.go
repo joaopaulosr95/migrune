@@ -184,7 +184,7 @@ func TestLockStolenBetweenMigrations(t *testing.T) {
 			ms := load(t, fixtureDir(t, "data", setFlag, dropStale))
 			done := make(chan result, 1)
 			go func() {
-				rep, err := Execute(ctx, db, ms, o, Config{Mode: ModeApply})
+				rep, err := Execute(ctx, db, ms, o, Config{Mode: ModeApply, Init: true})
 				done <- result{rep, err}
 			}()
 			waitFailPoint(t, ctx, client, fired+1)
@@ -234,7 +234,7 @@ func TestLeaseExpiredStopsIndexStep(t *testing.T) {
 		{Key: "blockTimeMS", Value: 3000},
 	})
 
-	rep, err := Execute(ctx, db, load(t, fixtureDir(t, "index", createName)), o, Config{Mode: ModeApply})
+	rep, err := Execute(ctx, db, load(t, fixtureDir(t, "index", createName)), o, Config{Mode: ModeApply, Init: true})
 	if n := failCommandOff(t, client) - fired; n < 1 {
 		t.Errorf("fail point fired %d times, want at least once", n)
 	}

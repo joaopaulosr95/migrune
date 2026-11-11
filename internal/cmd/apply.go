@@ -14,6 +14,7 @@ type applyOptions struct {
 	namespace       string
 	digestIn        string
 	noDigest        bool
+	init            bool
 	mutable         bool
 	approvedByName  string
 	approvedByEmail string
@@ -35,7 +36,9 @@ Finished changelog entry only if the second run changed nothing. Index and
 merge migrations run outside a transaction; merges are checked before and
 after writing. apply stops at the first migration that fails. It first checks
 that its run matches the plan's digest (--digest-in); --no-digest skips that
-check, for local runs.
+check, for local runs. A namespace's first apply, when the changelog has
+no entries for it, needs --init, so a mistyped --db or --namespace can't run
+every migration.
 
 What apply checks and reports: docs/reference/report.md, in
 https://github.com/joaopaulosr95/migrune.`,
@@ -47,6 +50,7 @@ https://github.com/joaopaulosr95/migrune.`,
 	namespaceFlag(fs, &o.namespace)
 	fs.StringVar(&o.digestIn, "digest-in", "", "plan digest file (plan --digest-out) the run must match; required unless --no-digest")
 	fs.BoolVar(&o.noDigest, "no-digest", false, "run without a plan digest (local use only)")
+	fs.BoolVar(&o.init, "init", false, "allow the namespace's first apply, when the changelog has no entries for it; refused once it has")
 	fs.BoolVar(&o.mutable, "mutable", false, "re-run finished migrations whose file changed instead of failing (local use only; needs --no-digest)")
 	fs.StringVar(&o.approvedByName, "approved-by-name", "", "name of the person who approved the run, recorded in the changelog")
 	fs.StringVar(&o.approvedByEmail, "approved-by-email", "", "email of the person who approved the run, recorded in the changelog")
@@ -98,6 +102,6 @@ func (a *app) apply(cmd *cobra.Command, o applyOptions) error {
 			Namespace:  o.namespace,
 			ApprovedBy: runner.ApprovedBy{Name: o.approvedByName, Email: o.approvedByEmail},
 		},
-		runner.Config{Mode: runner.ModeApply, Mutable: o.mutable, Digest: digest, SampleValues: o.values})
+		runner.Config{Mode: runner.ModeApply, Init: o.init, Mutable: o.mutable, Digest: digest, SampleValues: o.values})
 	return err
 }

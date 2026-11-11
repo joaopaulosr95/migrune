@@ -407,13 +407,24 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 9},
 	}
-	// A plan against a new database.
+	// A plan against a new database: the namespace's first apply.
 	newDB := &runner.Report{
 		Command:           "plan",
 		Runner:            "ci-42",
 		Database:          "appp",
 		NewDatabase:       true,
+		FirstApply:        true,
 		Digest:            "1d1ed6ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b4ed0b",
+		Migrations:        []runner.Row{{ID: setFlag, Kind: "data", Status: runner.RowApplied, DurationMs: 5}},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 9},
+	}
+	// The first apply in a namespace, with --init.
+	firstApply := &runner.Report{
+		Command:           "apply",
+		Runner:            "ci-42",
+		Namespace:         "api",
+		FirstApply:        true,
 		Migrations:        []runner.Row{{ID: setFlag, Kind: "data", Status: runner.RowApplied, DurationMs: 5}},
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 9},
@@ -425,6 +436,7 @@ func TestWriteReport(t *testing.T) {
 		golden string
 	}{
 		{name: "table", rep: rep, output: "table", golden: "apply.txt"},
+		{name: "first apply table", rep: firstApply, output: "table", golden: "apply-first-apply.txt"},
 		{name: "new database table", rep: newDB, output: "table", golden: "plan-new-database.txt"},
 		{name: "new database json", rep: newDB, output: "json", golden: "plan-new-database.json"},
 		{name: "json", rep: rep, output: "json", golden: "apply.json"},
@@ -612,7 +624,8 @@ func TestPlanThenApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Nothing was committed") || !hasRow(out, setFlag, "applied") {
+	if !strings.Contains(out, "Nothing was committed") || !hasRow(out, setFlag, "applied") ||
+		!strings.Contains(out, "First apply: the changelog has no entries for this namespace; apply needs --init") {
 		t.Errorf("plan table:\n%s", out)
 	}
 	if _, err := runner.ReadDigestFile(digest); err != nil {
@@ -624,7 +637,7 @@ func TestPlanThenApply(t *testing.T) {
 
 	t.Setenv("MIGRUNE_RUNNER_ID", "ci-job-7")
 	t.Setenv("MIGRUNE_APPROVED_BY_EMAIL", "ada@example.com")
-	_, err = migrune(t, uri, db, "apply", "--dir", dir, "--digest-in", digest, "--approved-by-name", "Ada Lovelace")
+	_, err = migrune(t, uri, db, "apply", "--init", "--dir", dir, "--digest-in", digest, "--approved-by-name", "Ada Lovelace")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +674,7 @@ func TestDigest(t *testing.T) {
 	if _, err := migrune(t, uri, staging, "plan", "--dir", dir, "--digest-out", digest); err != nil {
 		t.Fatal(err)
 	}
-	_, err := migrune(t, uri, db, "apply", "--dir", dir, "--digest-in", digest)
+	_, err := migrune(t, uri, db, "apply", "--init", "--dir", dir, "--digest-in", digest)
 	var mismatch *runner.DigestMismatchError
 	if !errors.As(err, &mismatch) || errors.As(err, new(*UsageError)) || !strings.Contains(err.Error(), `the database is "`+db.Name()+`", the plan's was "`+staging.Name()+`"`) {
 		t.Fatalf("apply: %v, want a digest mismatch naming the database", err)
@@ -724,7 +737,7 @@ func TestSampleValues(t *testing.T) {
 func TestAppliedButMissing(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := migrationsDir(t, setFlag)
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(dir, setFlag+".json")); err != nil {
@@ -794,7 +807,11 @@ func TestApplyDatedAhead(t *testing.T) {
 	addMigration(t, dir, filepath.Join("testdata", "dated-ahead"), later)
 
 	for _, command := range []string{"plan", "apply"} {
-		out, err := migrune(t, uri, db, append(localArgs(command), "--dir", dir, "-o", "json")...)
+		args := localArgs(command)
+		if command == "apply" {
+			args = append(args, "--init")
+		}
+		out, err := migrune(t, uri, db, append(args, "--dir", dir, "-o", "json")...)
 		if err != nil {
 			t.Fatalf("%s: %v", command, err)
 		}
@@ -818,7 +835,7 @@ func TestReportJSON(t *testing.T) {
 	uri, db := testTarget(t)
 	seedItems(t, db)
 	dir := migrationsDir(t, setFlag, incCounter, seed)
-	out, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir, "-o", "json")
+	out, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir, "-o", "json")
 	if err == nil {
 		t.Fatal("apply succeeded, want incCounter to fail")
 	}
@@ -827,7 +844,7 @@ func TestReportJSON(t *testing.T) {
 		t.Fatalf("report isn't JSON: %v\n%s", err, out)
 	}
 	if got := sortedKeys(rep); !slices.Equal(got, []string{"appliedButMissing", "command", "database", "digest", "error",
-		"migrations", "newDatabase", "runner", "startedAt", "totals", "version"}) {
+		"firstApply", "migrations", "newDatabase", "runner", "startedAt", "totals", "version"}) {
 		t.Errorf("report keys %v", got)
 	}
 	var rows []map[string]any
@@ -879,7 +896,7 @@ func sortedKeys[V any](m map[string]V) []string {
 func TestOnlineLint(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := migrationsDir(t, setFlag, seed)
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := migrune(t, uri, db, "lint", "--dir", dir); err != nil || out != "" {
@@ -959,7 +976,7 @@ func TestLockHeld(t *testing.T) {
 			}
 
 			start := time.Now()
-			out, err := migrune(t, uri, db, append([]string{"apply", "--no-digest", "--dir", migrationsDir(t, setFlag)}, tc.args...)...)
+			out, err := migrune(t, uri, db, append([]string{"apply", "--no-digest", "--init", "--dir", migrationsDir(t, setFlag)}, tc.args...)...)
 			if !tc.wantErr {
 				if err != nil || !hasRow(out, setFlag, "applied") {
 					t.Fatalf("apply: %v\n%s", err, out)
@@ -980,5 +997,30 @@ func TestLockHeld(t *testing.T) {
 				t.Errorf("%d changelog entries", n)
 			}
 		})
+	}
+}
+
+// TestInit checks apply's --init on the command line: a first apply without
+// it fails (exit 1, not a usage error) with no report and nothing written,
+// and --init on a namespace with entries fails the same way.
+func TestInit(t *testing.T) {
+	uri, db := testTarget(t)
+	dir := migrationsDir(t, setFlag)
+	out, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir)
+	var ie *runner.InitError
+	if !errors.As(err, &ie) || ie.Init || errors.As(err, new(*UsageError)) || errors.Is(err, runner.ErrLockHeld) || out != "" {
+		t.Fatalf("apply without --init: %v\n%s", err, out)
+	}
+	if names, err := db.ListCollectionNames(context.Background(), bson.D{}); err != nil || len(names) != 0 {
+		t.Fatalf("collections %v, %v after the refused apply, want none", names, err)
+	}
+	if out, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir); err != nil ||
+		!strings.Contains(out, "First apply: the changelog had no entries for this namespace") {
+		t.Fatalf("apply --init: %v\n%s", err, out)
+	}
+	out, err = migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir)
+	if !errors.As(err, &ie) || !ie.Init || errors.As(err, new(*UsageError)) || out != "" ||
+		!strings.HasSuffix(err.Error(), ": --init is only for a namespace's first apply; remove it") {
+		t.Fatalf("second apply --init: %v\n%s", err, out)
 	}
 }

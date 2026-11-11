@@ -272,6 +272,11 @@ set. The error names each difference, the deployment first:
 Error: this run doesn't match the plan: the plan was made against another deployment (this run's migrations_changelog collection is 7c9e6679-7425-40de-944b-e07fc1f90ae7, the plan's was 0f8fad5b-d9cb-469f-a165-70867728950e); the database is "app", the plan's was "app-staging"; pending since the plan: 2026-11-03-001-copy-label (plan digest 5d1f…, this run's digest 9a0c…); run plan again against this database and get it approved
 ```
 
+`the plan was made for the namespace's first apply, and the changelog has
+entries for it now` means another apply wrote the namespace's first entries
+after the plan, and `the plan was made when the changelog had entries for the
+namespace, and it has none now` that they were deleted: plan again.
+
 `the plan was made against another deployment` means the target's
 `migrations_changelog` collection isn't the one plan saw (its UUID is in the
 [digest](reference/report.md#plan-digest)): apply reaches another deployment
@@ -294,6 +299,35 @@ Error: --no-digest can't be used with --digest-in
 In CI, pass the digest file of the plan job with `--digest-in` (see
 [running in CI](running.md#in-ci-with-an-approval-gate)). Against your own
 database, pass `--no-digest`, and not `--digest-in` with it.
+
+## apply needs --init
+
+apply exits 1, running nothing and writing nothing, not even the lock, when
+the changelog has no entries for its namespace and `--init` isn't set:
+
+```txt
+Error: the changelog has no entries for namespace billing on database app, so apply would run every migration; check --db and --namespace, and pass --init if this is the first apply
+Error: the changelog has no entries for namespace biling on database app, so apply would run every migration; the changelog has entries for: (default), billing; check --db and --namespace, and pass --init if this is the first apply
+```
+
+The second form lists the namespaces the changelog has entries for,
+`(default)` for the default one: a namespace next to them is often a typo.
+The default namespace reads `the default namespace` in place of
+`namespace <name>`. Check `--db` and `--namespace` first: against the
+database and namespace you meant, apply would find their entries. If this
+really is the namespace's first apply, plan it, review the plan (every
+migration is pending) and pass `--init` to that one apply (see
+[first deploy](running.md#first-deploy)).
+
+`--init` left on a namespace that has entries, Errored ones included, fails
+the same way:
+
+```txt
+Error: the changelog has entries for namespace billing on database app: --init is only for a namespace's first apply; remove it
+```
+
+Remove `--init` (or `MIGRUNE_INIT`) from the apply job: kept, it would turn
+off the check on every later deploy.
 
 ## The digest file is invalid
 

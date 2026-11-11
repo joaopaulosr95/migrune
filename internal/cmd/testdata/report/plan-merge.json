@@ -5,6 +5,7 @@
   "startedAt": "2026-11-08T10:30:00.125Z",
   "runner": "ci-42",
   "newDatabase": false,
+  "firstApply": false,
   "migrations": [
     {
       "id": "2026-11-03-001-copy-label",

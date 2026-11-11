@@ -1,7 +1,7 @@
 # A runnable migrune example: a single-node replica set and a one-off
 # migrune service that applies the migrations in ./migrations.
 #
-#   docker compose up --build                  # apply everything, then keep mongo running
+#   docker compose up --build                  # first apply of everything, then keep mongo running
 #   docker compose run --rm migrune plan      # any other migrune command
 #   docker compose down -v                     # stop and discard the data
 #
@@ -61,8 +61,11 @@ services:
     volumes:
       - ./migrations:/migrations:ro
     # --no-digest: a local apply, not tied to a plan digest. In CI, apply
-    # takes the digest plan wrote with --digest-in instead.
-    command: ["apply", "--no-digest"]
+    # takes the digest plan wrote with --digest-in instead. --init: the
+    # database's first apply; once it has changelog entries, apply refuses
+    # --init, so a second `up` fails until `down -v`. Run later applies with
+    # `docker compose run --rm migrune apply --no-digest`.
+    command: ["apply", "--no-digest", "--init"]
 
 volumes:
   mongo-data:

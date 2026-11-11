@@ -112,7 +112,7 @@ func TestNoWarnings(t *testing.T) {
 	t.Setenv("MIGRUNE_DB", db.Name())
 	for _, args := range [][]string{
 		{"plan", "--dir", dir, "--digest-out", digest},
-		{"apply", "--dir", dir, "--digest-in", digest, "--approved-by-name", "Ada Lovelace"},
+		{"apply", "--init", "--dir", dir, "--digest-in", digest, "--approved-by-name", "Ada Lovelace"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if _, err := Execute(context.Background(), args, &stdout, &stderr); err != nil {

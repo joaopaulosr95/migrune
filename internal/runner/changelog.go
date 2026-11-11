@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -73,17 +75,81 @@ func createChangelog(ctx context.Context, db *mongo.Database) error {
 // a collection that exists.
 const codeNamespaceExists = 48
 
-// changelogHasEntries reports whether the changelog of db has any entry,
-// in any namespace. A missing changelog collection has none.
-func changelogHasEntries(ctx context.Context, db *mongo.Database) (bool, error) {
-	err := changelogCollection(db).FindOne(ctx, bson.D{}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return false, nil
-	}
+// namespaceState reports whether the changelog of db has any entry, of any
+// status, for namespace, and the other namespaces it has entries for,
+// sorted, "" standing for the default one. A missing changelog collection
+// has no entries.
+func namespaceState(ctx context.Context, db *mongo.Database, namespace string) (hasEntries bool, others []string, err error) {
+	cur, err := changelogCollection(db).Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$namespace"}}}},
+	})
 	if err != nil {
-		return false, fmt.Errorf("read the changelog: %w", err)
+		return false, nil, fmt.Errorf("read the changelog's namespaces: %w", err)
 	}
-	return true, nil
+	var groups []struct {
+		Namespace *string `bson:"_id"`
+	}
+	if err := cur.All(ctx, &groups); err != nil {
+		return false, nil, fmt.Errorf("read the changelog's namespaces: %w", err)
+	}
+	for _, g := range groups {
+		// The default namespace's entries have no namespace field.
+		name := ""
+		if g.Namespace != nil {
+			name = *g.Namespace
+		}
+		if name == namespace {
+			hasEntries = true
+		} else {
+			others = append(others, name)
+		}
+	}
+	slices.Sort(others)
+	return hasEntries, others, nil
+}
+
+// InitError is apply's refusal, before it takes the lock, of a namespace
+// without changelog entries when Config.Init isn't set (Init false), or of
+// Config.Init on a namespace that has entries (Init true).
+type InitError struct {
+	Database  string
+	Namespace string
+	// Init is whether Config.Init was set.
+	Init bool
+	// Others are the other namespaces the changelog has entries for, as
+	// namespaceState returns them. Set when Init is false.
+	Others []string
+}
+
+func (e *InitError) Error() string {
+	target := fmt.Sprintf("%s on database %s", namespacePhrase(e.Namespace), e.Database)
+	if e.Init {
+		return fmt.Sprintf("the changelog has entries for %s: --init is only for a namespace's first apply; remove it", target)
+	}
+	msg := fmt.Sprintf("the changelog has no entries for %s, so apply would run every migration", target)
+	return msg + othersText(e.Others) + "; check --db and --namespace, and pass --init if this is the first apply"
+}
+
+// othersText is "; the changelog has entries for: <names>", naming the
+// namespaces others (as namespaceState returns them), or "" when there are
+// none.
+func othersText(others []string) string {
+	if len(others) == 0 {
+		return ""
+	}
+	names := make([]string, len(others))
+	for i, n := range others {
+		names[i] = namespaceName(n)
+	}
+	return "; the changelog has entries for: " + strings.Join(names, ", ")
+}
+
+// namespacePhrase names a namespace in a sentence.
+func namespacePhrase(namespace string) string {
+	if namespace == "" {
+		return "the default namespace"
+	}
+	return "namespace " + namespace
 }
 
 // Status is the outcome a changelog entry records. There is no running status:

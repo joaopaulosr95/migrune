@@ -35,6 +35,13 @@ func writeTable(w io.Writer, rep *runner.Report) error {
 	if rep.Namespace != "" {
 		fmt.Fprintf(ew, "Namespace: %s\n", rep.Namespace)
 	}
+	if rep.FirstApply {
+		if rep.Command == string(runner.ModePlan) {
+			fmt.Fprintln(ew, "First apply: the changelog has no entries for this namespace; apply needs --init")
+		} else {
+			fmt.Fprintln(ew, "First apply: the changelog had no entries for this namespace")
+		}
+	}
 	fmt.Fprintln(ew)
 	if len(rep.Migrations) == 0 {
 		fmt.Fprintln(ew, "No pending migrations.")

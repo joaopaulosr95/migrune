@@ -39,6 +39,11 @@ type Config struct {
 	// ReplicaSet names the deployment in the digest: the replica set name
 	// hello reports.
 	ReplicaSet string
+	// Init allows apply's first apply in a namespace: one with no
+	// changelog entry, of any status. Without it, apply refuses such a
+	// namespace, and with it, one that has entries, both with an
+	// *InitError before taking the lock. plan ignores it.
+	Init bool
 	// SampleValues puts the before and after values of the differing
 	// fields in merge samples, in the logs and the report, each cut to
 	// MaxSampleValueChars characters, and servers' messages in error text
@@ -62,6 +67,9 @@ func (e *MigrationError) Unwrap() error { return e.Err }
 // stopping at the first error. migrations must come from
 // migration.Load.
 //
+// apply refuses a namespace with no changelog entry unless c.Init, and
+// c.Init on one that has entries, with an *InitError, before the lock.
+//
 // It returns a report whenever it got as far as holding the lock, failure or
 // interruption included; the error tells the outcome. An interrupted run
 // returns an *InterruptedError and writes no changelog entry.
@@ -77,15 +85,16 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 	if err != nil {
 		return nil, redact(interruption(ctx, err), c.SampleValues)
 	}
-	hasEntries, err := changelogHasEntries(ctx, db)
+	hasEntries, others, err := namespaceState(ctx, db, o.Namespace)
 	if err != nil {
 		return nil, redact(interruption(ctx, err), c.SampleValues)
 	}
-	// New: no collection but migrune's, and no changelog entry.
-	newDB := onlyOwn && !hasEntries
-	if newDB && o.Logger != nil {
-		o.Logger.Warn("the target database has no collections: this run treats it as a new database; "+
-			"check --db is the database you meant", "db", db.Name())
+	// New: no collection but migrune's, and no changelog entry in any
+	// namespace.
+	newDB := onlyOwn && !hasEntries && len(others) == 0
+	// apply refuses before any write, the lock's included.
+	if c.Mode == ModeApply && hasEntries == c.Init {
+		return nil, &InitError{Database: db.Name(), Namespace: o.Namespace, Init: c.Init, Others: others}
 	}
 	// The changelog collection's UUID is the digest's deployment, so it has
 	// to exist from the first plan on: otherwise two deployments' first
@@ -96,6 +105,19 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 		}
 		if deployment, err = ChangelogDeployment(ctx, db); err != nil {
 			return nil, redact(interruption(ctx, err), c.SampleValues)
+		}
+	}
+	firstApply := !hasEntries
+	if firstApply && o.Logger != nil {
+		args := []any{"db", db.Name()}
+		if o.Namespace != "" {
+			args = append(args, "namespace", o.Namespace)
+		}
+		if c.Mode == ModePlan {
+			o.Logger.Warn(fmt.Sprintf("first apply for %s on database %s: the changelog has no entries for it, "+
+				"so every migration is pending and apply needs --init; check --db and --namespace", namespacePhrase(o.Namespace), db.Name()), args...)
+		} else {
+			o.Logger.Warn(fmt.Sprintf("first apply for %s on database %s (--init)%s", namespacePhrase(o.Namespace), db.Name(), othersText(others)), args...)
 		}
 	}
 	run, err := startWith(ctx, db, o, c.SampleValues)
@@ -109,6 +131,7 @@ func Execute(ctx context.Context, db *mongo.Database, migrations []migration.Mig
 		StartedAt:         start.UTC().Truncate(time.Millisecond),
 		Runner:            run.RunnerID(),
 		NewDatabase:       newDB,
+		FirstApply:        firstApply,
 		Migrations:        []Row{},
 		AppliedButMissing: []migration.Applied{},
 	}
@@ -147,6 +170,7 @@ func (r *Run) execute(migrations []migration.Migration, c Config, deployment str
 	rep.AppliedButMissing = append(rep.AppliedButMissing, set.missing...)
 	rep.DigestInput = NewDigestInput(r.db.Name(), c.ReplicaSet, deployment, set.pending)
 	rep.DigestInput.Namespace = r.namespace
+	rep.DigestInput.FirstApply = rep.FirstApply
 	rep.Digest = rep.DigestInput.Sum()
 
 	for _, m := range set.pending {

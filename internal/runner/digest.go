@@ -35,6 +35,9 @@ type DigestInput struct {
 	// Namespace is the run's namespace, "" for the default one, which adds
 	// no line.
 	Namespace string
+	// FirstApply is set when the changelog had no entry for the namespace
+	// (Report.FirstApply), and adds a first-apply line.
+	FirstApply bool
 	// Pending are the pending migrations, sorted by id.
 	Pending []DigestMigration
 }
@@ -73,6 +76,7 @@ func NewDigestInput(database, replicaSet, deployment string, pending []migration
 //	replicaSet <name>
 //	deployment <uuid>
 //	namespace <name>            only when the namespace isn't the default
+//	first-apply                 only when the namespace has no changelog entry
 //	migration <id> <checksum>   one per pending migration, by id
 func (d *DigestInput) Text() string {
 	var b strings.Builder
@@ -82,6 +86,9 @@ func (d *DigestInput) Text() string {
 	b.WriteString("deployment " + d.Deployment + "\n")
 	if d.Namespace != "" {
 		b.WriteString("namespace " + d.Namespace + "\n")
+	}
+	if d.FirstApply {
+		b.WriteString(firstApplyLine + "\n")
 	}
 	for _, m := range d.Pending {
 		b.WriteString("migration " + m.ID + " " + m.Checksum + "\n")
@@ -94,6 +101,9 @@ func (d *DigestInput) Sum() string {
 	sum := sha256.Sum256([]byte(d.Text()))
 	return hex.EncodeToString(sum[:])
 }
+
+// firstApplyLine is the digest line of a namespace's first apply.
+const firstApplyLine = "first-apply"
 
 // parseDigestInput parses what Text renders.
 func parseDigestInput(text string) (*DigestInput, error) {
@@ -123,6 +133,8 @@ func parseDigestInput(text string) (*DigestInput, error) {
 				return nil, fmt.Errorf("line %d: want namespace <name>, 1 to 64 lowercase letters, digits, _ or -", n)
 			}
 			d.Namespace = rest
+		case line == firstApplyLine && !d.FirstApply && (n == 5 || n == 6 && d.Namespace != ""):
+			d.FirstApply = true
 		case n > 4 && kind == "migration":
 			id, sum, ok := strings.Cut(rest, " ")
 			if !ok {
@@ -204,6 +216,12 @@ func (e *DigestMismatchError) Differences() []string {
 	}
 	if e.Plan.Namespace != e.Run.Namespace {
 		out = append(out, fmt.Sprintf("the namespace is %s, the plan's was %s", namespaceText(e.Run.Namespace), namespaceText(e.Plan.Namespace)))
+	}
+	switch {
+	case e.Plan.FirstApply && !e.Run.FirstApply:
+		out = append(out, "the plan was made for the namespace's first apply, and the changelog has entries for it now")
+	case !e.Plan.FirstApply && e.Run.FirstApply:
+		out = append(out, "the plan was made when the changelog had entries for the namespace, and it has none now")
 	}
 	plan := make(map[string]string, len(e.Plan.Pending))
 	for _, m := range e.Plan.Pending {

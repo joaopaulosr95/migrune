@@ -174,7 +174,7 @@ func TestDrift(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(t, db)
 			}
-			if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir); err != nil {
+			if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir); err != nil {
 				t.Fatal(err)
 			}
 			if tc.change != nil {
@@ -224,7 +224,7 @@ func TestDriftNamespace(t *testing.T) {
 	uri, db := testTarget(t)
 	dir := t.TempDir()
 	addMigration(t, dir, filepath.Join("testdata", "drift"), driftIndexes)
-	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--dir", dir, "--namespace", "billing"); err != nil {
+	if _, err := migrune(t, uri, db, "apply", "--no-digest", "--init", "--dir", dir, "--namespace", "billing"); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := migrune(t, uri, db, "drift", "--dir", dir, "--namespace", "billing", "-o", "json"); err != nil || out != "[]\n" {

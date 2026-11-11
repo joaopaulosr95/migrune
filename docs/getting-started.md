@@ -58,6 +58,7 @@ below:
 ```txt
 Plan: each status is what apply would do. Nothing was committed.
 Database: example (new: it had no collections)
+First apply: the changelog has no entries for this namespace; apply needs --init
 
 MIGRATION                                 KIND   STATUS   DURATION  ERROR
 2026-11-01-001-seed-currencies-and-plans  data   applied  85ms
@@ -78,17 +79,34 @@ indexes without building any, and ran the merge pipeline without its `$merge`.
 Each data step's line shows what its first run did: every seed would insert
 one document. Nothing changed, which is why the merge sees
 `diffCountBefore 0`: the plans aren't seeded yet. The report names the
-target database, marked new because it has no collections yet: expected
-here, but against a database that should exist, a sign of a mistyped `--db`.
+target database, marked new because it has no collections yet, and says this
+is the first apply: the changelog has no entries yet, so every migration is
+pending. plan also logs it as a warning. Expected here, but against a
+database that should already be migrated, it means a mistyped `--db` (or
+`--namespace`).
 
 ## 4. Apply
+
+apply refuses a first apply unless you confirm it:
 
 ```sh
 docker compose run --rm migrune apply --no-digest
 ```
 
 ```txt
+Error: the changelog has no entries for the default namespace on database example, so apply would run every migration; check --db and --namespace, and pass --init if this is the first apply
+```
+
+It exits 1 without writing anything. This is the first apply, so pass
+`--init`:
+
+```sh
+docker compose run --rm migrune apply --no-digest --init
+```
+
+```txt
 Database: example (new: it had no collections)
+First apply: the changelog had no entries for this namespace
 
 MIGRATION                                 KIND   STATUS   DURATION  ERROR
 2026-11-01-001-seed-currencies-and-plans  data   applied  35ms
@@ -109,7 +127,9 @@ Total: 3 migrations: 3 applied, 0 errored, 0 interrupted, 0 skipped in 206ms
 `--no-digest` is for local runs like this one: by default apply needs the
 digest file plan writes with `--digest-out`, so it runs exactly what was
 planned and approved. In CI, apply runs with the plan's digest (see
-[running in CI](running.md#in-ci-with-an-approval-gate)).
+[running in CI](running.md#in-ci-with-an-approval-gate)). `--init` is for
+this one run: once the changelog has entries, apply refuses it (see
+[first deploy](running.md#first-deploy)).
 
 This time the seeds were committed first, so the merge found two plans to
 change, and nothing left to change after `$merge` (`diffCountAfter 0`). Each

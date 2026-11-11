@@ -100,6 +100,9 @@ migrate:apply:
   variables:
     MIGRUNE_APPROVED_BY_NAME: $GITLAB_USER_LOGIN
     MIGRUNE_APPROVED_BY_EMAIL: $GITLAB_USER_EMAIL
+  # A namespace's first deploy to an environment needs --init, and every
+  # later one is refused with it: add --init for that one run only (see
+  # docs/running.md, First deploy).
   script:
     - status=0
     - migrune apply --digest-in plan.digest > apply.txt || status=$?

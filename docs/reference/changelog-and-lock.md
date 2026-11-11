@@ -45,11 +45,13 @@ anyway.
 apply writes an entry when a migration finishes or fails. plan, lint and drift never
 write an entry.
 
-plan and apply create the collection, empty, when it doesn't exist, before
-they take the lock: its UUID is the [plan digest](report.md#plan-digest)'s
-deployment, so it must exist from the first plan on. An apply refused for a
-[digest](report.md#plan-digest) mismatch writes no changelog entry and runs
-no migration: it writes only what plan would, the lock, taken and released,
+plan and apply create the collection, empty, when it doesn't exist, after
+apply's [`--init`](report.md#first-apply) check and before they
+take the lock: its UUID is the [plan digest](report.md#plan-digest)'s
+deployment, so it must exist from the first plan on. A refused apply, for
+`--init` or a [digest](report.md#plan-digest) mismatch, writes no changelog
+entry and runs no migration. A refused `--init` writes nothing at all; a
+digest mismatch writes only what plan would: the lock, taken and released,
 and the empty collection if it was missing.
 
 - **`Finished`**: written when the migration succeeds. For a data migration,

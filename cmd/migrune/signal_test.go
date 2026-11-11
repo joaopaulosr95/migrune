@@ -65,7 +65,7 @@ func TestSIGTERMDuringDataMigration(t *testing.T) {
 			digest := filepath.Join(t.TempDir(), "plan.digest")
 			args := []string{command, "--dir", dir, "-o", "json"}
 			if command == "apply" {
-				args = append(args, "--no-digest")
+				args = append(args, "--no-digest", "--init")
 			}
 			if command == "plan" {
 				args = append(args, "--digest-out", digest)
@@ -151,7 +151,7 @@ func TestSIGTERMDuringCommit(t *testing.T) {
 	t.Cleanup(func() { failPoint(t, context.Background(), client, "off", nil) })
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
+	cmd := exec.Command(bin, "apply", "--no-digest", "--init", "--dir", dir, "-o", "json")
 	cmd.Env = append(os.Environ(), "MIGRUNE_URI="+withAppName(uri, app), "MIGRUNE_DB="+db.Name())
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
@@ -224,7 +224,7 @@ func TestSIGTERMDuringIndexBuild(t *testing.T) {
 	dir := fixtureDir(t, "index", nameIndex)
 	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 		var stdout, stderr bytes.Buffer
-		cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
+		cmd := exec.Command(bin, "apply", "--no-digest", "--init", "--dir", dir, "-o", "json")
 		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Start(); err != nil {
@@ -334,7 +334,7 @@ func TestSIGTERMDuringMerge(t *testing.T) {
 	dir := fixtureDir(t, "merge", copyLabel)
 	apply := func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 		var stdout, stderr bytes.Buffer
-		cmd := exec.Command(bin, "apply", "--no-digest", "--dir", dir, "-o", "json")
+		cmd := exec.Command(bin, "apply", "--no-digest", "--init", "--dir", dir, "-o", "json")
 		cmd.Env = append(os.Environ(), "MIGRUNE_URI="+uri, "MIGRUNE_DB="+db.Name())
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Start(); err != nil {
@@ -455,7 +455,7 @@ func TestSignalAfterRun(t *testing.T) {
 			digest := filepath.Join(t.TempDir(), "plan.digest")
 			args := []string{tc.command, "--dir", dir, "-o", "json"}
 			if tc.command == "apply" {
-				args = append(args, "--no-digest")
+				args = append(args, "--no-digest", "--init")
 			}
 			if tc.command == "plan" {
 				args = append(args, "--digest-out", digest)

@@ -1,0 +1,7 @@
+f5c452fd3154a1e4ff436572e9c117ec4e0903c848aee6ff64a972fcf55e57fb
+migrune-digest-v1
+database app
+replicaSet rs0
+deployment none
+first-apply
+migration 2026-11-01-001-a aaaa

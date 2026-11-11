@@ -102,6 +102,7 @@ migrune apply --dir migrations --db app --digest-in plan.digest
 migrune drift --dir migrations --db app   # indexes changed outside migrations
 ```
 
+On a first deploy, apply also needs `--init` (see [first deploy](docs/running.md#first-deploy)).
 With `MIGRUNE_URI` set, `lint` needs `--db` too. Every flag can also be set
 as an environment variable, `MIGRUNE_<FLAG>`; pass the connection string
 through `MIGRUNE_URI` rather than `--uri` so credentials stay out of process

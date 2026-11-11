@@ -1,5 +1,6 @@
 Plan: each status is what apply would do. Nothing was committed.
 Database: appp (new: it had no collections)
+First apply: the changelog has no entries for this namespace; apply needs --init
 
 MIGRATION                KIND  STATUS   DURATION  ERROR
 2026-11-01-001-set-flag  data  applied  5ms

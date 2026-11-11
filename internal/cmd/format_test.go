@@ -51,7 +51,12 @@ func TestNewerFormat(t *testing.T) {
 					t.Fatal(err)
 				}
 				before := dumpDB(t, db)
-				out, err := migrune(t, uri, db, append(localArgs(command), "--dir", migrationsDir(t, setFlag))...)
+				args := localArgs(command)
+				if command == "apply" && tc.coll != runner.ChangelogCollection {
+					// No changelog entry: a first apply.
+					args = append(args, "--init")
+				}
+				out, err := migrune(t, uri, db, append(args, "--dir", migrationsDir(t, setFlag))...)
 				var format *runner.FormatError
 				if !errors.As(err, &format) || err.Error() != tc.want {
 					t.Fatalf("%s: %v, want %q", command, err, tc.want)

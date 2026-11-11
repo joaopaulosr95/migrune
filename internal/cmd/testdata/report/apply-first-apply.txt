@@ -1,0 +1,8 @@
+Database: app
+Namespace: api
+First apply: the changelog had no entries for this namespace
+
+MIGRATION                KIND  STATUS   DURATION  ERROR
+2026-11-01-001-set-flag  data  applied  5ms
+
+Total: 1 migration: 1 applied, 0 errored, 0 interrupted, 0 skipped in 9ms
