@@ -8,6 +8,15 @@
     "docker:pinDigests"
   ],
   "enabledManagers": ["github-actions", "dockerfile", "mise", "gomod", "npm", "custom.regex"],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**"
+  ],
   "minimumReleaseAge": "3 days",
   "postUpdateOptions": ["gomodTidy"],
   "customManagers": [
