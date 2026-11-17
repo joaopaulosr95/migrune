@@ -278,7 +278,9 @@ It can refuse the removal:
 | Another acquisition now holds this namespace's lock. | 3 | Run status again and inspect the new holder. |
 
 If no lock has the token and the namespace has none, unlock exits 0: it was
-released or expired and removed already. A successful removal logs a warning
+released or expired and removed already. The log line names the database and
+namespace it checked: an unlock against the wrong `--db` ends the same way,
+and leaves the real lock held. A successful removal logs a warning
 with the runner, token, current migration, heartbeat age and whether the
 lock had expired. Then run plan and apply again, as after an
 [interrupted run](#a-run-was-interrupted). There is no `--force` override.

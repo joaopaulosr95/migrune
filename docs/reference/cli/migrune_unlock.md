@@ -19,7 +19,8 @@ may be inside a transaction; retry after the time shown. A token belonging to
 another namespace exits 1 and shows which --namespace to use. A lock now held
 by another acquisition is refused with exit 3: run status again. If no lock
 has the token and the namespace has none, unlock exits 0: it was already
-released or expired and removed. A removed lock is logged at warn; usage
+released or expired and removed, or --db names the wrong database; the log
+line names the database and namespace it checked. A removed lock is logged at warn; usage
 errors exit 2 and other failures exit 1.
 
 The namespace is then as a killed run leaves it: run plan and apply again.

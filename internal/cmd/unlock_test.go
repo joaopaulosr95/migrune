@@ -79,7 +79,7 @@ func TestUnlock(t *testing.T) {
 			message: `rerun with --namespace ""`, remaining: 1},
 		{name: "other token", id: "migrations", token: "new-acquisition", heartbeatAgo: 2 * time.Minute, held: true, failed: true,
 			message: "run status again", remaining: 1},
-		{name: "gone", logs: []string{"no lock has this token"}},
+		{name: "gone", logs: []string{"no lock has this token", "db={db}", `namespace=""`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -103,6 +103,7 @@ func TestUnlock(t *testing.T) {
 				t.Errorf("error %q doesn't contain %q", err, tc.message)
 			}
 			for _, want := range tc.logs {
+				want = strings.ReplaceAll(want, "{db}", db.Name())
 				if !strings.Contains(stderr.String(), want) {
 					t.Errorf("stderr %q doesn't contain %q", stderr.String(), want)
 				}
