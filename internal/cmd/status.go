@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -91,7 +92,7 @@ func (a *app) status(cmd *cobra.Command, o statusOptions) error {
 	if err != nil {
 		return runner.RedactError(err, o.sampleValues)
 	}
-	threshold, _ := a.unlockThreshold(ctx, db)
+	threshold, _ := a.unlockThreshold(ctx, db, slog.LevelInfo)
 	lock, err := runner.ReadLock(ctx, db, o.namespace, threshold)
 	if err != nil {
 		return runner.RedactError(err, o.sampleValues)

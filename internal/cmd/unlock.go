@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,7 +73,7 @@ func (a *app) unlock(cmd *cobra.Command, o unlockOptions) error {
 		return err
 	}
 	defer disconnect()
-	threshold, lifetime := a.unlockThreshold(ctx, db)
+	threshold, lifetime := a.unlockThreshold(ctx, db, slog.LevelWarn)
 	waiting := time.AfterFunc(5*time.Second, func() {
 		a.log.Info("waiting for an open transaction on the lock to end")
 	})

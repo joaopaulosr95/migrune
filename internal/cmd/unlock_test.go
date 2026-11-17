@@ -141,55 +141,72 @@ func TestUnlockThenApply(t *testing.T) {
 	}
 }
 
+// TestUnlockThresholdFallback checks both commands fall back to 60s when
+// getParameter fails, and log it once: unlock at warn, status at info.
 func TestUnlockThresholdFallback(t *testing.T) {
-	uri, db := testTarget(t)
-	ctx := context.Background()
-	admin := db.Client().Database("admin")
-	err := admin.RunCommand(ctx, bson.D{
-		{Key: "configureFailPoint", Value: "failCommand"},
-		{Key: "mode", Value: bson.D{{Key: "times", Value: 1}}},
-		{Key: "data", Value: bson.D{
-			{Key: "failCommands", Value: bson.A{"getParameter"}},
-			{Key: "appName", Value: "migrune-fallback"},
-			{Key: "errorCode", Value: 13},
-		}},
-	}).Err()
-	if err != nil {
-		t.Fatalf("configure fail point: %v", err)
+	cases := []struct {
+		args  []string
+		level string
+		logs  []string
+	}{
+		{args: []string{"unlock", "--token", "inspected"}, level: "level=WARN", logs: []string{"no lock has this token"}},
+		{args: []string{"status"}, level: "level=INFO"},
 	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := admin.RunCommand(ctx, bson.D{
-			{Key: "configureFailPoint", Value: "failCommand"}, {Key: "mode", Value: "off"},
-		}).Err(); err != nil {
-			t.Errorf("turn fail point off: %v", err)
-		}
-	})
-	u, err := url.Parse(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := u.Query()
-	query.Set("appName", "migrune-fallback")
-	u.RawQuery = query.Encode()
-	t.Setenv("MIGRUNE_URI", u.String())
-	t.Setenv("MIGRUNE_DB", db.Name())
-	var stdout, stderr bytes.Buffer
-	_, err = Execute(ctx, []string{"unlock", "--token", "inspected"}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("unlock: %v", err)
-	}
-	for _, want := range []string{"transactionLifetimeLimitSeconds", "assuming 60s", "if it was raised", "no lock has this token"} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Errorf("stderr %q doesn't contain %q", stderr.String(), want)
-		}
-	}
-	if n := strings.Count(stderr.String(), "assuming 60s"); n != 1 {
-		t.Errorf("%d fallback warnings, want 1", n)
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("stdout %q, want none", stdout.String())
+	for _, tc := range cases {
+		t.Run(tc.args[0], func(t *testing.T) {
+			uri, db := testTarget(t)
+			ctx := context.Background()
+			admin := db.Client().Database("admin")
+			err := admin.RunCommand(ctx, bson.D{
+				{Key: "configureFailPoint", Value: "failCommand"},
+				{Key: "mode", Value: bson.D{{Key: "times", Value: 1}}},
+				{Key: "data", Value: bson.D{
+					{Key: "failCommands", Value: bson.A{"getParameter"}},
+					{Key: "appName", Value: "migrune-fallback"},
+					{Key: "errorCode", Value: 13},
+				}},
+			}).Err()
+			if err != nil {
+				t.Fatalf("configure fail point: %v", err)
+			}
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := admin.RunCommand(ctx, bson.D{
+					{Key: "configureFailPoint", Value: "failCommand"}, {Key: "mode", Value: "off"},
+				}).Err(); err != nil {
+					t.Errorf("turn fail point off: %v", err)
+				}
+			})
+			u, err := url.Parse(uri)
+			if err != nil {
+				t.Fatal(err)
+			}
+			query := u.Query()
+			query.Set("appName", "migrune-fallback")
+			u.RawQuery = query.Encode()
+			t.Setenv("MIGRUNE_URI", u.String())
+			t.Setenv("MIGRUNE_DB", db.Name())
+			t.Setenv("MIGRUNE_NAMESPACE", "")
+			var stdout, stderr bytes.Buffer
+			if _, err := Execute(ctx, tc.args, &stdout, &stderr); err != nil {
+				t.Fatalf("%s: %v", tc.args[0], err)
+			}
+			for _, want := range append([]string{"transactionLifetimeLimitSeconds", "assuming 60s", "if it was raised"}, tc.logs...) {
+				if !strings.Contains(stderr.String(), want) {
+					t.Errorf("stderr %q doesn't contain %q", stderr.String(), want)
+				}
+			}
+			var fallback []string
+			for line := range strings.Lines(stderr.String()) {
+				if strings.Contains(line, "assuming 60s") {
+					fallback = append(fallback, line)
+				}
+			}
+			if len(fallback) != 1 || !strings.Contains(fallback[0], tc.level) {
+				t.Errorf("fallback lines %q, want one at %s", fallback, tc.level)
+			}
+		})
 	}
 }
 

@@ -309,8 +309,9 @@ intervals. status uses the same threshold for its heartbeat label and
 Both commands read `transactionLifetimeLimitSeconds` with
 `{getParameter: 1, transactionLifetimeLimitSeconds: 1}` on `admin`. If that
 read fails for any reason, including missing privileges, they assume 60
-seconds and log a warning: **if the server's limit was raised, unlock may
-remove the lock of a runner inside a transaction**. Resolve the failed read
+seconds and log it, at warn in unlock and at info in status, where it only
+labels the heartbeat: **if the server's limit was raised, unlock may remove
+the lock of a runner inside a transaction**. Resolve the failed read
 or verify that the limit is still the default before using that fallback.
 
 The removal is one atomic `findOneAndDelete` on `migrations_lock`, with this
