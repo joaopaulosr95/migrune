@@ -321,6 +321,63 @@ func TestWriteStatusTable(t *testing.T) {
 	}
 }
 
+func TestWriteStatusTableEscapesCells(t *testing.T) {
+	at := time.Date(2026, 11, 5, 10, 12, 0, 0, time.UTC)
+	step := 0
+	cases := []struct {
+		name, id, runner, wantID, wantRunner string
+	}{
+		{name: "runner newline", id: "a", runner: "deploy\nextra", wantID: "a", wantRunner: `"deploy\nextra"`},
+		{name: "runner tab", id: "a", runner: "deploy\textra", wantID: "a", wantRunner: `"deploy\textra"`},
+		{name: "id newline", id: "a\nextra", runner: "deploy", wantID: `"a\nextra"`, wantRunner: "deploy"},
+		{name: "id tab", id: "a\textra", runner: "deploy", wantID: `"a\textra"`, wantRunner: "deploy"},
+		{name: "printable unicode", id: "migração", runner: "déploy", wantID: "migração", wantRunner: "déploy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := statusReport{Database: "app", Dir: "migrations", Migrations: []migrationState{
+				{ID: tc.id, Status: "failed", FailedAt: &at, Runner: tc.runner,
+					errors: []runner.StepError{{Step: &step, Message: "document value"}}},
+				{ID: "b", Status: "applied", AppliedAt: &at, Runner: "ci-42"},
+			}}
+			var out bytes.Buffer
+			if err := writeStatus(&out, rep, nil, "table"); err != nil {
+				t.Fatal(err)
+			}
+			table := strings.Split(out.String(), "\n\n")[1]
+			var lines []string
+			for line := range strings.Lines(table) {
+				lines = append(lines, strings.Join(strings.Fields(line), " "))
+			}
+			want := []string{
+				"MIGRATION STATUS APPLIED AT RUNNER",
+				tc.wantID + " failed 2026-11-05T10:12:00Z " + tc.wantRunner,
+				"step 0: document value",
+				"b applied 2026-11-05T10:12:00Z ci-42",
+			}
+			if !slices.Equal(lines, want) {
+				t.Errorf("table lines %q, want %q", lines, want)
+			}
+		})
+	}
+}
+
+func TestWriteStatusTableEscapesLock(t *testing.T) {
+	lock := &runner.LockInfo{Owner: "deploy\nextra", Current: "a\nextra", Token: "token\textra"}
+	var out bytes.Buffer
+	if err := writeStatus(&out, statusReport{Database: "app", Dir: "migrations"}, lock, "table"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`Lock: held by runner "deploy\nextra" (applying "a\nextra")` + "\n",
+		`  token        "token\textra"` + "\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("table missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestWriteStatusJSON(t *testing.T) {
 	at := time.Date(2026, 11, 5, 10, 12, 0, 0, time.FixedZone("local", -3*60*60))
 	step := 0

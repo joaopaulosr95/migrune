@@ -8,9 +8,11 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -176,7 +178,7 @@ func writeStatus(w io.Writer, rep statusReport, lock *runner.LockInfo, output st
 		if t := cmp.Or(row.AppliedAt, row.FailedAt); t != nil {
 			at = statusTime(*t)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.ID, row.Status, at, row.Runner)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", statusCell(row.ID), row.Status, at, statusCell(row.Runner))
 	}
 	_ = tw.Flush()
 	i := -1
@@ -209,10 +211,10 @@ func writeStatus(w io.Writer, rep statusReport, lock *runner.LockInfo, output st
 	}
 	fmt.Fprintf(ew, "Lock: held by runner %q", lock.Owner)
 	if lock.Current != "" {
-		fmt.Fprintf(ew, " (applying %s)", lock.Current)
+		fmt.Fprintf(ew, " (applying %s)", statusCell(lock.Current))
 	}
 	fmt.Fprintln(ew)
-	fmt.Fprintf(ew, "  token        %s\n", lock.Token)
+	fmt.Fprintf(ew, "  token        %s\n", statusCell(lock.Token))
 	fmt.Fprintf(ew, "  acquired     %s\n", statusTime(lock.AcquiredAt))
 	label := "may be inside a transaction"
 	if lock.Stale {
@@ -236,6 +238,17 @@ func utc(at *time.Time) *time.Time {
 	}
 	t := at.UTC()
 	return &t
+}
+
+// statusCell quotes a value with a non-printable character, such as a
+// newline in a runner id, so each table row stays one line.
+func statusCell(value string) string {
+	for _, r := range value {
+		if !unicode.IsPrint(r) {
+			return strconv.Quote(value)
+		}
+	}
+	return value
 }
 
 func statusTime(at time.Time) string {
