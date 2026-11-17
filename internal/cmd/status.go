@@ -45,9 +45,10 @@ migration's stored error message is hidden unless --sample-values is set:
 it may contain document values. -o json prints one JSON object.
 
 The lock's heartbeat age uses the server's clock. A holder may be inside a
-transaction until the server's transaction lifetime plus two heartbeat
-intervals have passed without a committed heartbeat. status exits 0 whatever
-the state, 1 on a read failure, and 2 on a usage or configuration error.
+transaction until the server's transaction lifetime, counted as at least 60
+seconds, plus two heartbeat intervals have passed without a committed
+heartbeat. status exits 0 whatever the state, 1 on a read failure, and 2 on a
+usage or configuration error.
 
 Status fields: docs/reference/status.md, in
 https://github.com/joaopaulosr95/migrune.`,

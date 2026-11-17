@@ -30,8 +30,9 @@ func (a *app) newUnlockCmd() *cobra.Command {
 		Short: "Remove a dead holder's migration lock by token",
 		Long: `Remove one namespace's migration lock, only if its token matches --token
 and its last committed heartbeat is older than the server's transaction
-lifetime plus two heartbeat intervals (80s with defaults), by the server's
-clock. Inspect the lock with status first. --uri, --db and --token are required.
+lifetime, counted as at least 60 seconds, plus two heartbeat intervals (80s
+with defaults), by the server's clock. Inspect the lock with status first.
+--uri, --db and --token are required.
 
 If the server's transactionLifetimeLimitSeconds can't be read, unlock assumes
 60s and warns: a raised limit makes removing a live holder's lock possible.

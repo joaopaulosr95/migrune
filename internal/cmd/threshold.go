@@ -19,5 +19,12 @@ func (a *app) unlockThreshold(ctx context.Context, db *mongo.Database, level slo
 		a.log.Log(ctx, level, "can't read the server's transactionLifetimeLimitSeconds; assuming 60s, the default: if it was raised, unlock may remove the lock of a runner inside a transaction",
 			"error", runner.RedactError(err, false))
 	}
-	return lifetime + 2*runner.DefaultHeartbeatInterval, lifetime
+	return silenceThreshold(lifetime), lifetime
+}
+
+// silenceThreshold is the server's transaction lifetime plus two heartbeat
+// intervals. The lifetime counts as at least the default: the holder's local
+// lease is sized for it, so a lowered server limit can't let unlock in first.
+func silenceThreshold(lifetime time.Duration) time.Duration {
+	return max(lifetime, runner.DefaultTransactionLifetime) + 2*runner.DefaultHeartbeatInterval
 }

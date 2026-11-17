@@ -290,13 +290,14 @@ token matches and its last committed heartbeat is older than the **silence
 threshold**:
 
 ```txt
-transactionLifetimeLimitSeconds + 2 × heartbeat interval
+max(transactionLifetimeLimitSeconds, 60 seconds) + 2 × heartbeat interval
 ```
 
-The heartbeat interval is 10 seconds, so the threshold is 80 seconds with
-MongoDB's default 60-second transaction lifetime. This guard is independent
-of `expiresAt` and `--lock-ttl`: a stopped holder's lock can be removed
-before its expiry.
+The server's transaction lifetime counts as at least 60 seconds because the
+holder's local lease is sized for that default lifetime. The heartbeat
+interval is 10 seconds, so the threshold is at least 80 seconds, even if the
+server's limit is lower. This guard is independent of `expiresAt` and
+`--lock-ttl`: a stopped holder's lock can be removed before its expiry.
 
 Heartbeats pause while the holder has a transaction open. Its
 [fence](#fence) updates `lastHeartbeat` at the transaction's start, but that
