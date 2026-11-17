@@ -223,9 +223,12 @@ the lock document no longer has the runner's token, the lock is lost: the run
 stops at once.
 
 The runner also keeps a **local lease**: the time it sent its last heartbeat
-that succeeded, plus the expiry, minus a 10-second margin. When the lease has
-passed, the server may hand the lock to another runner soon, so the run stops,
-as if the lock were lost. The lease is measured on the runner's monotonic
+that succeeded, plus the expiry, minus a 10-second margin. The expiry counts
+for at most 80 seconds here, the [unlock](#unlock) threshold with MongoDB's
+default transaction lifetime, so the lease is 70 seconds at most, whatever
+`--lock-ttl` is. When the lease has passed, the server may hand the lock to
+another runner soon, or unlock may remove it, so the run stops, as if the
+lock were lost. The lease is measured on the runner's monotonic
 clock, so a step of its system clock, such as NTP setting it back, doesn't
 extend it. The runner checks the lease right before every
 index command (`createIndexes`, `dropIndexes`, `collMod`) and every `$merge` aggregate,

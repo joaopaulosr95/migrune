@@ -300,7 +300,7 @@ connection to the primary was cut, the server was overloaded, or the process
 was paused. When the runner notices it first, before another one takes over,
 the run stops the same way, after a failed heartbeat or before its next index
 or merge step, with `migration lock lost:` followed by the heartbeat's error,
-or by `no heartbeat succeeded within the lock expiry, less a 10s margin` (see
+or by `no heartbeat succeeded within the local lease` (see
 [heartbeat](reference/changelog-and-lock.md#heartbeat)). Removing the lock
 with unlock also makes its holder lose it.
 

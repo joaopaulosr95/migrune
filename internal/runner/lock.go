@@ -46,6 +46,12 @@ const (
 	// expiry under twice the margin, which only tests use, the margin is
 	// half the expiry.
 	maxLeaseMargin = 10 * time.Second
+	// maxLease bounds the expiry the local lease counts from: unlock
+	// removes a lock whose heartbeat is older than the server's transaction
+	// lifetime plus two heartbeat intervals, at least this, so the holder
+	// stops its unfenced writes a lease margin before unlock may let another
+	// runner in, whatever --lock-ttl is.
+	maxLease = DefaultTransactionLifetime + 2*DefaultHeartbeatInterval
 	// lockWaitBackoff and maxLockWaitBackoff bound the pause between two
 	// attempts to take a held lock with a lock wait.
 	lockWaitBackoff    = time.Second
@@ -145,8 +151,8 @@ type Lock struct {
 	// waits for the server: reading the lease never waits on the network.
 	leaseMu sync.Mutex
 	// lease is the local lease deadline: the send time of the last lock
-	// write that succeeded outside a transaction, plus the expiry, less the
-	// lease margin. It keeps the send time's monotonic clock reading, so a
+	// write that succeeded outside a transaction, plus the expiry (at most
+	// maxLease), less the lease margin. It keeps the send time's monotonic clock reading, so a
 	// step of the wall clock (NTP) can't move it.
 	lease time.Time
 
@@ -194,7 +200,7 @@ func (l *Lock) leaseMargin() time.Duration { return min(maxLeaseMargin, l.expiry
 func (l *Lock) renewed(sent time.Time) {
 	l.leaseMu.Lock()
 	defer l.leaseMu.Unlock()
-	l.lease = sent.Add(l.expiry() - l.leaseMargin())
+	l.lease = sent.Add(min(l.expiry(), maxLease) - l.leaseMargin())
 }
 
 // leaseExpired reports whether the local lease deadline has passed: the lock
@@ -467,7 +473,7 @@ func (l *Lock) StartHeartbeat(ctx context.Context, lost context.CancelCauseFunc)
 				lost(ErrLockLost)
 				return
 			case l.leaseExpired():
-				l.log.Error("migration lock lost: no heartbeat succeeded within the lock expiry, less its margin",
+				l.log.Error("migration lock lost: no heartbeat succeeded within the local lease",
 					"runner", l.owner, "error", errorText(err, l.sampleValues))
 				lost(fmt.Errorf("%w: %w", ErrLockLost, err))
 				return
