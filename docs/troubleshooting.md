@@ -320,12 +320,13 @@ migrune status --db app --namespace billing
 ```
 
 Use the affected run's namespace, or omit `--namespace` for the default
-namespace. If the holder stopped, follow the
-[status → unlock workflow](#the-lock-is-held). Then plan and apply again.
-If heartbeats keep failing, look at the
-network between the runner and the primary, and the logs' `migration lock
-heartbeat failed, retrying` warnings before the loss; raising `--lock-ttl`
-gives a slow heartbeat more time.
+namespace (pass `--namespace ""` instead when `MIGRUNE_NAMESPACE` is set). If
+the holder stopped, follow the [status → unlock workflow](#the-lock-is-held). Then plan and apply again.
+If heartbeats keep failing, check the network between the runner and the
+primary, the server's load, and the logs' `migration lock heartbeat failed,
+retrying` warnings before the loss. Fix the network or server load; raising
+`--lock-ttl` only delays takeover, without extending the
+[local lease](reference/changelog-and-lock.md#heartbeat).
 
 ## The changelog or lock has a newer format
 
