@@ -227,9 +227,9 @@ func (r *Run) checkLease() error {
 		return err
 	}
 	if r.lock.leaseExpired() {
-		r.log.Error("migration lock lease expired: no heartbeat succeeded within the lock expiry, less its margin; " +
+		r.log.Error("migration lock lease expired: no heartbeat succeeded within the local lease; " +
 			"stopping before the next unfenced write")
-		r.cancel(fmt.Errorf("%w: no heartbeat succeeded within the lock expiry, less a %s margin", ErrLockLost, r.lock.leaseMargin()))
+		r.cancel(fmt.Errorf("%w: no heartbeat succeeded within the local lease", ErrLockLost))
 		return r.Err()
 	}
 	return nil

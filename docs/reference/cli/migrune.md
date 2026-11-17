@@ -27,4 +27,6 @@ command line wins over the environment variable, which wins over the default.
 * [migrune drift](migrune_drift.md)	 - Compare the indexes with the applied migrations
 * [migrune lint](migrune_lint.md)	 - Check migration files
 * [migrune plan](migrune_plan.md)	 - Show what apply would do
+* [migrune status](migrune_status.md)	 - Show a namespace's migrations and lock
+* [migrune unlock](migrune_unlock.md)	 - Remove a dead holder's migration lock by token
 

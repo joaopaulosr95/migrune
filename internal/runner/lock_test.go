@@ -64,30 +64,37 @@ func TestAcquireConcurrent(t *testing.T) {
 }
 
 // TestLeaseClock checks the local lease with an injected clock: it ends
-// exactly at the send time plus the expiry, less the margin, and it keeps
+// exactly at the send time plus the expiry, at most maxLease, less the
+// margin, and it keeps
 // the clock's monotonic reading. Go compares two times on their monotonic
 // readings when both have one, so a step of the wall clock, such as NTP
 // setting it back, can't extend the lease. The public time API can't build
 // a time whose wall and monotonic readings disagree, so the test checks the
 // reading is kept instead of stepping the clock.
 func TestLeaseClock(t *testing.T) {
-	// The expiry is 90s and the margin 10s: the lease ends 80s after the
-	// send time.
+	// The margin is 10s and maxLease 80s: with the default 90s TTL or a 1h
+	// one, the lease ends 70s after the send time, before unlock's 80s
+	// threshold. A 40s TTL is a 40s expiry, under the cap: 30s.
 	base := time.Now()
 	cases := []struct {
 		name    string
+		ttl     time.Duration
 		elapsed time.Duration // on the monotonic clock, since the send time
 		want    bool
 	}{
-		{name: "just renewed", elapsed: 0},
-		{name: "at the deadline", elapsed: 80 * time.Second},
-		{name: "past the deadline", elapsed: 80*time.Second + time.Nanosecond, want: true},
-		{name: "long past the deadline", elapsed: time.Hour, want: true},
+		{name: "just renewed", ttl: 90 * time.Second, elapsed: 0},
+		{name: "at the deadline", ttl: 90 * time.Second, elapsed: 70 * time.Second},
+		{name: "past the deadline", ttl: 90 * time.Second, elapsed: 70*time.Second + time.Nanosecond, want: true},
+		{name: "long past the deadline", ttl: 90 * time.Second, elapsed: time.Hour, want: true},
+		{name: "long TTL at the cap", ttl: time.Hour, elapsed: 70 * time.Second},
+		{name: "long TTL past the cap", ttl: time.Hour, elapsed: 70*time.Second + time.Nanosecond, want: true},
+		{name: "short TTL at the deadline", ttl: 40 * time.Second, elapsed: 30 * time.Second},
+		{name: "short TTL past the deadline", ttl: 40 * time.Second, elapsed: 30*time.Second + time.Nanosecond, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			now := base
-			l := &Lock{interval: 10 * time.Second, ttl: 90 * time.Second, now: func() time.Time { return now }}
+			l := &Lock{interval: 10 * time.Second, ttl: tc.ttl, now: func() time.Time { return now }}
 			if !l.leaseExpired() {
 				t.Fatal("lease not expired before any renewal")
 			}

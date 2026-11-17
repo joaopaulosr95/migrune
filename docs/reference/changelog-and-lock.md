@@ -19,8 +19,8 @@ Every changelog entry and every lock document carries its format version in
 `v`. This migrune writes and reads changelog entries v1 and lock documents
 v1. A document without `v`, such as one written by hand, reads as v1.
 
-Every command that connects (plan, apply, drift, and lint with `--uri`)
-first looks for a changelog entry, in any namespace, or a lock document with
+Every command that connects (plan, apply, drift, status, unlock, and lint
+with `--uri`) first looks for a changelog entry, in any namespace, or a lock document with
 a `v` higher than the one it knows, before it reads or writes anything else.
 If it finds one, a newer migrune has written to this database, and the run
 fails with exit code 1, writing nothing:
@@ -42,8 +42,8 @@ anyway.
 
 ## Changelog: `migrations_changelog`
 
-apply writes an entry when a migration finishes or fails. plan, lint and drift never
-write an entry.
+apply writes an entry when a migration finishes or fails. plan, lint, drift,
+status and unlock never write an entry.
 
 plan and apply create the collection, empty, when it doesn't exist, after
 apply's [`--init`](report.md#first-apply) check and before they
@@ -68,8 +68,8 @@ and the empty collection if it was missing.
   entry. Checks that fail before any migration runs (an edited or missing
   applied migration, a digest mismatch) write none either.
 
-Every read of the changelog (plan, apply, lint) takes only the entries of
-the run's namespace: `{namespace: "<name>"}`, or `{namespace: null}` for the
+Every read of the changelog (plan, apply, lint, drift, status) takes only the
+entries of the run's namespace: `{namespace: "<name>"}`, or `{namespace: null}` for the
 default namespace, which also matches entries without the field, such as
 those written before namespaces existed.
 
@@ -157,7 +157,8 @@ One lock per namespace in each database: a document with `_id:
 namespace `<name>`. A namespace name can't hold `:`, so two namespaces never
 share a lock, and runs in different namespaces don't wait for each other.
 plan and apply take their namespace's lock before reading the changelog and
-release it when they finish, fail or are interrupted. lint doesn't take it.
+release it when they finish, fail or are interrupted. lint, drift and status
+don't take it.
 
 ```js
 {
@@ -222,9 +223,12 @@ the lock document no longer has the runner's token, the lock is lost: the run
 stops at once.
 
 The runner also keeps a **local lease**: the time it sent its last heartbeat
-that succeeded, plus the expiry, minus a 10-second margin. When the lease has
-passed, the server may hand the lock to another runner soon, so the run stops,
-as if the lock were lost. The lease is measured on the runner's monotonic
+that succeeded, plus the expiry, minus a 10-second margin. The expiry counts
+for at most 80 seconds here, the [unlock](#unlock) threshold with MongoDB's
+default transaction lifetime, so the lease is 70 seconds at most, whatever
+`--lock-ttl` is. When the lease has passed, the server may hand the lock to
+another runner soon, or unlock may remove it, so the run stops, as if the
+lock were lost. The lease is measured on the runner's monotonic
 clock, so a step of its system clock, such as NTP setting it back, doesn't
 extend it. The runner checks the lease right before every
 index command (`createIndexes`, `dropIndexes`, `collMod`) and every `$merge` aggregate,
@@ -278,3 +282,59 @@ it still has its token, with its own short timeout (5 seconds), so the next
 run doesn't wait for the expiry. If another runner owns it by then, it is
 left alone. When the release fails after a successful run, migrune logs a
 warning and still exits 0: the lock expires on its own.
+
+### Unlock
+
+`migrune unlock --token <token>` removes one namespace's lock only when its
+token matches and its last committed heartbeat is older than the **silence
+threshold**:
+
+```txt
+max(transactionLifetimeLimitSeconds, 60 seconds) + 2 × heartbeat interval
+```
+
+The server's transaction lifetime counts as at least 60 seconds because the
+holder's local lease is sized for that default lifetime. The heartbeat
+interval is 10 seconds, so the threshold is at least 80 seconds, even if the
+server's limit is lower. This guard is independent of `expiresAt` and
+`--lock-ttl`: a stopped holder's lock can be removed before its expiry.
+
+Heartbeats pause while the holder has a transaction open. Its
+[fence](#fence) updates `lastHeartbeat` at the transaction's start, but that
+write becomes visible only when the transaction commits. A live holder can
+therefore have no committed heartbeat for as long as the server allows a
+transaction to live. The threshold covers that lifetime and two heartbeat
+intervals. status uses the same threshold for its heartbeat label and
+`unlockAfter`.
+
+Both commands read `transactionLifetimeLimitSeconds` with
+`{getParameter: 1, transactionLifetimeLimitSeconds: 1}` on `admin`. If that
+read fails for any reason, including missing privileges, they assume 60
+seconds and log it, at warn in unlock and at info in status, where it only
+labels the heartbeat: **if the server's limit was raised, unlock may remove
+the lock of a runner inside a transaction**. Resolve the failed read
+or verify that the limit is still the default before using that fallback.
+
+The removal is one atomic `findOneAndDelete` on `migrations_lock`, with this
+filter (the threshold is in milliseconds):
+
+```js
+{
+  _id: <the namespace's lock id>,
+  token: <the supplied token>,
+  $expr: {
+    $lt: ["$lastHeartbeat", {$subtract: ["$$NOW", <threshold>]}]
+  }
+}
+```
+
+The server's clock decides whether removal is allowed. A new acquisition
+has a different token and cannot be removed with the inspected token. The
+delete can wait behind an open transaction; after it commits, MongoDB
+re-evaluates the filter against the updated lock. The delete's timeout is
+the transaction lifetime read above (or its fallback) plus 10 seconds. After
+5 seconds, unlock logs at info that it is waiting for an open transaction
+on the lock to end.
+
+unlock writes nothing else. If nothing was deleted, it reads the locks to
+explain why; see [refusals and recovery](../troubleshooting.md#the-lock-is-held).
