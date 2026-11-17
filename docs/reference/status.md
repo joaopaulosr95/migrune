@@ -56,7 +56,8 @@ and exit codes (see [compatibility](compatibility.md)).
 | `migrations[].id` | string | The migration id: the file name without `.json`. |
 | `migrations[].status` | string | One of the [migration states](#migration-states) above. |
 | `migrations[].checksum` | string, optional | SHA-256, lowercase hex: the latest `Finished` entry's file checksum for applied, changed or missing rows; the latest `Errored` entry's for failed rows; the current file's for pending rows. Absent when empty. |
-| `migrations[].appliedAt` | string, optional | The latest `Finished` entry's `createdAt`, or the latest `Errored` entry's for a failed row. RFC 3339 in UTC. Absent for pending rows. |
+| `migrations[].appliedAt` | string, optional | The latest `Finished` entry's `createdAt`, RFC 3339 in UTC. Present for applied, changed and missing rows. |
+| `migrations[].failedAt` | string, optional | The latest `Errored` entry's `createdAt`, RFC 3339 in UTC. Present for failed rows only. |
 | `migrations[].runner` | string, optional | The runner from that entry. Absent when empty, including for pending rows. |
 | `migrations[].failedStep` | integer, optional | The first recorded error's non-null step index, skipping errors without a step; zero-based. Absent when no error has a step. |
 | `migrations[].error` | string, optional | The first stored error message of a failed migration, only with `--sample-values`. Absent otherwise, or when that message is empty. |
@@ -85,7 +86,7 @@ is the zero time, `0001-01-01T00:00:00Z`; the table shows `-`.
       "id": "2026-11-03-001-copy-currency",
       "status": "failed",
       "checksum": "5f0c…",
-      "appliedAt": "2026-11-03T09:12:44Z",
+      "failedAt": "2026-11-03T09:12:44Z",
       "runner": "ci-42-1-AB12CD34",
       "failedStep": 0
     }

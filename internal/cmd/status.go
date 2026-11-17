@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -149,10 +150,8 @@ func writeStatus(w io.Writer, rep statusReport, lock *runner.LockInfo, output st
 		}
 		rep.Migrations = slices.Clone(rep.Migrations)
 		for i, row := range rep.Migrations {
-			if row.AppliedAt != nil {
-				at := row.AppliedAt.UTC()
-				rep.Migrations[i].AppliedAt = &at
-			}
+			rep.Migrations[i].AppliedAt = utc(row.AppliedAt)
+			rep.Migrations[i].FailedAt = utc(row.FailedAt)
 		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -172,8 +171,8 @@ func writeStatus(w io.Writer, rep statusReport, lock *runner.LockInfo, output st
 	fmt.Fprintln(tw, "MIGRATION\tSTATUS\tAPPLIED AT\tRUNNER")
 	for _, row := range rep.Migrations {
 		at := ""
-		if row.AppliedAt != nil {
-			at = statusTime(*row.AppliedAt)
+		if t := cmp.Or(row.AppliedAt, row.FailedAt); t != nil {
+			at = statusTime(*t)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.ID, row.Status, at, row.Runner)
 	}
@@ -228,6 +227,15 @@ func writeStatus(w io.Writer, rep statusReport, lock *runner.LockInfo, output st
 	return ew.err
 }
 
+// utc returns at in UTC, or nil.
+func utc(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+	t := at.UTC()
+	return &t
+}
+
 func statusTime(at time.Time) string {
 	if at.IsZero() {
 		return "-"
@@ -239,7 +247,8 @@ type migrationState struct {
 	ID         string             `json:"id"`
 	Status     string             `json:"status"` // applied|failed|pending|changed|missing
 	Checksum   string             `json:"checksum,omitempty"`
-	AppliedAt  *time.Time         `json:"appliedAt,omitempty"` // the latest entry's createdAt: Finished, or Errored for failed
+	AppliedAt  *time.Time         `json:"appliedAt,omitempty"` // the latest Finished entry's createdAt
+	FailedAt   *time.Time         `json:"failedAt,omitempty"`  // the latest Errored entry's createdAt, for failed
 	Runner     string             `json:"runner,omitempty"`
 	FailedStep *int               `json:"failedStep,omitempty"`
 	Error      string             `json:"error,omitempty"` // set only with --sample-values
@@ -271,7 +280,7 @@ func migrationStates(files []migration.Migration, finished map[string]migration.
 			continue
 		}
 		state := migrationState{
-			ID: id, Status: "failed", Checksum: e.Checksum, AppliedAt: &e.CreatedAt, Runner: e.Runner,
+			ID: id, Status: "failed", Checksum: e.Checksum, FailedAt: &e.CreatedAt, Runner: e.Runner,
 		}
 		for i, failure := range e.Errors {
 			if state.FailedStep == nil && failure.Step != nil {

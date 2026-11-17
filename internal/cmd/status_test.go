@@ -352,7 +352,7 @@ func TestWriteStatusJSON(t *testing.T) {
 				t.Errorf("report %v", got)
 			}
 			row := got["migrations"].([]any)[0].(map[string]any)
-			keys := []string{"appliedAt", "checksum", "failedStep", "id", "runner", "status"}
+			keys := []string{"checksum", "failedAt", "failedStep", "id", "runner", "status"}
 			if sampleValues {
 				keys = append(keys, "error")
 				slices.Sort(keys)
@@ -363,8 +363,8 @@ func TestWriteStatusJSON(t *testing.T) {
 			if !slices.Equal(sortedKeys(row), keys) || row["failedStep"] != float64(0) || row["status"] != "failed" {
 				t.Errorf("migration %v, want keys %v", row, keys)
 			}
-			if row["appliedAt"] != "2026-11-05T13:12:00Z" {
-				t.Errorf("appliedAt %v, want UTC", row["appliedAt"])
+			if row["failedAt"] != "2026-11-05T13:12:00Z" {
+				t.Errorf("failedAt %v, want UTC", row["failedAt"])
 			}
 			if !held {
 				if got["lock"] != nil {
@@ -420,7 +420,7 @@ func TestMigrationStates(t *testing.T) {
 	errored := map[string]runner.ErroredEntry{
 		"a": {ID: "a", Checksum: "retry", CreatedAt: later, Runner: "runner-b", Errors: errors},
 	}
-	failed := migrationState{ID: "a", Status: "failed", Checksum: "retry", AppliedAt: &later,
+	failed := migrationState{ID: "a", Status: "failed", Checksum: "retry", FailedAt: &later,
 		Runner: "runner-b", FailedStep: &step0, errors: hidden}
 	cases := []struct {
 		name         string
@@ -479,13 +479,13 @@ func TestMigrationStates(t *testing.T) {
 		},
 		{
 			name: "sample values include first message and first step", errored: errored, sampleValues: true,
-			want: []migrationState{{ID: "a", Status: "failed", Checksum: "retry", AppliedAt: &later, Runner: "runner-b",
+			want: []migrationState{{ID: "a", Status: "failed", Checksum: "retry", FailedAt: &later, Runner: "runner-b",
 				FailedStep: &step0, Error: "document value in first message", errors: errors}},
 		},
 		{
 			name:    "failed without step errors",
 			errored: map[string]runner.ErroredEntry{"a": {ID: "a", Checksum: "retry", CreatedAt: later, Runner: "runner-b"}},
-			want:    []migrationState{{ID: "a", Status: "failed", Checksum: "retry", AppliedAt: &later, Runner: "runner-b"}},
+			want:    []migrationState{{ID: "a", Status: "failed", Checksum: "retry", FailedAt: &later, Runner: "runner-b"}},
 		},
 		{
 			name: "sorted union", files: []migration.Migration{{ID: "c", Checksum: "c"}, {ID: "b", Checksum: "b"}},
