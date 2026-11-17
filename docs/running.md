@@ -1,6 +1,6 @@
 # Running migrations
 
-migrune has four commands:
+migrune has six commands:
 
 - `lint` checks the files offline; with a connection, it also checks that no
   applied migration was edited or deleted, read-only.
@@ -10,6 +10,8 @@ migrune has four commands:
   stopping at the first failure.
 - `drift` compares the indexes on the server with the indexes the applied
   migrations leave, read-only.
+- `status` shows one namespace's migrations and lock, read-only.
+- `unlock` removes a dead holder's lock, matching the token status showed.
 
 ```sh
 export MIGRUNE_URI='mongodb://localhost:27017/?replicaSet=rs0'
@@ -30,7 +32,7 @@ every migration applied to it, so a migration applied from another directory
 shows up as [applied but missing](troubleshooting.md#applied-but-missing) and
 plan and apply fail. When several apps, each with its own migrations directory,
 migrate one database, give each app a namespace with `--namespace`
-(`MIGRUNE_NAMESPACE`), the same on lint, plan, apply and drift:
+(`MIGRUNE_NAMESPACE`), the same on lint, plan, apply, drift, status and unlock:
 
 ```sh
 migrune plan  --dir migrations --db app --namespace billing --digest-out plan.digest
@@ -320,6 +322,40 @@ What it can't see:
 - a collation field set by hand that the migration never gave (see
   [collation](reference/drift.md#what-is-compared)).
 
+## Inspecting migrations and the lock
+
+`status` reads one namespace's changelog and lock without taking the lock or
+writing anything. Give it `--dir` to compare the files with the changelog:
+
+```sh
+migrune status --dir migrations --db app --namespace billing
+migrune status --db app --namespace billing -o json > status.json
+```
+
+Without `--dir`, it shows only applied and failed migrations. It also shows
+the holder's runner id, current migration, token and heartbeat, and when
+unlock is allowed. A successful read exits 0 whatever the migration or lock
+state. The states, JSON fields and handling of stored error messages are
+in [status output](reference/status.md).
+
+## Removing a dead holder's lock
+
+Inspect the lock with status, then pass its token to unlock in the same
+database and namespace:
+
+```sh
+migrune status --db app --namespace billing
+migrune unlock --db app --namespace billing --token '<token from status>'
+```
+
+`--token` can also come from `MIGRUNE_TOKEN`. unlock removes only that
+acquisition's lock, once its committed heartbeat is old enough; it has no
+`--force` option. See [the lock is held](troubleshooting.md#the-lock-is-held)
+for refusals and what to do next, and the
+[unlock guard](reference/changelog-and-lock.md#unlock) for the threshold and
+server-parameter fallback. After removal, run plan and apply again as after
+an [interrupted run](troubleshooting.md#a-run-was-interrupted).
+
 ## Credentials
 
 Pass the connection string as `MIGRUNE_URI`, from a secret or protected
@@ -355,7 +391,11 @@ db.getSiblingDB("app").createRole({
 db.getSiblingDB("app").grantRolesToUser("<user>", ["migruneCollMod"])
 ```
 
-For lint in pull requests, and for drift, use another user with `read`.
+For lint in pull requests, drift and status, use another user with `read`.
+unlock needs permission to read the changelog and lock and delete from
+`migrations_lock`; `readWrite` on the target database covers it. status and unlock also try to
+read the server's transaction lifetime with `getParameter` on `admin`; see
+the [fallback and its warning](reference/changelog-and-lock.md#unlock).
 
 ### AWS IAM
 

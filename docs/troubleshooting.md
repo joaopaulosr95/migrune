@@ -241,7 +241,7 @@ anything, and prints no report:
 Error: migration lock is held by runner "ci-42-1-AB12CD34" (applying 2026-11-05-001-set-trial-days), last heartbeat 2026-11-05T10:12:00Z
 ```
 
-Another run is in progress: wait for it, or let migrune wait with
+Another run may be in progress: wait for it, or let migrune wait with
 `--lock-wait` (for example `--lock-wait 10m`), which retries until the lock is
 free or the duration has passed. A CI job can also retry on exit code 3. If
 the holder died without releasing the lock (SIGKILL, a lost machine), the
@@ -251,10 +251,37 @@ heartbeat. A runner that runs again after a crash waits for that too, even
 with the same `--runner-id`. See
 [the lock](reference/changelog-and-lock.md#lock-migrations_lock).
 
-Don't delete the lock document by hand unless you are sure its holder is
-gone. Even then, a runner that lost its lock can't commit a data migration
-(the fence aborts its transaction), but it could still be running index or
-merge steps.
+Inspect the holder and its heartbeat with status, using the same database
+and namespace as the blocked run (`MIGRUNE_URI` supplies the connection):
+
+```sh
+migrune status --db app --namespace billing
+```
+
+If the holder stopped, status says `holder stopped: unlock allowed`. To
+remove its lock before expiry, pass the token it shows:
+
+```sh
+migrune unlock --db app --namespace billing --token '<token from status>'
+```
+
+For the default namespace, omit `--namespace` on both commands, or set it to
+`""` to override `MIGRUNE_NAMESPACE`. `MIGRUNE_TOKEN` can supply `--token`.
+unlock checks the token and heartbeat atomically, using the server's clock;
+see the [threshold and fallback warning](reference/changelog-and-lock.md#unlock).
+It can refuse the removal:
+
+| Result | Exit | What to do |
+| ------ | ---- | ---------- |
+| The matching holder has a recent heartbeat and may be inside a transaction. | 3 | Let it finish, or retry after the time shown. |
+| The token belongs to another namespace. | 1 | Use the quoted flag value shown, such as `--namespace "billing"` or `--namespace ""` for the default namespace. |
+| Another acquisition now holds this namespace's lock. | 3 | Run status again and inspect the new holder. |
+
+If no lock has the token and the namespace has none, unlock exits 0: it was
+released or expired and removed already. A successful removal logs a warning
+with the runner, token, current migration, heartbeat age and whether the
+lock had expired. Then run plan and apply again, as after an
+[interrupted run](#a-run-was-interrupted). There is no `--force` override.
 
 ## The lock was lost
 
@@ -274,8 +301,8 @@ was paused. When the runner notices it first, before another one takes over,
 the run stops the same way, after a failed heartbeat or before its next index
 or merge step, with `migration lock lost:` followed by the heartbeat's error,
 or by `no heartbeat succeeded within the lock expiry, less a 10s margin` (see
-[heartbeat](reference/changelog-and-lock.md#heartbeat)). Deleting the lock
-document by hand has the same effect.
+[heartbeat](reference/changelog-and-lock.md#heartbeat)). Removing the lock
+with unlock also makes its holder lose it.
 
 No transaction commits without the lock (the
 [fence](reference/changelog-and-lock.md#fence)): a data migration's changes
@@ -286,11 +313,14 @@ handles them as it does after an [interrupted run](#a-run-was-interrupted).
 
 Find the runner that holds the lock now, if any, and let it finish:
 
-```js
-db.migrations_lock.find()
+```sh
+migrune status --db app --namespace billing
 ```
 
-Then plan and apply again. If heartbeats keep failing, look at the
+Use the affected run's namespace, or omit `--namespace` for the default
+namespace. If the holder stopped, follow the
+[status → unlock workflow](#the-lock-is-held). Then plan and apply again.
+If heartbeats keep failing, look at the
 network between the runner and the primary, and the logs' `migration lock
 heartbeat failed, retrying` warnings before the loss; raising `--lock-ttl`
 gives a slow heartbeat more time.
