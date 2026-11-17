@@ -212,6 +212,54 @@ type StepError struct {
 	Message string `bson:"message"`
 }
 
+// ErroredEntry is what the latest Errored entry of a migration recorded.
+type ErroredEntry struct {
+	ID        string
+	Checksum  string
+	CreatedAt time.Time
+	Runner    string
+	Errors    []StepError
+}
+
+// Errored returns, per migration id, namespace's latest Errored entry. It only reads.
+func Errored(ctx context.Context, db *mongo.Database, namespace string) (map[string]ErroredEntry, error) {
+	cur, err := changelogCollection(db).Find(ctx,
+		bson.D{namespaceFilter(namespace), {Key: "status", Value: StatusErrored}},
+		options.Find().
+			SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}).
+			SetProjection(bson.D{
+				{Key: "migrationId", Value: 1},
+				{Key: "checksum", Value: 1},
+				{Key: "createdAt", Value: 1},
+				{Key: "runner", Value: 1},
+				{Key: "errors", Value: 1},
+			}))
+	if err != nil {
+		return nil, fmt.Errorf("read changelog: %w", err)
+	}
+	var entries []struct {
+		MigrationID string      `bson:"migrationId"`
+		Checksum    string      `bson:"checksum"`
+		CreatedAt   time.Time   `bson:"createdAt"`
+		Runner      string      `bson:"runner"`
+		Errors      []StepError `bson:"errors"`
+	}
+	if err := cur.All(ctx, &entries); err != nil {
+		return nil, fmt.Errorf("read changelog: %w", err)
+	}
+	errored := make(map[string]ErroredEntry, len(entries))
+	for _, e := range entries {
+		errored[e.MigrationID] = ErroredEntry{
+			ID:        e.MigrationID,
+			Checksum:  e.Checksum,
+			CreatedAt: e.CreatedAt.UTC(),
+			Runner:    e.Runner,
+			Errors:    e.Errors,
+		}
+	}
+	return errored, nil
+}
+
 func changelogCollection(db *mongo.Database) *mongo.Collection {
 	return db.Collection(ChangelogCollection, options.Collection().
 		SetWriteConcern(writeconcern.Majority()).

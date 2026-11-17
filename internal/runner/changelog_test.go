@@ -271,6 +271,69 @@ func TestFinished(t *testing.T) {
 	}
 }
 
+func TestErrored(t *testing.T) {
+	ctx := testCtx(t)
+	db := testDB(t)
+	at := time.Date(2026, 1, 4, 10, 12, 0, 0, time.UTC)
+	step0, step1 := 0, 1
+	mig, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Collection(ChangelogCollection).InsertMany(ctx, []any{
+		Entry{ID: bson.NewObjectID(), MigrationID: "a", Checksum: "old", CreatedAt: at, Runner: "runner-a", Status: StatusErrored, Migration: mig,
+			Errors: []StepError{{Step: &step0, Message: "first failure"}}},
+		Entry{ID: bson.NewObjectID(), MigrationID: "a", Checksum: "new", CreatedAt: at.Add(time.Hour), Runner: "runner-b", Status: StatusErrored, Migration: mig,
+			Errors: []StepError{{Step: &step1, Message: "second failure"}}},
+		Entry{ID: bson.NewObjectID(), Namespace: "billing", MigrationID: "b", Checksum: "billing", CreatedAt: at.Add(2 * time.Hour), Runner: "runner-c", Status: StatusErrored, Migration: mig,
+			Errors: []StepError{{Message: "billing failure"}}},
+		Entry{ID: bson.NewObjectID(), MigrationID: "c", Checksum: "finished", CreatedAt: at.Add(3 * time.Hour), Runner: "runner-d", Status: StatusFinished, Migration: mig},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		namespace string
+		want      map[string]ErroredEntry
+	}{
+		{namespace: "", want: map[string]ErroredEntry{
+			"a": {ID: "a", Checksum: "new", CreatedAt: at.Add(time.Hour), Runner: "runner-b",
+				Errors: []StepError{{Step: &step1, Message: "second failure"}}},
+		}},
+		{namespace: "billing", want: map[string]ErroredEntry{
+			"b": {ID: "b", Checksum: "billing", CreatedAt: at.Add(2 * time.Hour), Runner: "runner-c",
+				Errors: []StepError{{Message: "billing failure"}}},
+		}},
+		{namespace: "none", want: map[string]ErroredEntry{}},
+	}
+	for _, tc := range cases {
+		t.Run("namespace "+tc.namespace, func(t *testing.T) {
+			got, err := Errored(ctx, db, tc.namespace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("Errored = %+v, want %+v", got, tc.want)
+			}
+			for id, w := range tc.want {
+				g := got[id]
+				if g.ID != w.ID || g.Checksum != w.Checksum || g.Runner != w.Runner ||
+					!g.CreatedAt.Equal(w.CreatedAt) || g.CreatedAt.Location() != time.UTC {
+					t.Errorf("%s: %+v, want %+v", id, g, w)
+				}
+				if len(g.Errors) != 1 {
+					t.Fatalf("%s: errors %+v, want %+v", id, g.Errors, w.Errors)
+				}
+				gerr, werr := g.Errors[0], w.Errors[0]
+				if gerr.Message != werr.Message || (gerr.Step == nil) != (werr.Step == nil) ||
+					(gerr.Step != nil && werr.Step != nil && *gerr.Step != *werr.Step) {
+					t.Errorf("%s: error %+v, want %+v", id, gerr, werr)
+				}
+			}
+		})
+	}
+}
+
 // TestSnapshot checks the changelog's migration snapshot keeps the file's id,
 // description and steps, and only the fields each step sets.
 func TestSnapshot(t *testing.T) {
