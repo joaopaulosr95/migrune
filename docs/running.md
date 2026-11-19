@@ -142,8 +142,8 @@ Every later apply runs without `--init`. A plan made for the first apply
 doesn't match an apply after the namespace got entries, and the other way
 round.
 
-Both jobs need the same migrune version and the same commit. apply refuses
-to run without `--digest-in` (exit 2); `--no-digest` (`MIGRUNE_NO_DIGEST`)
+Both jobs need the same migrune image digest and migration commit. apply
+refuses to run without `--digest-in` (exit 2); `--no-digest` (`MIGRUNE_NO_DIGEST`)
 lifts that, for local runs only. The digest proves apply runs what plan saw,
 not that anyone approved it: the approval is your CI's, who may start the
 apply job and where its digest file comes from (see
@@ -219,13 +219,11 @@ the workflow can't read it.
   example.
 - **Go**: `go install github.com/joaopaulosr95/migrune/cmd/migrune@<version>`.
 
-Pin an exact version and upgrade on purpose. After a failure, see
-[troubleshooting](troubleshooting.md).
-
-A tag can be moved; a digest can't. To pin the image itself, add the digest
-of the version's image index, which
+In CI, use the same verified image-index digest for plan and apply. A tag
+can move, including an exact version tag. Get the index digest from
 `docker buildx imagetools inspect ghcr.io/joaopaulosr95/migrune:<version>`
-prints:
+and pin it together with the version tag. After a failure, see
+[troubleshooting](troubleshooting.md).
 
 ```txt
 ghcr.io/joaopaulosr95/migrune:<version>@sha256:<digest>
@@ -233,17 +231,19 @@ ghcr.io/joaopaulosr95/migrune:<version>@sha256:<digest>
 
 Images, default and `-debug`, have a GitHub build-provenance
 attestation, signed by migrune's Release workflow, that records the
-repository, the workflow run and the commit it was built from. Check it with
-the GitHub CLI before you pin a digest:
+repository, workflow run, and source commit. Get the expected commit from
+the Git release tag (`git rev-parse 'v<version>^{commit}'` in a trusted
+checkout). Verify the digest with the GitHub CLI before pinning it, using that
+commit as `<release-commit>`. For the debug image, use its own index digest.
 
 ```sh
 gh attestation verify \
   oci://ghcr.io/joaopaulosr95/migrune:<version>@sha256:<digest> \
-  --repo joaopaulosr95/migrune
+  --repo joaopaulosr95/migrune \
+  --signer-workflow joaopaulosr95/migrune/.github/workflows/release.yml \
+  --source-ref refs/heads/main \
+  --source-digest <release-commit>
 ```
-
-It exits non-zero unless an attestation from that repository matches the
-digest.
 
 ## Large collections
 

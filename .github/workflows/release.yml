@@ -3,15 +3,6 @@ name: Release
 on:
   push:
     branches: [main]
-  # Republishes the images of an existing release, such as after the image
-  # job failed: runs only the image job, on the tag given (see CONTRIBUTING,
-  # "Releases").
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag to publish the images of, such as v1.2.3. It must be the latest release.
-        required: true
-        type: string
 
 # Each job asks for only what it needs.
 permissions: {}
@@ -22,14 +13,12 @@ concurrency:
 
 jobs:
   ci:
-    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
       pull-requests: read
 
   # Cuts the version: the tag and the GitHub release. It can't push images.
-  # Skipped, with ci, on workflow_dispatch.
   release:
     needs: ci
     runs-on: ubuntu-latest
@@ -61,13 +50,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Builds and pushes the images of the version just cut, or of the tag given
-  # to workflow_dispatch, and attests their provenance. It can't write to the
-  # repository.
+  # Builds the CI-tested commit and attests both images before tagging them.
   image:
     needs: release
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release.outputs.published == 'true') }}
+    if: needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read # checkout
       packages: write
@@ -75,32 +65,22 @@ jobs:
       attestations: write # to store them
     env:
       IMAGE: ghcr.io/joaopaulosr95/migrune
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('v{0}', needs.release.outputs.version) }}
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
-      # The images get the floating tags (1.2, 1, latest) too, so only the
-      # latest release can be published: an older one would move them back.
-      - name: Check the tag
+      - name: Check the release version
         run: |
-          if ! [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "::error::The tag must be a release tag, such as v1.2.3."
-            exit 1
-          fi
-          latest=$(git ls-remote --tags --refs "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" 'v*' |
-            sed 's|.*refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
-          if [ "$TAG" != "$latest" ]; then
-            echo "::error::The tag isn't the latest release (${latest:-none})."
+          if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable release version, such as 1.2.3."
             exit 1
           fi
           {
-            echo "VERSION=${TAG#v}"
             echo "MAJOR=${BASH_REMATCH[1]}"
             echo "MINOR=${BASH_REMATCH[2]}"
-            echo "PATCH=${BASH_REMATCH[3]}"
           } >> "$GITHUB_ENV"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.TAG }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -116,15 +96,10 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,push=true
           provenance: mode=max
           sbom: true
           build-args: VERSION=${{ env.VERSION }}
-          tags: |
-            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}
-            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}
-            ${{ env.IMAGE }}:${{ env.MAJOR }}
-            ${{ env.IMAGE }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}
@@ -136,15 +111,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           target: debug
-          push: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,push=true
           provenance: mode=max
           sbom: true
           build-args: VERSION=${{ env.VERSION }}
-          tags: |
-            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}-debug
-            ${{ env.IMAGE }}:${{ env.MAJOR }}.${{ env.MINOR }}-debug
-            ${{ env.IMAGE }}:${{ env.MAJOR }}-debug
-            ${{ env.IMAGE }}:debug
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}
@@ -161,3 +131,42 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.debug.outputs.digest }}
+
+      - name: Verify both image attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_DIGEST: ${{ steps.default.outputs.digest }}
+          DEBUG_DIGEST: ${{ steps.debug.outputs.digest }}
+        run: |
+          for digest in "$DEFAULT_DIGEST" "$DEBUG_DIGEST"; do
+            gh attestation verify "oci://$IMAGE@$digest" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA"
+          done
+
+      - name: Publish the release tags
+        env:
+          DEFAULT_DIGEST: ${{ steps.default.outputs.digest }}
+          DEBUG_DIGEST: ${{ steps.debug.outputs.digest }}
+        run: |
+          # A retry keeps the original commit. Recheck the tag before moving aliases.
+          tag="v$VERSION"
+          refs=$(git ls-remote --tags origin 'v*')
+          latest=$(awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ {
+            sub(/^refs\/tags\//, "", $2); print $2
+          }' <<< "$refs" | sort -V | tail -n 1)
+          tagged_commit=$(awk -v ref="refs/tags/$tag" '
+            $2 == ref { tag = $1 }
+            $2 == ref "^{}" { peeled = $1 }
+            END { print (peeled == "" ? tag : peeled) }
+          ' <<< "$refs")
+          if [[ "$tag" != "$latest" || "$tagged_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::$tag must be the latest release tag and point to $GITHUB_SHA."
+            exit 1
+          fi
+          docker buildx imagetools create \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:$MAJOR.$MINOR" -t "$IMAGE:$MAJOR" -t "$IMAGE:latest" \
+            "$IMAGE@$DEFAULT_DIGEST"
+          docker buildx imagetools create \
+            -t "$IMAGE:$VERSION-debug" -t "$IMAGE:$MAJOR.$MINOR-debug" -t "$IMAGE:$MAJOR-debug" -t "$IMAGE:debug" \
+            "$IMAGE@$DEBUG_DIGEST"

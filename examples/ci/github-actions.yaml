@@ -43,10 +43,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Pin an exact migrune version. A tag can be moved; to pin the image
-  # itself, add its digest, which `docker buildx imagetools inspect` prints:
-  # ghcr.io/joaopaulosr95/migrune:1.0.0@sha256:<digest>.
-  MIGRUNE_IMAGE: ghcr.io/joaopaulosr95/migrune:1.0.0
+  # Verify provenance before changing this tag and index digest (docs/running.md).
+  MIGRUNE_IMAGE: ghcr.io/joaopaulosr95/migrune:1.1.0@sha256:951f395815ba28356987adc1ff3a4ea16be868af11b9968959ddcda836e3b8e0
   MIGRUNE_DB: app
   # Inside the container, the repository is mounted at /work.
   MIGRUNE_DIR: /work/migrations
