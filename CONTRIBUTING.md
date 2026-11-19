@@ -120,18 +120,19 @@ Before pushing a release:
 
 - `task lint test vulncheck test:int:all` passed on the commit being released, on all
   four images (CI runs only three).
-- The examples pin the latest release (Renovate opens the pull request).
+- The examples pin the latest release. Verify both image digests before merging
+  the Renovate update as described in [Get the binary](docs/running.md#get-the-binary).
 - For a release with breaking changes or a MongoDB major dropped, the notes
   say so.
 
 semantic-release and its plugins are installed with `npm ci` from
 `.github/release/package-lock.json`, which Renovate keeps up to date.
 
-The Release workflow's `image` job builds and pushes the version's images and
-their [attestations](docs/running.md#get-the-binary). If it fails after the
-release was cut, publish them again: run the Release workflow by hand
-(Actions, Release, "Run workflow", or
-`gh workflow run release.yml -f tag=v1.2.3`) with the release's tag. It
-runs only the `image` job, on that tag's checkout, and pushes the same tags
-as a release does, `latest` included, so it refuses any tag but the latest
-release.
+The Release workflow builds the commit that passed CI, pushes each image by
+digest, and verifies both [attestations](docs/running.md#get-the-binary) before
+publishing any image tags. If the image job fails after the GitHub release is
+cut, rerun the failed jobs on the original Release run in Actions, or run
+`gh run rerun <run-id> --failed`. GitHub allows retries for 30 days and uses
+the original commit. Publishing requires that the highest release tag still
+points to that commit. If the original run can no longer be retried,
+deliver the fix through a new release.

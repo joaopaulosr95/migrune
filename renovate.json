@@ -22,8 +22,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "The migrune release the examples and the README pin: ghcr.io/joaopaulosr95/migrune:X.Y.Z image tags (also -debug, and with a digest), and the README's `@vX.Y.Z`, `:X.Y.Z` and `:X.Y.Z-debug`.",
-      "managerFilePatterns": ["/^examples/ci/[^/]+$/", "/^examples/docker-compose\\.yaml$/", "/^README\\.md$/"],
+      "description": "The migrune version shown in the README and Compose comments.",
+      "managerFilePatterns": ["/^examples/docker-compose\\.yaml$/", "/^README\\.md$/"],
       "matchStrings": [
         "ghcr\\.io/joaopaulosr95/migrune:(?<currentValue>\\d+\\.\\d+\\.\\d+)",
         "`[:@]v?(?<currentValue>\\d+\\.\\d+\\.\\d+)(?:-debug)?`"
@@ -31,14 +31,31 @@
       "depNameTemplate": "joaopaulosr95/migrune",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The migrune CI examples update the OCI tag and index digest together.",
+      "managerFilePatterns": ["/^examples/ci/[^/]+$/"],
+      "matchStrings": [
+        "ghcr\\.io/joaopaulosr95/migrune:(?<currentValue>\\d+\\.\\d+\\.\\d+(?:-debug)?)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "ghcr.io/joaopaulosr95/migrune",
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
     {
       "description": "migrune's own releases, pinned in the examples and the README: one update for all the pins.",
       "matchManagers": ["custom.regex"],
-      "matchDepNames": ["joaopaulosr95/migrune"],
+      "matchDepNames": ["joaopaulosr95/migrune", "ghcr.io/joaopaulosr95/migrune"],
       "groupName": "migrune pins"
+    },
+    {
+      "description": "GHCR does not expose release timestamps to the Docker datasource.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["ghcr.io/joaopaulosr95/migrune"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
       "matchManagers": ["github-actions"],

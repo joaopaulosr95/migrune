@@ -40,10 +40,8 @@ variables:
 
 .migrune:
   image:
-    # Pin an exact migrune version. A tag can be moved; to pin the image
-    # itself, add its digest, which `docker buildx imagetools inspect`
-    # prints: ghcr.io/joaopaulosr95/migrune:1.0.0-debug@sha256:<digest>.
-    name: ghcr.io/joaopaulosr95/migrune:1.0.0-debug
+    # Verify provenance before changing this tag and index digest (docs/running.md).
+    name: ghcr.io/joaopaulosr95/migrune:1.1.0-debug@sha256:474ef75ef7adedcadfbe3cc6dcb724d1bed374318882001615b0097c599b79d4
     entrypoint: [""]
 
 # Offline: merge request pipelines get no database credentials.

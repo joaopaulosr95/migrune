@@ -74,9 +74,10 @@ With Docker:
 docker run --rm ghcr.io/joaopaulosr95/migrune:latest --help
 ```
 
-Pin an exact version (for example `@v1.0.0` or `:1.0.0`) in CI. Each version
-also has a `-debug` image (`:1.0.0-debug`) with a busybox shell, for CI
-systems that run job scripts inside the image, such as GitLab CI.
+In CI, pin the migrune Go module version (for example `@v1.0.0`) or use
+a verified image digest. Each release has a `-debug` image with a BusyBox
+shell for CI systems that run job scripts inside the image, such as GitLab CI.
+See [Get the binary](docs/running.md#get-the-binary) for image verification.
 
 ## Try it
 
