@@ -1,0 +1,33 @@
+{
+  "id": "2026-01-01-090-insert-nested-union-target",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$lookup": {
+            "from": "items",
+            "as": "rows",
+            "pipeline": [
+              {
+                "$unionWith": {
+                  "coll": "catalog",
+                  "pipeline": []
+                }
+              }
+            ]
+          }
+        },
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert"
+          }
+        }
+      ]
+    }
+  ]
+}

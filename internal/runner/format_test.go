@@ -64,6 +64,13 @@ func TestFormatGolden(t *testing.T) {
 			CollationOnlyMatchCount: n(1),
 		}},
 	}
+	insert := StepResult{
+		Collection: "legacy", Operation: "aggregate",
+		MergeCounts: MergeCounts{DiffCountBefore: n(0), DiffCountAfter: n(0), TypeChangedCount: n(0),
+			DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0)},
+		Insert: &InsertStep{Step: 1, Into: "catalog", TargetExistsBefore: new(false), PendingBefore: n(2),
+			PendingAfter: n(0), DiffCountBefore: n(0), DiffCountAfter: n(0)},
+	}
 	errs := []StepError{
 		{Step: step(1), Message: "/steps/1 (updateMany on projects, second run): not idempotent"},
 		{Message: "no Errored changelog entry written: migration lock lost"},
@@ -115,6 +122,7 @@ func TestFormatGolden(t *testing.T) {
 		golden string
 		doc    any
 	}{
+		{golden: "result-merge-insert.json", doc: insert},
 		{golden: "entry.json", doc: entry},
 		{golden: "entry-set-finished.json", doc: finished},
 		{golden: "entry-set-finished-batched.json", doc: batched},
@@ -144,6 +152,45 @@ func TestFormatGolden(t *testing.T) {
 					"got:\n%s\nwant (%s):\n%s", got, golden, want)
 			}
 		})
+	}
+}
+
+// A v1 reader has no insert field on its step result. The BSON decoder
+// must still read the entry and the original merge counters.
+func TestV1ReaderWithInsertResult(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "format", "result-merge-insert.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result bson.Raw
+	if err := bson.UnmarshalExtJSON(raw, true, &result); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := bson.Marshal(bson.D{
+		{Key: "v", Value: EntryVersion}, {Key: "status", Value: StatusFinished},
+		{Key: "results", Value: bson.A{result}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy struct {
+		V       int
+		Status  Status
+		Results []struct {
+			Collection  string
+			Operation   string
+			MergeCounts `bson:",inline"`
+		}
+	}
+	if err := bson.Unmarshal(entry, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.V != 1 || legacy.Status != StatusFinished || len(legacy.Results) != 1 {
+		t.Fatalf("v1 entry: %+v", legacy)
+	}
+	r := legacy.Results[0]
+	if r.Collection != "legacy" || r.Operation != "aggregate" || r.DiffCountAfter == nil || *r.DiffCountAfter != 0 || r.UnmatchedCount != nil {
+		t.Fatalf("v1 result: %+v", r)
 	}
 }
 

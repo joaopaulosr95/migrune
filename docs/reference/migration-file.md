@@ -161,7 +161,15 @@ The `$merge` stage:
 | `into`           | yes      | The target collection's name, in the same database, not a [reserved](#reserved-collections) one. |
 | `on`             | no       | A field name, or an array of distinct field names, none empty. Default `_id`. |
 | `whenMatched`    | yes      | `"merge"`, nothing else.                                    |
-| `whenNotMatched` | yes      | `"discard"`, nothing else.                                  |
+| `whenNotMatched` | yes      | `"discard"` skips unmatched documents. `"insert"` creates them and accepts only `on: "_id"`, `on: ["_id"]` or omitted `on`. |
+
+With `insert`, the primary source and each named `$unionWith` source must exist
+as ordinary collections distinct from the target. A `$lookup` may read the target.
+The primary source and an existing target must use simple collation. An existing
+target must be an ordinary, uncapped collection with a unique `_id` identity.
+Plan reports the target name and whether it exists. Apply may create it on the
+first insert. See [catalog upserts](../writing-migrations.md#catalog-upserts)
+for the output requirements and an example.
 
 `$merge` must be the last stage. `$out` is not allowed anywhere, and neither
 `$out` nor `$merge` may appear in a nested pipeline (`$lookup.pipeline`,

@@ -84,11 +84,23 @@ func (r *Run) checkMergeIndex(source, pipeline string, t mergeTarget, apply bool
 // Extended JSON, or "" for the simple collation or a collection that doesn't
 // exist.
 func (r *Run) defaultCollation(coll string) (string, error) {
-	specs, err := r.db.ListCollectionSpecifications(r.ctx, bson.D{{Key: "name", Value: coll}})
-	if err != nil || len(specs) == 0 {
+	spec, err := r.collectionSpec(coll)
+	if err != nil || spec == nil {
 		return "", err
 	}
-	v, err := specs[0].Options.LookupErr("collation")
+	return specCollation(spec)
+}
+
+func (r *Run) collectionSpec(coll string) (*mongo.CollectionSpecification, error) {
+	specs, err := r.db.ListCollectionSpecifications(r.ctx, bson.D{{Key: "name", Value: coll}})
+	if err != nil || len(specs) == 0 {
+		return nil, err
+	}
+	return &specs[0], nil
+}
+
+func specCollation(spec *mongo.CollectionSpecification) (string, error) {
+	v, err := spec.Options.LookupErr("collation")
 	if err != nil {
 		return "", nil
 	}
@@ -97,6 +109,84 @@ func (r *Run) defaultCollation(coll string) (string, error) {
 		return "", err
 	}
 	return migration.Index{Options: bson.D{{Key: "collation", Value: collation}}}.Option("collation"), nil
+}
+
+// checkInsertCollections checks the live catalog used by the native write.
+// Plan must observe an absent target without creating it or assuming an index.
+func (r *Run) checkInsertCollections(s migration.Step, target mergeTarget, obs *InsertStep) error {
+	spec, err := r.collectionSpec(target.Into)
+	if err != nil {
+		return fmt.Errorf("read target %s: %w", target.Into, err)
+	}
+	exists := spec != nil
+	if obs != nil {
+		obs.TargetExistsBefore = &exists
+	}
+	if exists {
+		capped, _ := spec.Options.Lookup("capped").BooleanOK()
+		if !ordinaryCollection(spec) || spec.ReadOnly || capped {
+			return fmt.Errorf("insert target %s must be a writable ordinary, uncapped collection (type %s, capped %t)", target.Into, spec.Type, capped)
+		}
+		if err := requireSimpleCollation(spec); err != nil {
+			return err
+		}
+		indexes, err := listIndexes(r.ctx, r.db.Collection(target.Into))
+		if err != nil {
+			return fmt.Errorf("list the indexes of %s: %w", target.Into, err)
+		}
+		if !slices.ContainsFunc(indexes, hasIDIdentity) {
+			return fmt.Errorf("insert target %s needs a unique simple-collation _id index", target.Into)
+		}
+	}
+	seen := map[string]bool{}
+	for _, source := range s.StreamSources("") {
+		if source.Name == target.Into {
+			return fmt.Errorf("insert source %s must be distinct from its target", source.Name)
+		}
+		if seen[source.Name] {
+			continue
+		}
+		seen[source.Name] = true
+		spec, err := r.collectionSpec(source.Name)
+		if err != nil {
+			return fmt.Errorf("read source %s: %w", source.Name, err)
+		}
+		if spec == nil {
+			return fmt.Errorf("insert source %s does not exist", source.Name)
+		}
+		if !ordinaryCollection(spec) {
+			return fmt.Errorf("insert source %s must be an ordinary collection (type %s)", source.Name, spec.Type)
+		}
+		if source.Name == s.Collection {
+			if err := requireSimpleCollation(spec); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func ordinaryCollection(spec *mongo.CollectionSpecification) bool {
+	return spec.Type == "collection" && spec.Options.Lookup("timeseries").Type == 0
+}
+
+func requireSimpleCollation(spec *mongo.CollectionSpecification) error {
+	collation, err := specCollation(spec)
+	if err != nil {
+		return fmt.Errorf("read the collation of %s: %w", spec.Name, err)
+	}
+	if collation != "" {
+		return fmt.Errorf("insert requires simple collation on %s, which has %s", spec.Name, collation)
+	}
+	return nil
+}
+
+func hasIDIdentity(ix migration.Index) bool {
+	// MongoDB omits unique on its built-in _id_ index. A clustered _id
+	// index can have a different name and explicitly reports unique.
+	return len(ix.Keys) == 1 && ix.Keys[0].Key == "_id" && migration.Canonical(ix.Keys[0].Value) == "1" &&
+		(ix.Name == "_id_" || ix.Option("unique") == "true") &&
+		ix.Option("partialFilterExpression") == "" && ix.Option("collation") == ""
 }
 
 // mergeTargetIndexes returns the indexes of coll: in plan, as the pending

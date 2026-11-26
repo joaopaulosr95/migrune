@@ -217,7 +217,7 @@ var notMessages = map[string]string{
 }
 
 // mergeHint follows a violation on a $merge stage itself.
-const mergeHint = `: $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`
+const mergeHint = `: $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard" or "insert" (insert requires on: "_id")`
 
 // leafMessage renders a leaf violation at ptr.
 func leafMessage(e *jsonschema.ValidationError, ptr string) string {
@@ -228,9 +228,13 @@ func leafMessage(e *jsonschema.ValidationError, ptr string) string {
 				continue
 			}
 			if suffix == "#/$defs/noOut" && strings.Contains(ptr, "/pipeline/") {
-				msg += `. Use $merge with whenMatched: "merge" and whenNotMatched: "discard"`
+				msg += `. Use $merge with whenMatched: "merge" and whenNotMatched: "discard" or "insert" (insert requires on: "_id")`
 			}
 			return msg
+		}
+	case *kind.Enum:
+		if strings.HasSuffix(e.SchemaURL, "#/$defs/merge/then/properties/on") {
+			return "insert matches only on _id: omit on, or give _id as a string or a single-element array"
 		}
 	case *kind.Const:
 		return fmt.Sprintf("must be %s, got %s", jsonValue(k.Want), jsonValue(k.Got))

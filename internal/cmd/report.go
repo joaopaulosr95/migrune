@@ -112,6 +112,29 @@ func writeRowDetails(w io.Writer, command string, row runner.Row) {
 	if counts := row.Counts(); counts != "" {
 		fmt.Fprintln(w, "  merge: "+counts)
 	}
+	for _, s := range row.InsertSteps {
+		line := fmt.Sprintf("  /steps/%d insert into %s", s.Step, s.Into)
+		if s.TargetExistsBefore != nil {
+			if *s.TargetExistsBefore {
+				line += " (target present)"
+			} else {
+				line += " (target absent, the first insert can create it)"
+			}
+		}
+		if s.PendingBefore != nil {
+			line += fmt.Sprintf(", pending inserts before %d", *s.PendingBefore)
+		}
+		if s.DiffCountBefore != nil {
+			line += fmt.Sprintf(", differing matches before %d", *s.DiffCountBefore)
+		}
+		if s.PendingAfter != nil {
+			line += fmt.Sprintf(", pending inserts after %d", *s.PendingAfter)
+		}
+		if s.DiffCountAfter != nil {
+			line += fmt.Sprintf(", differing matches after %d", *s.DiffCountAfter)
+		}
+		fmt.Fprintln(w, line)
+	}
 	for _, s := range row.Samples {
 		var fields []string
 		for _, f := range s.Fields {

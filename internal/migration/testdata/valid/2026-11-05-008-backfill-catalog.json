@@ -1,0 +1,63 @@
+{
+  "id": "2026-11-05-008-backfill-catalog",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$project": {
+            "_id": 1,
+            "label": 1
+          }
+        },
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert"
+          }
+        }
+      ]
+    },
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "otherCatalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert",
+            "on": "_id"
+          }
+        }
+      ]
+    },
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$lookup": {
+            "from": "lookupCatalog",
+            "localField": "_id",
+            "foreignField": "_id",
+            "as": "previous"
+          }
+        },
+        {
+          "$merge": {
+            "into": "lookupCatalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert",
+            "on": [
+              "_id"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

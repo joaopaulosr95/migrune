@@ -278,8 +278,8 @@ func (r *Run) runMigration(m migration.Migration, apply bool, row *Row) error {
 			log.Warn("migration interrupted: it stays pending; an index command in progress is left to the server, " +
 				"and the next run's identical step waits for it or does nothing")
 		case migration.KindMerge:
-			log.Warn("migration interrupted: it stays pending; the aggregate in progress was cancelled, " +
-				"a half-done $merge is safe and the next run completes it")
+			log.Warn("merge migration interrupted. Inspect the target and changelog for committed writes, correct the cause and plan again in the same namespace. " +
+				"Review the fresh digest and follow firstApply for --init. Apply retries pending files from their first step and skips Finished files")
 		default:
 			log.Warn("migration interrupted: its transaction was aborted and it stays pending")
 		}

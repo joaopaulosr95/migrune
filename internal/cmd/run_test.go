@@ -429,6 +429,25 @@ func TestWriteReport(t *testing.T) {
 		AppliedButMissing: []migration.Applied{},
 		Totals:            runner.Totals{Migrations: 1, Applied: 1, DurationMs: 50},
 	}
+	// A discard step contributes unmatchedCount. The first insert converged;
+	// the second failed after preflight, so it has no after measurements.
+	writeError := "/steps/2 (aggregate on source): merge into catalogB: document validation failure"
+	mixed := &runner.Report{
+		Command: "apply", Runner: "ci-42",
+		Migrations: []runner.Row{
+			{ID: "2026-11-25-001-catalog", Kind: "merge", Status: runner.RowErrored, Error: writeError,
+				DiffCountBefore: n(20), DiffCountAfter: n(0), UnmatchedCount: n(3), TypeChangedCount: n(0),
+				DuplicateOnCount: n(0), NullOnCount: n(0), ArrayOnCount: n(0), IDMismatchCount: n(0),
+				InsertSteps: []runner.InsertStep{
+					{Step: 1, Into: "catalogA", TargetExistsBefore: new(true), PendingBefore: n(0), DiffCountBefore: n(20), PendingAfter: n(0), DiffCountAfter: n(0)},
+					{Step: 2, Into: "catalogB", TargetExistsBefore: new(false), PendingBefore: n(2), DiffCountBefore: n(0)},
+				}},
+			{ID: "2026-11-25-002-skipped", Kind: "merge", Status: runner.RowSkipped},
+		},
+		AppliedButMissing: []migration.Applied{},
+		Totals:            runner.Totals{Migrations: 2, Errored: 1, Skipped: 1},
+		Error:             writeError,
+	}
 	// A plan in a namespace.
 	namespaced := &runner.Report{
 		Command:           "plan",
@@ -497,6 +516,8 @@ func TestWriteReport(t *testing.T) {
 		{name: "merge nested plan json", rep: mergeNested, output: "json", golden: "plan-merge-nested.json"},
 		{name: "merge apply table", rep: mergeApply, output: "table", golden: "apply-merge.txt"},
 		{name: "merge apply json", rep: mergeApply, output: "json", golden: "apply-merge.json"},
+		{name: "mixed merge table", rep: mixed, output: "table", golden: "apply-mixed-merge.txt"},
+		{name: "mixed merge json", rep: mixed, output: "json", golden: "apply-mixed-merge.json"},
 		{name: "namespace plan table", rep: namespaced, output: "table", golden: "plan-namespace.txt"},
 		{name: "namespace plan json", rep: namespaced, output: "json", golden: "plan-namespace.json"},
 	}

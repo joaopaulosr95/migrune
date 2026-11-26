@@ -1,0 +1,44 @@
+{
+  "id": "2026-11-01-002-discard-selection",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$sample": {
+            "size": 1
+          }
+        },
+        {
+          "$lookup": {
+            "from": "items",
+            "pipeline": [
+              {
+                "$match": {
+                  "$sampleRate": 0.2
+                }
+              },
+              {
+                "$set": {
+                  "_id": {
+                    "$createObjectId": {}
+                  }
+                }
+              }
+            ],
+            "as": "rows"
+          }
+        },
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "discard"
+          }
+        }
+      ]
+    }
+  ]
+}

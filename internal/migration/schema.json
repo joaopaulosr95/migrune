@@ -161,7 +161,7 @@
       "required": ["collection", "operation", "pipeline"]
     },
     "merge": {
-      "description": "The $merge stage of a merge step: it updates matched documents in place and writes nothing else",
+      "description": "The $merge stage of a merge step: it updates matched documents in place, and can insert absent documents by _id",
       "type": "object",
       "properties": {
         "into": { "$ref": "#/$defs/collection" },
@@ -174,9 +174,11 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "whenMatched": { "const": "merge" },
-        "whenNotMatched": { "const": "discard" }
+        "whenNotMatched": { "enum": ["discard", "insert"] }
       },
       "additionalProperties": false,
+      "if": { "properties": { "whenNotMatched": { "const": "insert" } }, "required": ["whenNotMatched"] },
+      "then": { "properties": { "on": { "enum": ["_id", ["_id"]] } } },
       "required": ["into", "whenMatched", "whenNotMatched"]
     }
   }

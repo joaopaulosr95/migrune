@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -41,7 +42,11 @@ type mergeComparison struct {
 	// another output document's and match a target document; $merge
 	// discards those with no match. Those with a null, missing or array on
 	// field aren't counted.
-	DuplicateOn int64
+	DuplicateOn      int64
+	DuplicateMissing int64
+	InvalidID        int64 `bson:"invalidID"`
+	HasScopedID      bool  `bson:"hasScopedID"`
+	InvalidFieldName int64 `bson:"invalidFieldName"`
 	// NullOn counts the output documents with an on field that is null or
 	// missing.
 	NullOn int64 `bson:"nullOn"`
@@ -99,7 +104,8 @@ func (r *Run) compareMerge(coll string, pre []bson.Raw, t mergeTarget, log *slog
 	var facet []struct {
 		Counts     []mergeComparison `bson:"counts"`
 		Duplicates []struct {
-			N int64 `bson:"n"`
+			Matched int64 `bson:"matched"`
+			Missing int64 `bson:"missing"`
 		} `bson:"duplicates"`
 		Samples []struct {
 			Key   []bson.RawValue `bson:"key"`
@@ -134,7 +140,47 @@ func (r *Run) compareMerge(coll string, pre []bson.Raw, t mergeTarget, log *slog
 		out = facet[0].Counts[0]
 	}
 	if len(facet[0].Duplicates) == 1 {
-		out.DuplicateOn = facet[0].Duplicates[0].N
+		out.DuplicateOn = facet[0].Duplicates[0].Matched
+		out.DuplicateMissing = facet[0].Duplicates[0].Missing
+	}
+	// Aggregation sees JavaScript with scope as an opaque BSON value. Only
+	// when an object-valued _id contains one, group those IDs on the server
+	// and validate each distinct key before including it in duplicate counts.
+	if out.HasScopedID {
+		pipeline := append(toPipeline(pre),
+			bson.M{"$match": bson.M{"$expr": bson.M{"$eq": bson.A{insertIDState("$_id"), "scoped"}}}},
+			bson.M{"$group": bson.M{"_id": "$_id", "rows": bson.M{"$sum": 1}}},
+			bson.M{"$lookup": bson.M{
+				"from": t.Into, "localField": "_id", "foreignField": "_id",
+				"pipeline": bson.A{bson.M{"$count": "n"}}, "as": "target",
+			}},
+			bson.M{"$project": bson.M{"rows": 1, "matched": bson.M{"$gt": bson.A{bson.M{"$size": "$target"}, 0}}}},
+		)
+		err := r.aggregate(coll, pipeline, log, func(ctx context.Context, cur *mongo.Cursor) error {
+			for cur.Next(ctx) {
+				var group struct {
+					ID      bson.Raw `bson:"_id"`
+					Rows    int64
+					Matched bool
+				}
+				if err := cur.Decode(&group); err != nil {
+					return err
+				}
+				if !validStoredIDDocument(group.ID) {
+					out.InvalidID += group.Rows
+				} else if group.Rows > 1 {
+					if group.Matched {
+						out.DuplicateOn += group.Rows
+					} else {
+						out.DuplicateMissing += group.Rows
+					}
+				}
+			}
+			return cur.Err()
+		}, simple)
+		if err != nil {
+			return out, err
+		}
 	}
 	for _, s := range facet[0].Samples {
 		key := bson.D{}
@@ -256,6 +302,22 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			},
 		}},
 	}}
+	project := m{
+		"o":          1,
+		"key":        key,
+		"matched":    m{"$gt": a{m{"$size": "$t"}, 0}},
+		"ta":         m{"$objectToArray": m{"$ifNull": a{m{"$first": "$t"}, m{}}}},
+		"nullOn":     m{"$or": nullOn},
+		"arrayOn":    m{"$or": arrayOn},
+		"idMismatch": idMismatch,
+	}
+	if t.Insert {
+		project["idState"] = insertIDState("$o._id")
+		project["invalidFieldName"] = m{"$anyElementTrue": a{m{"$map": m{
+			"input": m{"$objectToArray": "$o"}, "as": "field",
+			"in": m{"$or": a{m{"$eq": a{"$$field.k", ""}}, m{"$regexMatch": m{"input": "$$field.k", "regex": `^\$|\.`}}}},
+		}}}}
+	}
 	stages := []any{
 		m{"$replaceWith": m{"o": "$$ROOT"}},
 		m{"$lookup": bson.D{
@@ -267,15 +329,7 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			}},
 			{Key: "as", Value: "t"},
 		}},
-		m{"$project": m{
-			"o":          1,
-			"key":        key,
-			"matched":    m{"$gt": a{m{"$size": "$t"}, 0}},
-			"ta":         m{"$objectToArray": m{"$ifNull": a{m{"$first": "$t"}, m{}}}},
-			"nullOn":     m{"$or": nullOn},
-			"arrayOn":    m{"$or": arrayOn},
-			"idMismatch": idMismatch,
-		}},
+		m{"$project": project},
 		m{"$set": m{"fs": fields}},
 		m{"$unset": a{"o", "ta"}},
 	}
@@ -287,32 +341,147 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			"diff":        m{"$and": a{"$matched", m{"$gt": a{m{"$size": "$diffs"}, 0}}}},
 			"typeChanged": m{"$and": a{"$matched", m{"$anyElementTrue": a{"$diffs.typeChanged"}}}},
 		}},
-		m{"$facet": m{
-			"counts": a{m{"$group": bson.D{
-				{Key: "_id", Value: nil},
-				{Key: "diff", Value: m{"$sum": m{"$cond": a{"$diff", 1, 0}}}},
-				{Key: "unmatched", Value: m{"$sum": m{"$cond": a{"$matched", 0, 1}}}},
-				{Key: "typeChanged", Value: m{"$sum": m{"$cond": a{"$typeChanged", 1, 0}}}},
-				{Key: "nullOn", Value: m{"$sum": m{"$cond": a{"$nullOn", 1, 0}}}},
-				{Key: "arrayOn", Value: m{"$sum": m{"$cond": a{"$arrayOn", 1, 0}}}},
-				{Key: "idMismatch", Value: m{"$sum": m{"$cond": a{"$idMismatch", 1, 0}}}},
-			}}},
-			// Duplicates with no target are discarded by $merge, so only
-			// those that match one count.
-			"duplicates": a{
-				m{"$match": m{"nullOn": false, "arrayOn": false, "matched": true}},
-				m{"$group": m{"_id": "$key", "n": m{"$sum": 1}}},
-				m{"$match": m{"n": m{"$gt": 1}}},
-				m{"$group": m{"_id": nil, "n": m{"$sum": "$n"}}},
-			},
-			"samples": a{
-				m{"$match": m{"diff": true}},
-				m{"$sort": m{"typeChanged": -1}},
-				m{"$limit": MaxMergeSamples},
-				m{"$project": m{"_id": 0, "key": 1, "diffs": 1}},
-			},
-		}},
+		mergeFacets(t.Insert),
 	)
+}
+
+func mergeFacets(insert bool) bson.M {
+	type m = bson.M
+	type a = bson.A
+	counts := bson.D{
+		{Key: "_id", Value: nil},
+		{Key: "diff", Value: m{"$sum": m{"$cond": a{"$diff", 1, 0}}}},
+		{Key: "unmatched", Value: m{"$sum": m{"$cond": a{"$matched", 0, 1}}}},
+		{Key: "typeChanged", Value: m{"$sum": m{"$cond": a{"$typeChanged", 1, 0}}}},
+		{Key: "nullOn", Value: m{"$sum": m{"$cond": a{"$nullOn", 1, 0}}}},
+		{Key: "arrayOn", Value: m{"$sum": m{"$cond": a{"$arrayOn", 1, 0}}}},
+		{Key: "idMismatch", Value: m{"$sum": m{"$cond": a{"$idMismatch", 1, 0}}}},
+	}
+	validKey := m{"nullOn": false, "arrayOn": false}
+	perKey := m{"_id": "$key", "n": m{"$sum": 1}}
+	totals := m{"_id": nil, "matched": m{"$sum": "$n"}}
+	if insert {
+		validKey["idState"] = "valid"
+		counts = append(counts,
+			bson.E{Key: "invalidID", Value: m{"$sum": m{"$cond": a{m{"$eq": a{"$idState", "invalid"}}, 1, 0}}}},
+			bson.E{Key: "hasScopedID", Value: m{"$max": m{"$eq": a{"$idState", "scoped"}}}},
+			bson.E{Key: "invalidFieldName", Value: m{"$sum": m{"$cond": a{"$invalidFieldName", 1, 0}}}},
+		)
+		perKey["matched"] = m{"$sum": m{"$cond": a{"$matched", 1, 0}}}
+		totals["matched"] = m{"$sum": "$matched"}
+		totals["missing"] = m{"$sum": m{"$subtract": a{"$n", "$matched"}}}
+	} else {
+		validKey["matched"] = true
+	}
+	return m{"$facet": m{
+		"counts": a{m{"$group": counts}},
+		"duplicates": a{
+			m{"$match": validKey},
+			m{"$group": perKey},
+			m{"$match": m{"n": m{"$gt": 1}}},
+			m{"$group": totals},
+		},
+		"samples": a{
+			m{"$match": m{"diff": true}},
+			m{"$sort": m{"typeChanged": -1}},
+			m{"$limit": MaxMergeSamples},
+			m{"$project": m{"_id": 0, "key": 1, "diffs": 1}},
+		},
+	}}
+}
+
+// insertIDState detects invalid stored IDs and IDs with embedded BSON scopes
+// that require a raw read. Ordinary scalar IDs need only a type check.
+func insertIDState(id string) bson.M {
+	type m = bson.M
+	type a = bson.A
+	literal := func(s string) m { return m{"$literal": s} }
+	at := func(s string, i int) m { return m{"$arrayElemAt": a{s, i}} }
+	// MongoDB permits the ordered DBRef prefix {$ref: string, $id: value}
+	// with an optional following $db string in an embedded document.
+	ref := m{"$and": a{
+		m{"$eq": a{at("$$fields.k", 0), literal("$ref")}},
+		m{"$eq": a{m{"$type": at("$$fields.v", 0)}, "string"}},
+		m{"$eq": a{at("$$fields.k", 1), literal("$id")}},
+	}}
+	withDB := m{"$and": a{
+		m{"$eq": a{at("$$fields.k", 2), literal("$db")}},
+		m{"$eq": a{m{"$type": at("$$fields.v", 2)}, "string"}},
+	}}
+	// $merge accepts the DBRef field names but checks objects and arrays
+	// within the $id payload, so descend through every field.
+	ordinary := m{"$slice": a{"$$fields", m{"$cond": a{ref, m{"$cond": a{withDB, 3, 2}}, 0}}, m{"$max": a{1, m{"$size": "$$fields"}}}}}
+	badName := m{"$anyElementTrue": a{m{"$map": m{
+		"input": "$$ordinary", "as": "f",
+		"in": m{"$eq": a{m{"$indexOfBytes": a{"$$f.k", literal("$")}}, 0}},
+	}}}}
+	scoped := m{"$anyElementTrue": a{m{"$map": m{
+		"input": "$$fields", "as": "f", "in": m{"$eq": a{m{"$type": "$$f.v"}, "javascriptWithScope"}},
+	}}}}
+	fields := m{"$cond": a{m{"$isArray": "$$this"},
+		m{"$map": m{"input": "$$this", "as": "v", "in": m{"k": "", "v": "$$v"}}},
+		m{"$objectToArray": "$$this"},
+	}}
+	children := m{"$map": m{
+		"input": m{"$filter": m{"input": "$$fields", "as": "f", "cond": m{"$in": a{m{"$type": "$$f.v"}, a{"array", "object"}}}}},
+		"as":    "f", "in": "$$f.v",
+	}}
+	node := m{
+		"state": m{"$cond": a{badName, "invalid", m{"$cond": a{scoped, "scoped", "$$value.state"}}}},
+		"nodes": m{"$concatArrays": a{"$$value.nodes", children}},
+	}
+	inspect := m{"$let": m{
+		"vars": m{"fields": fields},
+		"in":   m{"$let": m{"vars": m{"ordinary": ordinary}, "in": node}},
+	}}
+	next := m{"$reduce": m{
+		"input": "$$value.nodes", "initialValue": m{"nodes": a{}, "state": "$$value.state"},
+		"in": m{"$cond": a{m{"$eq": a{"$$value.state", "invalid"}}, "$$value", inspect}},
+	}}
+	more := m{"$and": a{m{"$ne": a{"$$value.state", "invalid"}}, m{"$gt": a{m{"$size": "$$value.nodes"}, 0}}}}
+	scan := m{"$reduce": m{
+		"input": m{"$range": a{0, 100}}, "initialValue": m{"nodes": a{id}, "state": "valid"},
+		"in": m{"$cond": a{more, next, "$$value"}},
+	}}
+	idType := m{"$type": id}
+	return m{"$cond": a{m{"$eq": a{idType, "object"}},
+		m{"$let": m{"vars": m{"value": scan}, "in": m{"$cond": a{more, "invalid", "$$value.state"}}}},
+		m{"$cond": a{m{"$in": a{idType, a{"regex", "undefined"}}}, "invalid", "valid"}},
+	}}
+}
+
+// validStoredIDDocument walks the BSON, including CodeWithScope scope documents,
+// with MongoDB's stored-ID rules. The code string is opaque.
+func validStoredIDDocument(doc bson.Raw) bool {
+	fields, err := doc.Elements()
+	if err != nil {
+		return false
+	}
+	if len(fields) >= 2 && fields[0].Key() == "$ref" && fields[0].Value().Type == bson.TypeString && fields[1].Key() == "$id" {
+		fields = fields[2:]
+		if len(fields) > 0 && fields[0].Key() == "$db" && fields[0].Value().Type == bson.TypeString {
+			fields = fields[1:]
+		}
+	}
+	for _, f := range fields {
+		if strings.HasPrefix(f.Key(), "$") {
+			return false
+		}
+		v := f.Value()
+		var child bson.Raw
+		switch v.Type {
+		case bson.TypeEmbeddedDocument, bson.TypeArray:
+			child = v.Value
+		case bson.TypeCodeWithScope:
+			_, child = v.CodeWithScope()
+		default:
+			continue
+		}
+		if !validStoredIDDocument(child) {
+			return false
+		}
+	}
+	return true
 }
 
 // nestedTypeStages compare the BSON types inside the top-level fields whose

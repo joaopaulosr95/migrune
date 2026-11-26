@@ -241,6 +241,11 @@ func loadFile(path string) (Migration, string, error) {
 	if vs := ReservedCollections(f.Steps); len(vs) > 0 {
 		return Migration{}, "", &ReservedCollectionError{File: path, Violations: vs}
 	}
+	if k == KindMerge {
+		if vs := checkInsertSources(f.Steps); len(vs) > 0 {
+			return Migration{}, "", &SchemaError{File: path, Violations: vs}
+		}
+	}
 	if vs := checkBatchSize(f); len(vs) > 0 {
 		return Migration{}, "", &SchemaError{File: path, Violations: vs}
 	}
@@ -253,6 +258,27 @@ func loadFile(path string) (Migration, string, error) {
 		Checksum:    Checksum(raw),
 		BatchSize:   f.BatchSize,
 	}, f.ID, nil
+}
+
+// Reading the insert target as a stream can revisit rows as the aggregate
+// inserts them. A lookup may still consult the target to compute a value.
+func checkInsertSources(steps []Step) []Violation {
+	var out []Violation
+	for i, s := range steps {
+		for _, stage := range s.Pipeline {
+			mode, _ := stage.Lookup("$merge", "whenNotMatched").StringValueOK()
+			if mode != "insert" {
+				continue
+			}
+			into, _ := stage.Lookup("$merge", "into").StringValueOK()
+			for _, source := range s.StreamSources(fmt.Sprintf("/steps/%d", i)) {
+				if source.Name == into {
+					out = append(out, Violation{source.Pointer, fmt.Sprintf("insert stream source %q must be distinct from the target", into)})
+				}
+			}
+		}
+	}
+	return out
 }
 
 // checkBatchSize returns what the schema can't check of a file with a

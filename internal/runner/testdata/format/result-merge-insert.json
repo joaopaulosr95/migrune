@@ -1,0 +1,44 @@
+{
+  "collection": "legacy",
+  "operation": "aggregate",
+  "diffCountBefore": {
+    "$numberLong": "0"
+  },
+  "diffCountAfter": {
+    "$numberLong": "0"
+  },
+  "typeChangedCount": {
+    "$numberLong": "0"
+  },
+  "duplicateOnCount": {
+    "$numberLong": "0"
+  },
+  "nullOnCount": {
+    "$numberLong": "0"
+  },
+  "arrayOnCount": {
+    "$numberLong": "0"
+  },
+  "idMismatchCount": {
+    "$numberLong": "0"
+  },
+  "insert": {
+    "step": {
+      "$numberInt": "1"
+    },
+    "into": "catalog",
+    "targetExistsBefore": false,
+    "pendingBefore": {
+      "$numberLong": "2"
+    },
+    "pendingAfter": {
+      "$numberLong": "0"
+    },
+    "diffCountBefore": {
+      "$numberLong": "0"
+    },
+    "diffCountAfter": {
+      "$numberLong": "0"
+    }
+  }
+}

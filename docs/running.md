@@ -263,11 +263,15 @@ primary, while holding the migration lock:
   runs the first batch; apply reads the matching `_id`s with one cursor and
   runs every batch, a transaction each, so its run time grows with the
   collection while each transaction stays small.
-- **Merge migrations**: plan runs each step's pipeline in full, without
-  `$merge`, and compares every output document with its target. apply runs
-  it up to three times: that comparison before, the pipeline with `$merge`,
-  and the comparison again after (see
-  [how the comparison works](writing-migrations.md#how-the-comparison-works)).
+- **Merge migrations** run each step's pipeline in plan without `$merge`
+  to compare its output with the target. A successful single-step apply normally
+  runs the pipeline three times, once before the write, once with `$merge`, and
+  once after the write. Each comparison can add a [read to validate BSON scopes
+  in catalog IDs](writing-migrations.md#catalog-upserts), bringing that apply
+  to five runs if both comparisons need it. After the last write in a file
+  containing an insert step, apply also [rechecks every earlier step](writing-migrations.md#how-the-comparison-works).
+  Grouping insert candidates for duplicate detection uses memory proportional
+  to the distinct output keys.
 - **Index migrations**: plan reads the indexes, counts the documents a new
   or lowered TTL would delete, and checks a `collModIndex` that sets `unique`
   for duplicates. apply builds each index with
@@ -374,7 +378,11 @@ URI with `secondaryPreferred` or `nearest` can be used as it is. A
 
 The database user needs `readWrite` on the target database: it covers data
 changes, `createIndex` and `dropIndex`, `$merge`, and the
-`migrations_changelog` and `migrations_lock` collections. `collModIndex`
+`migrations_changelog` and `migrations_lock` collections. For a custom role,
+catalog upserts need read access to the inputs and target, metadata access
+for the collection and index checks, and insert and update on the target.
+Upgrade both the plan and apply binaries before deploying an insert file.
+`collModIndex`
 and `collModCollection` also need the `collMod` action, which `readWrite`
 lacks: apply runs `collMod`, and plan runs it with `dryRun` for a
 `collModIndex` that sets `unique`. plan checks the user has it, from

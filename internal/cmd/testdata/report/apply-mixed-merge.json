@@ -1,0 +1,60 @@
+{
+  "version": "0.1.0",
+  "command": "apply",
+  "database": "app",
+  "startedAt": "2026-11-08T10:30:00.125Z",
+  "runner": "ci-42",
+  "newDatabase": false,
+  "firstApply": false,
+  "migrations": [
+    {
+      "id": "2026-11-25-001-catalog",
+      "kind": "merge",
+      "status": "errored",
+      "durationMs": 0,
+      "error": "/steps/2 (aggregate on source): merge into catalogB: document validation failure",
+      "diffCountBefore": 20,
+      "diffCountAfter": 0,
+      "unmatchedCount": 3,
+      "typeChangedCount": 0,
+      "duplicateOnCount": 0,
+      "nullOnCount": 0,
+      "arrayOnCount": 0,
+      "idMismatchCount": 0,
+      "insertSteps": [
+        {
+          "step": 1,
+          "into": "catalogA",
+          "targetExistsBefore": true,
+          "pendingBefore": 0,
+          "pendingAfter": 0,
+          "diffCountBefore": 20,
+          "diffCountAfter": 0
+        },
+        {
+          "step": 2,
+          "into": "catalogB",
+          "targetExistsBefore": false,
+          "pendingBefore": 2,
+          "diffCountBefore": 0
+        }
+      ]
+    },
+    {
+      "id": "2026-11-25-002-skipped",
+      "kind": "merge",
+      "status": "skipped",
+      "durationMs": 0
+    }
+  ],
+  "appliedButMissing": [],
+  "totals": {
+    "migrations": 2,
+    "applied": 0,
+    "errored": 1,
+    "interrupted": 0,
+    "skipped": 1,
+    "durationMs": 0
+  },
+  "error": "/steps/2 (aggregate on source): merge into catalogB: document validation failure"
+}

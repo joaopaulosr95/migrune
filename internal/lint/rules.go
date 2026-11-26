@@ -64,7 +64,7 @@ func checkFile(path, stem string, raw []byte) []Finding {
 		if op == "aggregate" {
 			if p, ok := step["pipeline"].([]any); ok {
 				c.mergePipeline(ptr+"/pipeline", p)
-				c.volatile(ptr+"/pipeline", p)
+				c.volatile(ptr+"/pipeline", p, insertPipeline(p))
 			}
 			continue
 		}
@@ -179,6 +179,17 @@ func (c *checker) serverJS(ptr string, v any, merge bool) {
 	}
 }
 
+func insertPipeline(p []any) bool {
+	for _, stage := range p {
+		doc, _ := stage.(map[string]any)
+		opts, _ := doc["$merge"].(map[string]any)
+		if opts["whenNotMatched"] == "insert" {
+			return true
+		}
+	}
+	return false
+}
+
 // volatileOperators give a different result on each run.
 var volatileOperators = map[string]string{
 	"$rand":        "returns a new random number on each run",
@@ -192,19 +203,25 @@ var volatileVariables = []string{"$$NOW", "$$CLUSTER_TIME"}
 // volatile reports, anywhere in a merge pipeline v, the operators and
 // variables whose value changes from one run to the next: a merge computed
 // from them never settles, and plan can't tell.
-func (c *checker) volatile(ptr string, v any) {
+func (c *checker) volatile(ptr string, v any, insert bool) {
 	switch x := v.(type) {
 	case map[string]any:
 		for _, k := range sortedKeys(x) {
 			kp := ptr + "/" + migration.PointerToken(k)
-			if reason, ok := volatileOperators[k]; ok {
+			reason := volatileOperators[k]
+			if insert && (k == "$sample" || k == "$sampleRate" || k == "$createObjectId") {
+				reason = "can change the output identities on each run"
+			}
+			if reason != "" {
 				c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
 			}
-			c.volatile(kp, x[k])
+			// Insert-only operator checks apply to expressions. Literal
+			// operands contain BSON data, including dollar-prefixed keys.
+			c.volatile(kp, x[k], insert && k != "$literal" && k != "$const")
 		}
 	case []any:
 		for i, e := range x {
-			c.volatile(ptr+"/"+strconv.Itoa(i), e)
+			c.volatile(ptr+"/"+strconv.Itoa(i), e, insert)
 		}
 	case string:
 		for _, name := range volatileVariables {

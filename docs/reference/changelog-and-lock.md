@@ -125,7 +125,7 @@ returned for that kind of step:
 | ----- | -------------------------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs; for a batched migration, summed over its batches. |
 | index | `indexName` (not for `collModCollection`), and for `collModIndex` and `collModCollection` their `set`, as in the file. |
-| merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
+| merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. An insert step also stores an optional `insert` document with its [per-target observations](report.md#catalog-insert-observations). See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
 A batched migration's summed counts can undercount: when the commit outcome
 of a batch other than the last is unknown, apply runs the batch again, and

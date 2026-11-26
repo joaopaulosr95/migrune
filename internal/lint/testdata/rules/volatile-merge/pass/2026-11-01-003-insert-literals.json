@@ -1,0 +1,17 @@
+{
+  "id": "2026-11-01-003-insert-literals",
+  "description": "Store operator names as literal metadata",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        { "$set": {
+          "metadata": { "$literal": { "$sample": "unit" } },
+          "history": { "$const": [{ "$sampleRate": 1, "$createObjectId": {} }] }
+        } },
+        { "$merge": { "into": "catalog", "whenMatched": "merge", "whenNotMatched": "insert" } }
+      ]
+    }
+  ]
+}

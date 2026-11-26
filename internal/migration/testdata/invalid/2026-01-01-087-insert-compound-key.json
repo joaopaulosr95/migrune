@@ -1,0 +1,23 @@
+{
+  "id": "2026-01-01-087-insert-compound-key",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert",
+            "on": [
+              "_id",
+              "sku"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

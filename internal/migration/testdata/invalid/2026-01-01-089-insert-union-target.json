@@ -1,0 +1,22 @@
+{
+  "id": "2026-01-01-089-insert-union-target",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$unionWith": "catalog"
+        },
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert"
+          }
+        }
+      ]
+    }
+  ]
+}

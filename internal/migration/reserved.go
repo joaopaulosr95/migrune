@@ -53,42 +53,60 @@ func (e *ReservedCollectionError) Error() string {
 // depth (see ReservedCollectionError). Pointers are JSON pointers into the
 // file.
 func ReservedCollections(steps []Step) []Violation {
-	var w reservedWalker
+	var out []Violation
+	var visit collectionVisitor = func(ptr, stage, coll string) {
+		if IsReservedCollection(coll) {
+			out = append(out, Violation{Pointer: ptr, Message: fmt.Sprintf("%q is reserved: %s", coll, reservedMessage)})
+		}
+	}
 	for i, s := range steps {
 		ptr := "/steps/" + strconv.Itoa(i)
-		w.check(ptr+"/collection", s.Collection)
+		visit(ptr+"/collection", "", s.Collection)
 		if s.Update.Type == bson.TypeArray {
 			if stages, ok := rawStages(s.Update.Array()); ok {
-				w.pipeline(ptr+"/update", stages)
+				visit.pipeline(ptr+"/update", stages)
 			}
 		}
-		w.pipeline(ptr+"/pipeline", s.Pipeline)
+		visit.pipeline(ptr+"/pipeline", s.Pipeline)
 	}
-	return w.out
+	return out
 }
 
-type reservedWalker struct{ out []Violation }
-
-func (w *reservedWalker) check(ptr, coll string) {
-	if IsReservedCollection(coll) {
-		w.out = append(w.out, Violation{Pointer: ptr, Message: fmt.Sprintf("%q is reserved: %s", coll, reservedMessage)})
-	}
+// StreamSource names the primary collection or a $unionWith collection in a step.
+type StreamSource struct {
+	Pointer string
+	Name    string
 }
+
+// StreamSources returns each named source of rows, including nested unions.
+// A lookup may consult the target without adding it to the stream.
+func (s Step) StreamSources(ptr string) []StreamSource {
+	sources := []StreamSource{{ptr + "/collection", s.Collection}}
+	var visit collectionVisitor = func(ptr, stage, coll string) {
+		if stage == "$unionWith" {
+			sources = append(sources, StreamSource{ptr, coll})
+		}
+	}
+	visit.pipeline(ptr+"/pipeline", s.Pipeline)
+	return sources
+}
+
+type collectionVisitor func(ptr, stage, coll string)
 
 // target checks a collection given as a name, or as a document naming it in
 // field (a $lookup from or $merge into with a database, for instance).
-func (w *reservedWalker) target(ptr string, v bson.RawValue, field string) {
+func (w collectionVisitor) target(ptr, stage string, v bson.RawValue, field string) {
 	switch v.Type {
 	case bson.TypeString:
-		w.check(ptr, v.StringValue())
+		w(ptr, stage, v.StringValue())
 	case bson.TypeEmbeddedDocument:
 		if c, ok := v.Document().Lookup(field).StringValueOK(); ok {
-			w.check(ptr+"/"+field, c)
+			w(ptr+"/"+field, stage, c)
 		}
 	}
 }
 
-func (w *reservedWalker) pipeline(ptr string, stages []bson.Raw) {
+func (w collectionVisitor) pipeline(ptr string, stages []bson.Raw) {
 	for i, stage := range stages {
 		elems, err := stage.Elements()
 		if err != nil {
@@ -101,15 +119,15 @@ func (w *reservedWalker) pipeline(ptr string, stages []bson.Raw) {
 			switch e.Key() {
 			case "$lookup", "$graphLookup":
 				if isDoc {
-					w.target(sp+"/from", arg.Lookup("from"), "coll")
+					w.target(sp+"/from", e.Key(), arg.Lookup("from"), "coll")
 					w.subPipeline(sp+"/pipeline", arg.Lookup("pipeline"))
 				}
 			case "$unionWith":
 				if !isDoc {
-					w.target(sp, v, "coll")
+					w.target(sp, e.Key(), v, "coll")
 					break
 				}
-				w.target(sp+"/coll", arg.Lookup("coll"), "coll")
+				w.target(sp+"/coll", e.Key(), arg.Lookup("coll"), "coll")
 				w.subPipeline(sp+"/pipeline", arg.Lookup("pipeline"))
 			case "$facet":
 				if !isDoc {
@@ -121,18 +139,18 @@ func (w *reservedWalker) pipeline(ptr string, stages []bson.Raw) {
 				}
 			case "$merge":
 				if isDoc {
-					w.target(sp+"/into", arg.Lookup("into"), "coll")
+					w.target(sp+"/into", e.Key(), arg.Lookup("into"), "coll")
 				} else {
-					w.target(sp, v, "coll")
+					w.target(sp, e.Key(), v, "coll")
 				}
 			case "$out":
-				w.target(sp, v, "coll")
+				w.target(sp, e.Key(), v, "coll")
 			}
 		}
 	}
 }
 
-func (w *reservedWalker) subPipeline(ptr string, v bson.RawValue) {
+func (w collectionVisitor) subPipeline(ptr string, v bson.RawValue) {
 	if v.Type != bson.TypeArray {
 		return
 	}
