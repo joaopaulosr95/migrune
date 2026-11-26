@@ -6,6 +6,7 @@
       "collection": "legacyCatalog",
       "operation": "aggregate",
       "pipeline": [
+        { "$match": { "metadata": { "$eq": { "$sample": "unit" } }, "nested": { "tag": { "$sample": "unit" } }, "array": [{ "$sample": "unit" }] } },
         { "$set": {
           "metadata": { "$literal": { "$sample": "unit" } },
           "history": { "$const": [{ "$sampleRate": 1, "$createObjectId": {} }] }

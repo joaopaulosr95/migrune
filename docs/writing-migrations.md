@@ -495,8 +495,12 @@ into `catalog`:
 
 Emit one row per stable `_id`. A missing, null, array, regex or undefined ID
 fails preflight. Document-valued IDs must also be valid stored MongoDB IDs.
-When such an ID contains BSON JavaScript with scope, the comparison reruns
-the source pipeline and streams the affected IDs to validate scope field names.
+For example, catalog preflight checks the `$id` payload of an embedded DBRef.
+It rejects `{"_id":{"r":{"$ref":"items","$id":{"$bad":1}}}}` on every
+supported version, even on servers that accept it in a native `$merge`.
+On a match, the emitted `_id` must preserve the stored BSON representation.
+For example, `Decimal128("1.0")` matches `Decimal128("1.00")` by numeric
+value, but the different encoding fails preflight.
 Literal top-level output names must be nonempty and cannot contain a dot or
 begin with `$`. A dotted input expression such as `"$details.label"` can still
 supply an ordinary output field. When selecting one of several source rows,
@@ -550,7 +554,7 @@ has limits: see [collations](#collations).
 | `duplicateOnCount` | Output documents whose `on` fields equal another output document's and match a target document. An insert step reports duplicates of a missing ID as a separate error | Above 0 fails validation |
 | `nullOnCount`      | Output documents with an `on` field that is null or missing: `$merge` would match them with a target document whose field is null or missing, if there is one | Above 0 fails validation |
 | `arrayOnCount`     | Output documents with an `on` field that is an array, matched or not: `$merge` rejects them (error 51185), part way through | Above 0 fails validation |
-| `idMismatchCount`  | When the `on` fields don't include `_id`: matched documents whose output `_id` differs from the target's. `$merge` can't change an `_id`, and would fail part way through. Leave `_id` out of the output with `{"$project": {"_id": 0, …}}` | Above 0 fails validation |
+| `idMismatchCount`  | Matched documents whose emitted `_id` would change the target's immutable ID. Insert steps require its exact BSON representation. For a discard step on other fields, omit `_id` from the projection | Above 0 fails validation |
 | `collationOnlyMatchCount` | Only when the unique index on the `on` fields has a non-simple collation: output documents with no exact match, so in `unmatchedCount` too, that match a target through that collation (see [collations](#collations)) | Above 0 logs a warning saying what the server's version does with them |
 | `diffCountAfter`   | Apply only: documents that still differ after `$merge`                          | Above 0 fails the migration: it didn't settle |
 
@@ -563,8 +567,10 @@ step, the comparison after the last write and fresh comparisons of every
 earlier step enforce each step's preflight rules again. An insert step also
 enforces them immediately after its own write. A duplicate match or invalid
 output can first appear during these checks, even with zero differences.
-The error identifies the step and earlier writes survive. Counts are observations from separate
-reads, and application writers can change the data between them. See the
+The error identifies the step and earlier writes survive. Each insert comparison
+validates IDs, counts duplicates and measures differences from one pipeline
+evaluation. Application writers can change the data between preflight, the
+write and verification. See the
 [per-target report](reference/report.md#catalog-insert-observations).
 
 Nested values are compared with MongoDB's `$eq` plus their BSON size, since

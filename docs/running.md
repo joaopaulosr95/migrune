@@ -266,12 +266,10 @@ primary, while holding the migration lock:
 - **Merge migrations** run each step's pipeline in plan without `$merge`
   to compare its output with the target. A successful single-step apply normally
   runs the pipeline three times, once before the write, once with `$merge`, and
-  once after the write. Each comparison can add a [read to validate BSON scopes
-  in catalog IDs](writing-migrations.md#catalog-upserts), bringing that apply
-  to five runs if both comparisons need it. After the last write in a file
+  once after the write. After the last write in a file
   containing an insert step, apply also [rechecks every earlier step](writing-migrations.md#how-the-comparison-works).
-  Grouping insert candidates for duplicate detection uses memory proportional
-  to the distinct output keys.
+  For insert steps MongoDB sorts the output by identity. The runner streams the
+  comparison results, counting one group of matching IDs at a time.
 - **Index migrations**: plan reads the indexes, counts the documents a new
   or lowered TTL would delete, and checks a `collModIndex` that sets `unique`
   for duplicates. apply builds each index with

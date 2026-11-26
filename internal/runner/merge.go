@@ -167,6 +167,9 @@ func (before mergeComparison) validate(target mergeTarget, log *slog.Logger) err
 			"$merge would fail on them part way through (error 51185); output one value per on field", before.ArrayOn, on)
 	}
 	if before.IDMismatch > 0 {
+		if target.Insert {
+			return fmt.Errorf("idMismatchCount is %d: an emitted _id matches a document in %s but has a different BSON representation; emit the stored _id exactly", before.IDMismatch, target.Into)
+		}
 		return fmt.Errorf("idMismatchCount is %d: that many output documents have an _id other than the _id of the document "+
 			"they match in %s on %s: $merge can't change an _id and would fail part way through; "+
 			"leave _id out of the output ({\"$project\": {\"_id\": 0, ...}})",

@@ -134,7 +134,7 @@ type InsertStep struct {
 // fields are equal to another's and match a target document. NullOnCount
 // counts the output documents with a null or missing on field, ArrayOnCount
 // those with an array as an on field, and IDMismatchCount those whose _id
-// differs from their target's while the on fields don't include _id. Any of
+// would change the stored ID (including an insert step's BSON encoding). Any of
 // these four above 0 fails the migration.
 type MergeCounts struct {
 	DiffCountBefore  *int64 `json:"diffCountBefore,omitempty" bson:"diffCountBefore,omitempty"`

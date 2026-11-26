@@ -140,9 +140,10 @@ and lock expiry already handle.
   fence stops the runner's own later writes, not what the server is already
   doing.
 - **Changes migrune can't express.** Dropping or renaming collections,
-  creating collections with options or views, and inserting documents happen
-  out of band and aren't in the changelog. Record them in a migration's
-  description or in your deploy log.
+  creating collections with options or views, and standalone insert commands
+  happen out of band. Record them in a migration description or deploy log.
+  [Catalog upserts](writing-migrations.md#catalog-upserts) run as merge
+  migrations and record completion in the changelog.
 - **Sharded clusters.** They are refused: connected to a mongos, migrune
   exits 1 with an error (see [Requirements](../README.md#requirements)).
 

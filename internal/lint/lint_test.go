@@ -138,6 +138,7 @@ func TestRules(t *testing.T) {
 			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/0/$match/$sampleRate: $sampleRate can change the output identities",
 			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/1/$set/_id/$createObjectId: $createObjectId can change the output identities",
 			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/2/$sample: $sample can change the output identities",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/2/$match/$expr/$eq/1/$createObjectId: $createObjectId can change the output identities",
 		}},
 		// In a merge step, $function and $accumulator are volatile-merge
 		// findings only.

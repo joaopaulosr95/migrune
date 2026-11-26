@@ -264,7 +264,7 @@ conversion check shows the keys instead of the `_id`s.
 | `migrations[].duplicateOnCount` | integer, optional | Merge migrations only: the output documents whose `on` fields equal another output document's and match a target document. |
 | `migrations[].nullOnCount`      | integer, optional | Merge migrations only: the output documents with a null or missing `on` field. |
 | `migrations[].arrayOnCount`     | integer, optional | Merge migrations only: the output documents with an array as an `on` field, which `$merge` rejects. |
-| `migrations[].idMismatchCount`  | integer, optional | Merge migrations only, when `on` isn't `_id`: the matched output documents whose `_id` differs from the target's. |
+| `migrations[].idMismatchCount`  | integer, optional | Matched output documents whose `_id` differs from the target's. For insert steps this includes an equal lookup key with a different BSON representation. For discard steps this check applies when the `on` fields omit `_id`. |
 | `migrations[].collationOnlyMatchCount` | integer, optional | Merge migrations only, when the unique index `$merge` matches the `on` fields through has a non-simple collation, such as a case-insensitive one: the output documents with no exact match in the target, so also in `unmatchedCount`, that match one through that collation. What MongoDB does with them depends on its version: see [collations](../writing-migrations.md#collations). Absent otherwise. |
 | `migrations[].insertSteps` | array, optional | [Per-target observations](#catalog-insert-observations) for reached `whenNotMatched: "insert"` steps. |
 | `migrations[].samples`    | array, optional  | Merge migrations only: up to five documents per step that differed before the merge (see below). Absent when none differed. |

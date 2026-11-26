@@ -60,11 +60,13 @@ func checkFile(path, stem string, raw []byte) []Finding {
 					ptr, name, coll, jsonString(ttl)))
 			}
 		}
-		c.serverJS(ptr, step, op == "aggregate")
+		p, _ := step["pipeline"].([]any)
+		catalog := op == "aggregate" && insertPipeline(p)
+		c.serverJS(ptr, step, op == "aggregate", catalog)
 		if op == "aggregate" {
-			if p, ok := step["pipeline"].([]any); ok {
+			if p != nil {
 				c.mergePipeline(ptr+"/pipeline", p)
-				c.volatile(ptr+"/pipeline", p, insertPipeline(p))
+				c.volatile(ptr+"/pipeline", p, catalog)
 			}
 			continue
 		}
@@ -158,25 +160,64 @@ func (c *checker) nested(ptr, parent string, stages []any) {
 // serverJSOperators run JavaScript on the server.
 var serverJSOperators = []string{"$where", "$function", "$accumulator"}
 
-// serverJS reports, anywhere in v, the operators that run JavaScript on the
-// server. In a merge step, $function and $accumulator are left to
-// volatileMerge, which already reports them.
-func (c *checker) serverJS(ptr string, v any, merge bool) {
+// walkOperators skips literal operands. Query comparisons take BSON data,
+// while comparisons below $expr take aggregation expressions.
+func walkOperators(ptr string, v any, parent string, query, catalog bool, visit func(ptr, operator, variable string)) {
 	switch x := v.(type) {
 	case map[string]any:
 		for _, k := range sortedKeys(x) {
 			kp := ptr + "/" + migration.PointerToken(k)
-			if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
-				c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
-					"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
+			visit(kp, k, "")
+			if catalog && (k == "$literal" || k == "$const") {
+				continue
 			}
-			c.serverJS(kp, x[k], merge)
+			if query {
+				// A field compared directly to an array or a document with
+				// ordinary field names is an implicit equality predicate.
+				if !strings.HasPrefix(k, "$") && queryLiteral(x[k]) {
+					continue
+				}
+				switch k {
+				case "$eq", "$ne", "$lt", "$lte", "$gt", "$gte", "$in", "$nin":
+					continue
+				}
+			}
+			isQuery := catalog && (query && k != "$expr" || k == "$match" ||
+				parent == "$geoNear" && k == "query" || parent == "$graphLookup" && k == "restrictSearchWithMatch")
+			walkOperators(kp, x[k], k, isQuery, catalog, visit)
 		}
 	case []any:
 		for i, e := range x {
-			c.serverJS(ptr+"/"+strconv.Itoa(i), e, merge)
+			walkOperators(ptr+"/"+strconv.Itoa(i), e, parent, query, catalog, visit)
+		}
+	case string:
+		if !query {
+			visit(ptr, "", x)
 		}
 	}
+}
+
+func queryLiteral(value any) bool {
+	doc, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	for k := range doc {
+		if !strings.HasPrefix(k, "$") {
+			return true
+		}
+	}
+	return false
+}
+
+// In a merge step, volatile also checks $function and $accumulator.
+func (c *checker) serverJS(ptr string, v any, merge, catalog bool) {
+	walkOperators(ptr, v, "", false, catalog, func(kp, k, _ string) {
+		if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
+			c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
+				"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
+		}
+	})
 }
 
 func insertPipeline(p []any) bool {
@@ -204,32 +245,20 @@ var volatileVariables = []string{"$$NOW", "$$CLUSTER_TIME"}
 // variables whose value changes from one run to the next: a merge computed
 // from them never settles, and plan can't tell.
 func (c *checker) volatile(ptr string, v any, insert bool) {
-	switch x := v.(type) {
-	case map[string]any:
-		for _, k := range sortedKeys(x) {
-			kp := ptr + "/" + migration.PointerToken(k)
-			reason := volatileOperators[k]
-			if insert && (k == "$sample" || k == "$sampleRate" || k == "$createObjectId") {
-				reason = "can change the output identities on each run"
-			}
-			if reason != "" {
-				c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
-			}
-			// Insert-only operator checks apply to expressions. Literal
-			// operands contain BSON data, including dollar-prefixed keys.
-			c.volatile(kp, x[k], insert && k != "$literal" && k != "$const")
+	walkOperators(ptr, v, "", false, insert, func(kp, k, value string) {
+		reason := volatileOperators[k]
+		if insert && (k == "$sample" || k == "$sampleRate" || k == "$createObjectId") {
+			reason = "can change the output identities on each run"
 		}
-	case []any:
-		for i, e := range x {
-			c.volatile(ptr+"/"+strconv.Itoa(i), e, insert)
+		if reason != "" {
+			c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
 		}
-	case string:
 		for _, name := range volatileVariables {
-			if x == name || strings.HasPrefix(x, name+".") {
-				c.add(RuleVolatileMerge, ptr+": "+name+" changes on each run"+volatileAdvice)
+			if value == name || strings.HasPrefix(value, name+".") {
+				c.add(RuleVolatileMerge, kp+": "+name+" changes on each run"+volatileAdvice)
 			}
 		}
-	}
+	})
 }
 
 const volatileAdvice = ": a merge must give the same output when run again, computed from fields it doesn't write, " +

@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
@@ -291,6 +295,9 @@ func TestCatalogInsertOutputPreflight(t *testing.T) {
 		{"matched scoped duplicate", []string{scoped, scoped}, scoped, "duplicateOnCount is 2"},
 		{"missing scoped duplicate", []string{scoped, scoped}, "", "duplicateMissingIDCount is 2"},
 		{"missing invalid scoped duplicate", []string{invalidScoped, invalidScoped}, "", "invalidIDCount is 2"},
+		{"decimal precision", []string{`{"_id":{"$numberDecimal":"1.0"}}`}, `{"_id":{"$numberDecimal":"1.00"}}`, "idMismatchCount is 1"},
+		{"nested decimal precision", []string{`{"_id":{"v":[{"$numberDecimal":"1.0"}]}}`}, `{"_id":{"v":[{"$numberDecimal":"1.00"}]}}`, "idMismatchCount is 1"},
+		{"signed zero", []string{`{"_id":{"$numberDouble":"-0.0"}}`}, `{"_id":{"$numberDouble":"0.0"}}`, "idMismatchCount is 1"},
 		{"forbidden matched type change", []string{`{"_id":1,"price":"1"}`}, `{"_id":1,"price":1}`, "typeChangedCount is 1"},
 	}
 	for _, tc := range cases {
@@ -323,6 +330,12 @@ func TestCatalogInsertOutputPreflight(t *testing.T) {
 					catalogCount(t, "duplicateOnCount", row.DuplicateOnCount, 2)
 				case "missing duplicate", "missing scoped duplicate", "missing invalid scoped duplicate":
 					catalogCount(t, "duplicateOnCount", row.DuplicateOnCount, 0)
+				case "decimal precision", "nested decimal precision", "signed zero":
+					catalogCount(t, "idMismatchCount", row.IDMismatchCount, 1)
+					catalogCount(t, "diffCountBefore", row.DiffCountBefore, 1)
+					if len(row.Samples) != 1 || row.Samples[0].Fields[0].Field != "_id" {
+						t.Errorf("missing ID mismatch sample: %+v", row.Samples)
+					}
 				case "forbidden matched type change":
 					catalogCount(t, "typeChangedCount", row.TypeChangedCount, 1)
 				}
@@ -527,5 +540,125 @@ func TestCatalogInsertPostWriteVerification(t *testing.T) {
 				t.Errorf("%d target documents after retry, want %d", got, first+1)
 			}
 		})
+	}
+}
+
+// The duplicate group spans the initial 101-document cursor batch. Samples
+// must still prefer the later type changes over ordinary differences.
+func TestCatalogDuplicateAcrossCursorBatches(t *testing.T) {
+	ctx, db := testCtx(t), testDB(t)
+	var docs []bson.D
+	for i := 0; i < 110; i++ {
+		docs = append(docs, bson.D{{Key: "_id", Value: i}, {Key: "catalogID", Value: "A"}, {Key: "v", Value: 1}})
+	}
+	for i := 0; i < MaxMergeSamples; i++ {
+		id := fmt.Sprintf("B%d", i)
+		docs = append(docs, bson.D{{Key: "_id", Value: 110 + i}, {Key: "catalogID", Value: id}, {Key: "v", Value: "changed"}})
+		insert(t, ctx, db.Collection("catalog"), bson.D{{Key: "_id", Value: id}, {Key: "v", Value: 1}})
+	}
+	insert(t, ctx, db.Collection("legacy"), docs...)
+	insert(t, ctx, db.Collection("catalog"), bson.D{{Key: "_id", Value: "A"}, {Key: "v", Value: 0}})
+	step := catalogStep(t, "legacy", "catalog", "insert", `{"$project":{"_id":"$catalogID","v":1}}`)
+	row := runCatalog(t, ctx, db, ModePlan, nil, 0, step)
+	catalogCount(t, "duplicateOnCount", row.DuplicateOnCount, 110)
+	catalogCount(t, "diffCountBefore", row.DiffCountBefore, int64(len(docs)))
+	if len(row.Samples) != MaxMergeSamples {
+		t.Fatalf("got %d samples", len(row.Samples))
+	}
+	for _, sample := range row.Samples {
+		if len(sample.Fields) != 1 || !sample.Fields[0].TypeChanged || sample.Fields[0].Before != nil || sample.Fields[0].After != nil {
+			t.Errorf("unexpected sample %+v", sample)
+		}
+	}
+}
+
+func TestCatalogLargeMatchedIDs(t *testing.T) {
+	for _, kind := range []string{"string", "document"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := testCtx(t)
+			run := startRun(t, ctx, Options{})
+			defer run.Close()
+			var id any = strings.Repeat("x", 9<<20)
+			if kind == "document" {
+				id = bson.D{{Key: "large", Value: id}}
+			}
+			// Exercise the comparison cursor at a size that MongoDB 7 cannot
+			// seed as a real _id because its oplog repeats the key.
+			insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "_id", Value: 1}, {Key: "largeID", Value: id}})
+			rows := []any{catalogBSON(t, `{"$replaceWith":{"key":["$largeID"],"targetID":"$largeID","matched":true,"diff":false,"typeChanged":false,"nullOn":false,"arrayOn":false,"invalidFieldName":false,"diffs":[]}}`)}
+			c, err := run.compareInsertRows("legacy", rows, mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard(), options.Aggregate())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Diff != 0 || c.Unmatched != 0 || c.InvalidID != 0 || c.IDMismatch != 0 {
+				t.Fatalf("unexpected counts %+v", c)
+			}
+		})
+	}
+}
+
+func TestCatalogIDMismatchSampleOrder(t *testing.T) {
+	ctx := testCtx(t)
+	run := startRun(t, ctx, Options{})
+	run.sampleValues = true
+	defer run.Close()
+	source := catalogBSON(t, `{"label":"new","_id":{"$numberDecimal":"1.0"},"price":2}`)
+	target := catalogBSON(t, `{"_id":{"$numberDecimal":"1.00"},"label":"old","price":1}`)
+	insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "out", Value: source}})
+	insert(t, ctx, run.db.Collection("catalog"), rawDoc(t, target))
+	c, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$replaceWith":"$out"}`)},
+		mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Diff != 1 || c.IDMismatch != 1 || len(c.Samples) != 1 {
+		t.Fatalf("unexpected comparison %+v", c)
+	}
+	fields := c.Samples[0].Fields
+	if len(fields) != 3 || fields[0].Field != "label" || fields[1].Field != "_id" || fields[2].Field != "price" ||
+		!strings.Contains(string(fields[1].Before), "1.00") || !strings.Contains(string(fields[1].After), "1.0") {
+		t.Fatalf("wrong field order or ID representations: %+v", fields)
+	}
+}
+
+// The first post-write batch contains two identical IDs. A subsequent source
+// read would find one matched ID and one missing ID instead.
+func TestCatalogVerificationWithConcurrentScopedIDChange(t *testing.T) {
+	ctx := testCtx(t)
+	writer := testDB(t)
+	source := writer.Collection("legacy")
+	outputA := catalogBSON(t, `{"_id":{"code":{"$code":"example","$scope":{"key":"A"}}}}`)
+	insert(t, ctx, source, bson.D{{Key: "_id", Value: 1}, {Key: "out", Value: outputA}})
+	var afterWrite atomic.Bool
+	var changed atomic.Bool
+
+	logger := slog.New(slog.NewJSONHandler(onCatalogWrite(func() {
+		insert(t, ctx, source, bson.D{{Key: "_id", Value: 2}, {Key: "out", Value: outputA}})
+		afterWrite.Store(true)
+	}), nil))
+	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
+		if !afterWrite.Load() || e.CommandName != "aggregate" {
+			return
+		}
+		ns, _ := e.Reply.Lookup("cursor", "ns").StringValueOK()
+		if ns != writer.Name()+".legacy" || !changed.CompareAndSwap(false, true) {
+			return
+		}
+		// Change the source after the server has produced the first comparison batch.
+		result, err := source.UpdateByID(ctx, 2, catalogBSON(t, `{"$set":{"out._id":"B"}}`))
+		if err != nil || result.ModifiedCount != 1 {
+			t.Fatalf("writer update returned %v, %v", result, err)
+		}
+	}}
+	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv("MIGRUNE_TEST_URI")).SetMonitor(monitor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+
+	step := catalogStep(t, "legacy", "catalog", "insert", `{"$replaceWith":"$out"}`)
+	row := runCatalog(t, ctx, client.Database(writer.Name()), ModeApply, logger, 0, step)
+	if !changed.Load() || !strings.Contains(row.Error, "duplicateOnCount is 2") {
+		t.Fatalf("writer ran %v, verification error %q", changed.Load(), row.Error)
 	}
 }
