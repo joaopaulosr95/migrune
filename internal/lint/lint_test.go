@@ -2,6 +2,7 @@ package lint
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -51,6 +52,29 @@ func cutMessage(s string) (head, msg string, ok bool) {
 	return strings.Join(parts[:3], ": "), parts[3], true
 }
 
+func TestWalkAllElemMatch(t *testing.T) {
+	for _, tc := range []struct {
+		query         string
+		wantPredicate bool
+	}{
+		{`{"a/b~":{"$all":[{"$elemMatch":{"qty":{"$gt":1}}}]}}`, true},
+		{`{"a/b~":{"$all":[{"$elemMatch":{"qty":{"$gt":1}},"ignored":{"$sample":1}}]}}`, true},
+		{`{"a/b~":{"$all":[{"tag":1,"$elemMatch":{"qty":{"$gt":1}}}]}}`, false},
+	} {
+		var query map[string]any
+		if err := json.Unmarshal([]byte(tc.query), &query); err != nil {
+			t.Fatal(err)
+		}
+		c := checker{raw: []byte(tc.query)}
+		var paths []string
+		c.walkOperators("", query, "$match", true, true, func(path, _, _ string) { paths = append(paths, path) })
+		if slices.Contains(paths, "/a~1b~0/$all/0/$elemMatch/qty/$gt") != tc.wantPredicate ||
+			slices.Contains(paths, "/a~1b~0/$all/0/ignored") {
+			t.Errorf("%s: unexpected operator traversal: %v", tc.query, paths)
+		}
+	}
+}
+
 func TestRules(t *testing.T) {
 	cases := []struct {
 		rule string
@@ -96,7 +120,6 @@ func TestRules(t *testing.T) {
 			`2026-11-01-002-out-in-merge.json: error: schema: /steps/0/pipeline/1: $out is not allowed: it replaces the whole target collection. Use $merge with whenMatched: "merge" and whenNotMatched: "discard"`,
 			"2026-11-01-003-out-in-update.json: error: schema: /steps/0/update/1: $out is not allowed: it replaces the whole target collection",
 			`2026-11-01-004-replace-insert.json: error: schema: /steps/0/pipeline/0/$merge/whenMatched: must be "merge", got "replace"`,
-			`2026-11-01-004-replace-insert.json: error: schema: /steps/0/pipeline/0/$merge/whenNotMatched: must be "discard", got "insert"`,
 			`2026-11-01-005-defaults-and-let.json: error: schema: /steps/0/pipeline/0/$merge: missing properties 'whenMatched', 'whenNotMatched': $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`,
 			`2026-11-01-005-defaults-and-let.json: error: schema: /steps/0/pipeline/0/$merge: additional properties 'let' not allowed: $merge takes into`,
 			`2026-11-01-006-string-form.json: error: schema: /steps/0/pipeline/0/$merge: got string, want object: $merge takes into`,
@@ -135,6 +158,11 @@ func TestRules(t *testing.T) {
 			"2026-11-01-003-cluster-time-in-facet.json: error: volatile-merge: /steps/0/pipeline/0/$facet/stamped/0/$project/at: $$CLUSTER_TIME changes on each run",
 			"2026-11-01-004-function.json: error: volatile-merge: /steps/0/pipeline/0/$project/slug/$function: $function runs JavaScript migrune can't check",
 			"2026-11-01-005-accumulator.json: error: volatile-merge: /steps/0/pipeline/0/$group/itemCount/$accumulator: $accumulator runs JavaScript migrune can't check",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/0/$sample: $sample can change the output identities",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/0/$match/$sampleRate: $sampleRate can change the output identities",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/1/$set/_id/$createObjectId: $createObjectId can change the output identities",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/1/$lookup/pipeline/2/$sample: $sample can change the output identities",
+			"2026-11-01-006-insert-selection.json: error: volatile-merge: /steps/0/pipeline/2/$match/$expr/$eq/1/$createObjectId: $createObjectId can change the output identities",
 		}},
 		// In a merge step, $function and $accumulator are volatile-merge
 		// findings only.

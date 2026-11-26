@@ -57,9 +57,10 @@ and the empty collection if it was missing.
 - **`Finished`**: written when the migration succeeds. For a data migration,
   inside its transaction, together with its data changes, so the entry and
   the data commit or abort together; for a batched one, inside its last
-  batch's transaction. For index and merge migrations, right
-  after the last step; if the run dies between the two, the next run repeats
-  the steps, which is harmless.
+  batch's transaction. For index and merge migrations, the runner records
+  completion after the last step. If it stops before recording `Finished`,
+  the pending migration restarts at its first step. For a merge,
+  [inspect the target and review a fresh plan before retrying](../troubleshooting.md#a-migration-errored).
 - **`Errored`**: written after the migration failed, in a transaction of
   its own, fenced like a data migration's (see [fence](#fence)): a runner
   that lost its lock writes no `Errored` entry, and its report row says the
@@ -125,7 +126,7 @@ returned for that kind of step:
 | ----- | -------------------------------------------------------------------------------------- |
 | data  | `updateOne`, `updateMany`: `matchedCount`, `modifiedCount`, `upsertedCount`. `deleteMany`: `deletedCount`. From the first of the two runs; for a batched migration, summed over its batches. |
 | index | `indexName` (not for `collModCollection`), and for `collModIndex` and `collModCollection` their `set`, as in the file. |
-| merge | `diffCountBefore`, `diffCountAfter`, `unmatchedCount`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
+| merge | `diffCountBefore`, `diffCountAfter`, `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount`, `idMismatchCount`, and `collationOnlyMatchCount` when the unique index on the `on` fields has a non-simple collation. Discard steps store `unmatchedCount`. For insert steps, `results[i].insert.pendingBefore` counts the missing target IDs observed before the write. See [per-target observations](report.md#catalog-insert-observations). See [how the comparison works](../writing-migrations.md#how-the-comparison-works). |
 
 A batched migration's summed counts can undercount: when the commit outcome
 of a batch other than the last is unknown, apply runs the batch again, and

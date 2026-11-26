@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
 
@@ -16,7 +18,7 @@ import (
 // files the schema rejects; a file that isn't JSON at all is left to
 // migration.LoadFile.
 func checkFile(path, stem string, raw []byte) []Finding {
-	c := checker{path: path}
+	c := checker{path: path, raw: raw}
 	if i := bytes.IndexByte(raw, '\r'); i >= 0 {
 		c.add(RuleLineEndings, fmt.Sprintf("line %d ends with a carriage return (CRLF): %s", bytes.Count(raw[:i], []byte("\n"))+1, checksumAdvice))
 	}
@@ -60,11 +62,13 @@ func checkFile(path, stem string, raw []byte) []Finding {
 					ptr, name, coll, jsonString(ttl)))
 			}
 		}
-		c.serverJS(ptr, step, op == "aggregate")
+		p, _ := step["pipeline"].([]any)
+		catalog := op == "aggregate" && insertPipeline(p)
+		c.serverJS(ptr, step, op == "aggregate", catalog)
 		if op == "aggregate" {
-			if p, ok := step["pipeline"].([]any); ok {
+			if p != nil {
 				c.mergePipeline(ptr+"/pipeline", p)
-				c.volatile(ptr+"/pipeline", p)
+				c.volatile(ptr+"/pipeline", p, catalog)
 			}
 			continue
 		}
@@ -84,6 +88,8 @@ const checksumAdvice = "the checksum covers the file's bytes, so a checkout or a
 
 type checker struct {
 	path     string
+	raw      []byte
+	ordered  bson.Raw
 	findings []Finding
 }
 
@@ -158,25 +164,108 @@ func (c *checker) nested(ptr, parent string, stages []any) {
 // serverJSOperators run JavaScript on the server.
 var serverJSOperators = []string{"$where", "$function", "$accumulator"}
 
-// serverJS reports, anywhere in v, the operators that run JavaScript on the
-// server. In a merge step, $function and $accumulator are left to
-// volatileMerge, which already reports them.
-func (c *checker) serverJS(ptr string, v any, merge bool) {
+// walkOperators skips literal operands. Query comparisons take BSON data,
+// while comparisons below $expr take aggregation expressions.
+func (c *checker) walkOperators(ptr string, v any, parent string, query, catalog bool, visit func(ptr, operator, variable string)) {
 	switch x := v.(type) {
 	case map[string]any:
 		for _, k := range sortedKeys(x) {
-			kp := ptr + "/" + migration.PointerToken(k)
-			if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
-				c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
-					"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
+			if query && parent == "$all" && k != "$elemMatch" {
+				continue
 			}
-			c.serverJS(kp, x[k], merge)
+			kp := ptr + "/" + migration.PointerToken(k)
+			visit(kp, k, "")
+			if catalog && (k == "$literal" || k == "$const") {
+				continue
+			}
+			if query {
+				// A field compared directly to an array or a document with
+				// ordinary field names is an implicit equality predicate.
+				if !strings.HasPrefix(k, "$") && queryLiteral(x[k]) {
+					continue
+				}
+				switch k {
+				case "$eq", "$ne", "$lt", "$lte", "$gt", "$gte", "$in", "$nin":
+					continue
+				}
+			}
+			isQuery := catalog && (query && k != "$expr" || k == "$match" ||
+				parent == "$geoNear" && k == "query" || parent == "$graphLookup" && k == "restrictSearchWithMatch")
+			c.walkOperators(kp, x[k], k, isQuery, catalog, visit)
 		}
 	case []any:
+		if query && parent == "$all" && !c.allUsesElemMatch(ptr, x) {
+			return
+		}
 		for i, e := range x {
-			c.serverJS(ptr+"/"+strconv.Itoa(i), e, merge)
+			c.walkOperators(ptr+"/"+strconv.Itoa(i), e, parent, query, catalog, visit)
+		}
+	case string:
+		if !query {
+			visit(ptr, "", x)
 		}
 	}
+}
+
+// MongoDB selects the predicate form of $all only when the first operand's
+// first key is $elemMatch. Only a multi-key operand needs the file's BSON order.
+func (c *checker) allUsesElemMatch(ptr string, operands []any) bool {
+	if len(operands) == 0 {
+		return false
+	}
+	doc, _ := operands[0].(map[string]any)
+	if _, ok := doc["$elemMatch"]; !ok {
+		return false
+	}
+	if len(doc) == 1 {
+		return true
+	}
+	if c.raw != nil {
+		// Files with invalid Extended JSON still receive the other lint checks.
+		_ = bson.UnmarshalExtJSON(c.raw, false, &c.ordered)
+		c.raw = nil
+	}
+	tokens := strings.Split(strings.TrimPrefix(ptr, "/")+"/0", "/")
+	for i, token := range tokens {
+		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+	}
+	operand, _ := c.ordered.Lookup(tokens...).DocumentOK()
+	first, err := operand.IndexErr(0)
+	return err == nil && first.Key() == "$elemMatch"
+}
+
+func queryLiteral(value any) bool {
+	doc, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	for k := range doc {
+		if !strings.HasPrefix(k, "$") {
+			return true
+		}
+	}
+	return false
+}
+
+// In a merge step, volatile also checks $function and $accumulator.
+func (c *checker) serverJS(ptr string, v any, merge, catalog bool) {
+	c.walkOperators(ptr, v, "", false, catalog, func(kp, k, _ string) {
+		if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
+			c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
+				"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
+		}
+	})
+}
+
+func insertPipeline(p []any) bool {
+	for _, stage := range p {
+		doc, _ := stage.(map[string]any)
+		opts, _ := doc["$merge"].(map[string]any)
+		if opts["whenNotMatched"] == "insert" {
+			return true
+		}
+	}
+	return false
 }
 
 // volatileOperators give a different result on each run.
@@ -192,27 +281,21 @@ var volatileVariables = []string{"$$NOW", "$$CLUSTER_TIME"}
 // volatile reports, anywhere in a merge pipeline v, the operators and
 // variables whose value changes from one run to the next: a merge computed
 // from them never settles, and plan can't tell.
-func (c *checker) volatile(ptr string, v any) {
-	switch x := v.(type) {
-	case map[string]any:
-		for _, k := range sortedKeys(x) {
-			kp := ptr + "/" + migration.PointerToken(k)
-			if reason, ok := volatileOperators[k]; ok {
-				c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
-			}
-			c.volatile(kp, x[k])
+func (c *checker) volatile(ptr string, v any, insert bool) {
+	c.walkOperators(ptr, v, "", false, insert, func(kp, k, value string) {
+		reason := volatileOperators[k]
+		if insert && (k == "$sample" || k == "$sampleRate" || k == "$createObjectId") {
+			reason = "can change the output identities on each run"
 		}
-	case []any:
-		for i, e := range x {
-			c.volatile(ptr+"/"+strconv.Itoa(i), e)
+		if reason != "" {
+			c.add(RuleVolatileMerge, kp+": "+k+" "+reason+volatileAdvice)
 		}
-	case string:
 		for _, name := range volatileVariables {
-			if x == name || strings.HasPrefix(x, name+".") {
-				c.add(RuleVolatileMerge, ptr+": "+name+" changes on each run"+volatileAdvice)
+			if value == name || strings.HasPrefix(value, name+".") {
+				c.add(RuleVolatileMerge, kp+": "+name+" changes on each run"+volatileAdvice)
 			}
 		}
-	}
+	})
 }
 
 const volatileAdvice = ": a merge must give the same output when run again, computed from fields it doesn't write, " +

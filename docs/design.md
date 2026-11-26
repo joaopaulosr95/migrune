@@ -16,15 +16,16 @@ a replica set. A [batched](writing-migrations.md#batched-data-migrations)
 migration commits one transaction per batch instead, and its last batch
 writes the `Finished` entry. Index builds and `$merge` can't run in a
 transaction, so those kinds write their entry right after their last step;
-if a run dies in between, the next run repeats steps that are idempotent by
-construction.
+if a run dies in between, a pending migration restarts at its first step.
+For a merge, review the target and the new plan before retrying.
 
 **Idempotency is checked, not trusted.** Every data migration runs twice in
 its transaction (a batched one, each batch in its own) and fails if the
 second run changes anything, which catches
 any non-idempotent update, pipeline updates included, without a list of
 allowed operators. Merges can't run twice in a transaction, so migrune counts
-the documents `$merge` would change before and after it, and requires 0 after.
+differing matches before and after writing, and requires zero afterward. An
+insert step must also reach zero missing target IDs.
 The count is type-strict, and a merge that would change an existing field's
 BSON type fails before writing, because a type changed in place breaks the
 code still reading the old type. Since the changelog already runs each
@@ -103,9 +104,9 @@ and lock expiry already handle.
 - **Compatibility with your code.** Every migration must work with the code
   running before and after the deploy; reviews and expand/contract ensure
   that, not migrune.
-- **Atomicity of index and merge migrations.** A failure leaves earlier steps
-  done and a merge possibly half written; the next run completes them, as
-  long as the merge converges.
+- **Atomicity of index and merge migrations.** Earlier writes survive a
+  failure, including a failed changelog write. Review the target and the
+  fresh plan before [retrying a merge](troubleshooting.md#a-migration-errored).
 - **Atomicity of batched data migrations.** A failure or an interruption
   leaves the batches before it committed; the next run picks up the
   documents still matching the filter. plan runs only the first batch, so a
@@ -139,9 +140,10 @@ and lock expiry already handle.
   fence stops the runner's own later writes, not what the server is already
   doing.
 - **Changes migrune can't express.** Dropping or renaming collections,
-  creating collections with options or views, and inserting documents happen
-  out of band and aren't in the changelog. Record them in a migration's
-  description or in your deploy log.
+  creating collections with options or views, and standalone insert commands
+  happen out of band. Record them in a migration description or deploy log.
+  [Catalog upserts](writing-migrations.md#catalog-upserts) run as merge
+  migrations and record completion in the changelog.
 - **Sharded clusters.** They are refused: connected to a mongos, migrune
   exits 1 with an error (see [Requirements](../README.md#requirements)).
 

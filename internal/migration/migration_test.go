@@ -51,6 +51,7 @@ func TestLoadValid(t *testing.T) {
 		{id: "2026-11-05-005-prepare-dedupe-key", kind: KindIndex, operations: []string{"createIndex", "collModIndex"}},
 		{id: "2026-11-05-006-validate-events", kind: KindIndex, operations: []string{"collModCollection", "collModIndex"}},
 		{id: "2026-11-05-007-backfill-plan-tier", kind: KindData, operations: []string{"updateMany"}, batchSize: 1000},
+		{id: "2026-11-05-008-backfill-catalog", kind: KindMerge, operations: []string{"aggregate", "aggregate", "aggregate"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -168,6 +169,7 @@ func TestLoadDirectory(t *testing.T) {
 		"2026-11-05-005-prepare-dedupe-key",
 		"2026-11-05-006-validate-events",
 		"2026-11-05-007-backfill-plan-tier",
+		"2026-11-05-008-backfill-catalog",
 	}
 	if !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
@@ -300,7 +302,12 @@ func TestLoadInvalid(t *testing.T) {
 		{file: "2026-01-01-037-merge-two-merge-stages", pointer: "/steps/0/pipeline", want: "the pipeline has 2 $merge stages, at indexes 1, 2"},
 		{file: "2026-01-01-038-merge-out-stage", pointer: "/steps/0/pipeline/1", want: "$out is not allowed: it replaces the whole target collection"},
 		{file: "2026-01-01-039-merge-when-matched-replace", pointer: "/steps/0/pipeline/1/$merge/whenMatched", want: `must be "merge", got "replace"`},
-		{file: "2026-01-01-040-merge-when-not-matched-insert", pointer: "/steps/0/pipeline/1/$merge/whenNotMatched", want: `must be "discard", got "insert"`},
+		{file: "2026-01-01-040-merge-when-not-matched-insert", pointer: "/steps/0/collection", want: "must be distinct from the target"},
+		{file: "2026-01-01-086-insert-other-key", pointer: "/steps/0/pipeline/0/$merge/on", want: "insert matches only on _id"},
+		{file: "2026-01-01-087-insert-compound-key", pointer: "/steps/0/pipeline/0/$merge/on", want: "insert matches only on _id"},
+		{file: "2026-01-01-088-merge-when-not-matched-fail", pointer: "/steps/0/pipeline/0/$merge/whenNotMatched", want: "must be one of"},
+		{file: "2026-01-01-089-insert-union-target", pointer: "/steps/0/pipeline/0/$unionWith", want: "must be distinct from the target"},
+		{file: "2026-01-01-090-insert-nested-union-target", pointer: "/steps/0/pipeline/0/$lookup/pipeline/0/$unionWith/coll", want: "must be distinct from the target"},
 		{file: "2026-01-01-041-merge-missing-into", pointer: "/steps/0/pipeline/1/$merge", want: `missing property 'into': $merge takes into, on, whenMatched: "merge" and whenNotMatched: "discard"`},
 		{file: "2026-01-01-042-merge-into-object", pointer: "/steps/0/pipeline/1/$merge/into", want: "got object, want string"},
 		{file: "2026-01-01-043-merge-extra-option", pointer: "/steps/0/pipeline/1/$merge", want: "additional properties 'let' not allowed"},

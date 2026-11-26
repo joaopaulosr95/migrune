@@ -41,7 +41,10 @@ type mergeComparison struct {
 	// another output document's and match a target document; $merge
 	// discards those with no match. Those with a null, missing or array on
 	// field aren't counted.
-	DuplicateOn int64
+	DuplicateOn      int64
+	DuplicateMissing int64
+	InvalidID        int64 `bson:"invalidID"`
+	InvalidFieldName int64 `bson:"invalidFieldName"`
 	// NullOn counts the output documents with an on field that is null or
 	// missing.
 	NullOn int64 `bson:"nullOn"`
@@ -49,8 +52,7 @@ type mergeComparison struct {
 	// array, which $merge rejects (error 51185), matched or not.
 	ArrayOn int64 `bson:"arrayOn"`
 	// IDMismatch counts the matched output documents whose _id differs from
-	// their target's, which $merge can't write; always 0 when the on fields
-	// include _id.
+	// their target's. Insert steps compare its stored BSON representation.
 	IDMismatch int64 `bson:"idMismatch"`
 	Samples    []MergeSample
 }
@@ -62,14 +64,31 @@ func (c mergeComparison) counts() MergeCounts {
 		DuplicateOnCount: &c.DuplicateOn, NullOnCount: &c.NullOn, ArrayOnCount: &c.ArrayOn, IDMismatchCount: &c.IDMismatch}
 }
 
+type comparisonSample struct {
+	Key   []bson.RawValue   `bson:"key"`
+	Diffs []comparisonField `bson:"diffs"`
+}
+
+type comparisonField struct {
+	Same       bool          `bson:"same"`
+	Field      string        `bson:"field"`
+	Before     bson.RawValue `bson:"before"`
+	After      bson.RawValue `bson:"after"`
+	BeforeType string        `bson:"beforeType"`
+	AfterType  string        `bson:"afterType"`
+	Changed    bool          `bson:"typeChanged"`
+	Path       string        `bson:"path"`
+	PathBefore string        `bson:"pathBeforeType"`
+	PathAfter  string        `bson:"pathAfterType"`
+}
+
 // compareMerge runs pre, the pipeline of a merge step without its $merge
 // stage, on coll, followed by a comparison with the target, and counts the
-// output documents as $merge with whenMatched "merge" and whenNotMatched
-// "discard" would write them:
+// output documents that match, differ or have invalid identities:
 //
 //   - an output document matches the target document whose on fields are
-//     equal to its own; one with no match is unmatched, and $merge discards
-//     it;
+//     equal to its own; whenNotMatched chooses whether to insert or discard
+//     an unmatched row;
 //   - a matched document differs when one of its top-level fields differs
 //     from the target's: missing from the target, another BSON type, or
 //     another value. Fields absent from the output are ignored. Values are
@@ -99,28 +118,19 @@ func (r *Run) compareMerge(coll string, pre []bson.Raw, t mergeTarget, log *slog
 	var facet []struct {
 		Counts     []mergeComparison `bson:"counts"`
 		Duplicates []struct {
-			N int64 `bson:"n"`
+			Matched int64 `bson:"matched"`
 		} `bson:"duplicates"`
-		Samples []struct {
-			Key   []bson.RawValue `bson:"key"`
-			Diffs []struct {
-				Field      string        `bson:"field"`
-				Before     bson.RawValue `bson:"before"`
-				After      bson.RawValue `bson:"after"`
-				BeforeType string        `bson:"beforeType"`
-				AfterType  string        `bson:"afterType"`
-				Changed    bool          `bson:"typeChanged"`
-				Path       string        `bson:"path"`
-				PathBefore string        `bson:"pathBeforeType"`
-				PathAfter  string        `bson:"pathAfterType"`
-			} `bson:"diffs"`
-		} `bson:"samples"`
+		Samples []comparisonSample `bson:"samples"`
 	}
 	pipeline := append(toPipeline(pre), comparisonStages(t, mergeTypeDepth)...)
 	// The simple collation compares strings byte by byte, whatever the
 	// collection's default collation: under a case-insensitive one, $eq
 	// would hide a merge that only changes case.
 	simple := options.Aggregate().SetCollation(&options.Collation{Locale: "simple"})
+	if t.Insert {
+		return r.compareInsertRows(coll, pipeline, t, log, simple)
+	}
+	pipeline = append(pipeline, discardFacets())
 	err := r.aggregate(coll, pipeline, log, func(ctx context.Context, cur *mongo.Cursor) error {
 		return cur.All(ctx, &facet)
 	}, simple)
@@ -134,34 +144,38 @@ func (r *Run) compareMerge(coll string, pre []bson.Raw, t mergeTarget, log *slog
 		out = facet[0].Counts[0]
 	}
 	if len(facet[0].Duplicates) == 1 {
-		out.DuplicateOn = facet[0].Duplicates[0].N
+		out.DuplicateOn = facet[0].Duplicates[0].Matched
 	}
-	for _, s := range facet[0].Samples {
-		key := bson.D{}
-		for j, f := range t.On {
-			if j < len(s.Key) {
-				key = append(key, bson.E{Key: f, Value: s.Key[j]})
-			}
-		}
-		sm := MergeSample{Key: rawExtJSON(key)}
-		for _, d := range s.Diffs {
-			f := MergeField{Field: d.Field, BeforeType: d.BeforeType, AfterType: d.AfterType, TypeChanged: d.Changed}
-			if d.Path != "" {
-				f.Path, f.BeforeType, f.AfterType = d.Path, d.PathBefore, d.PathAfter
-			}
-			if r.sampleValues {
-				var cutBefore, cutAfter bool
-				f.After, cutAfter = sampleValue(d.After)
-				if d.Before.Type != 0 {
-					f.Before, cutBefore = sampleValue(d.Before)
-				}
-				f.Truncated = cutBefore || cutAfter
-			}
-			sm.Fields = append(sm.Fields, f)
-		}
-		out.Samples = append(out.Samples, sm)
+	for _, sample := range facet[0].Samples {
+		out.Samples = append(out.Samples, r.mergeSample(sample, t))
 	}
 	return out, nil
+}
+
+func (r *Run) mergeSample(s comparisonSample, t mergeTarget) MergeSample {
+	key := bson.D{}
+	for j, f := range t.On {
+		if j < len(s.Key) {
+			key = append(key, bson.E{Key: f, Value: s.Key[j]})
+		}
+	}
+	sm := MergeSample{Key: rawExtJSON(key)}
+	for _, d := range s.Diffs {
+		f := MergeField{Field: d.Field, BeforeType: d.BeforeType, AfterType: d.AfterType, TypeChanged: d.Changed}
+		if d.Path != "" {
+			f.Path, f.BeforeType, f.AfterType = d.Path, d.PathBefore, d.PathAfter
+		}
+		if r.sampleValues {
+			var cutBefore, cutAfter bool
+			f.After, cutAfter = sampleValue(d.After)
+			if d.Before.Type != 0 {
+				f.Before, cutBefore = sampleValue(d.Before)
+			}
+			f.Truncated = cutBefore || cutAfter
+		}
+		sm.Fields = append(sm.Fields, f)
+	}
+	return sm
 }
 
 // comparisonStages are the stages compareMerge appends to a merge pipeline
@@ -185,8 +199,8 @@ func comparisonStages(t mergeTarget, depth int) []any {
 		nullOn = append(nullOn, m{"$in": a{m{"$type": "$o." + f}, a{"missing", "null"}}})
 		arrayOn = append(arrayOn, m{"$isArray": "$o." + f})
 	}
-	// An output _id that differs from its target's fails $merge, unless the
-	// on fields include _id, which makes them equal.
+	// Discard on a business key may select a target with a different _id.
+	// Insert steps compare the raw BSON IDs in the cursor.
 	var idMismatch any = m{"$literal": false}
 	if !slices.Contains(t.On, "_id") {
 		idMismatch = m{"$and": a{
@@ -237,6 +251,18 @@ func comparisonStages(t mergeTarget, depth int) []any {
 	nested := m{"$first": m{"$filter": m{"input": "$nt", "as": "x", "cond": m{"$eq": a{"$$x.f", "$$d.field"}}}}}
 	found := m{"$ne": a{m{"$type": "$$n"}, "missing"}}
 	ifFound := func(v any) any { return m{"$cond": a{found, v, "$$REMOVE"}} }
+	var before, after any = "$$d.before", "$$d.after"
+	keepField := m{"$not": a{"$$d.same"}}
+	hasDiff := m{"$gt": a{m{"$size": "$diffs"}, 0}}
+	if t.Insert {
+		// Keep the ID's position in samples. Its potentially large BSON
+		// values travel separately and the runner checks their exact bytes.
+		isID := m{"$eq": a{"$$d.field", "_id"}}
+		keepField = m{"$or": a{isID, keepField}}
+		hasDiff = m{"$in": a{false, "$diffs.same"}}
+		before = m{"$cond": a{isID, "$$REMOVE", before}}
+		after = m{"$cond": a{isID, "$$REMOVE", after}}
+	}
 	diffs := m{"$map": m{
 		"input": "$fs",
 		"as":    "d",
@@ -244,8 +270,8 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			"vars": m{"n": nested},
 			"in": bson.D{
 				{Key: "field", Value: "$$d.field"},
-				{Key: "before", Value: "$$d.before"},
-				{Key: "after", Value: "$$d.after"},
+				{Key: "before", Value: before},
+				{Key: "after", Value: after},
 				{Key: "beforeType", Value: "$$d.beforeType"},
 				{Key: "afterType", Value: "$$d.afterType"},
 				{Key: "typeChanged", Value: m{"$or": a{"$$d.typeChanged", found}}},
@@ -256,6 +282,22 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			},
 		}},
 	}}
+	project := m{
+		"o":          1,
+		"key":        key,
+		"matched":    m{"$gt": a{m{"$size": "$t"}, 0}},
+		"ta":         m{"$objectToArray": m{"$ifNull": a{m{"$first": "$t"}, m{}}}},
+		"nullOn":     m{"$or": nullOn},
+		"arrayOn":    m{"$or": arrayOn},
+		"idMismatch": idMismatch,
+	}
+	if t.Insert {
+		project["targetID"] = m{"$first": "$t._id"}
+		project["invalidFieldName"] = m{"$anyElementTrue": a{m{"$map": m{
+			"input": m{"$objectToArray": "$o"}, "as": "field",
+			"in": m{"$or": a{m{"$eq": a{"$$field.k", ""}}, m{"$regexMatch": m{"input": "$$field.k", "regex": `^\$|\.`}}}},
+		}}}}
+	}
 	stages := []any{
 		m{"$replaceWith": m{"o": "$$ROOT"}},
 		m{"$lookup": bson.D{
@@ -267,52 +309,51 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			}},
 			{Key: "as", Value: "t"},
 		}},
-		m{"$project": m{
-			"o":          1,
-			"key":        key,
-			"matched":    m{"$gt": a{m{"$size": "$t"}, 0}},
-			"ta":         m{"$objectToArray": m{"$ifNull": a{m{"$first": "$t"}, m{}}}},
-			"nullOn":     m{"$or": nullOn},
-			"arrayOn":    m{"$or": arrayOn},
-			"idMismatch": idMismatch,
-		}},
+		m{"$project": project},
 		m{"$set": m{"fs": fields}},
 		m{"$unset": a{"o", "ta"}},
 	}
 	stages = append(stages, nestedTypeStages(depth)...)
 	return append(stages,
-		m{"$set": m{"diffs": m{"$filter": m{"input": diffs, "as": "d", "cond": m{"$not": a{"$$d.same"}}}}}},
+		m{"$set": m{"diffs": m{"$filter": m{"input": diffs, "as": "d", "cond": keepField}}}},
 		m{"$unset": a{"fs", "nq", "nt"}},
 		m{"$set": m{
-			"diff":        m{"$and": a{"$matched", m{"$gt": a{m{"$size": "$diffs"}, 0}}}},
+			"diff":        m{"$and": a{"$matched", hasDiff}},
 			"typeChanged": m{"$and": a{"$matched", m{"$anyElementTrue": a{"$diffs.typeChanged"}}}},
 		}},
-		m{"$facet": m{
-			"counts": a{m{"$group": bson.D{
-				{Key: "_id", Value: nil},
-				{Key: "diff", Value: m{"$sum": m{"$cond": a{"$diff", 1, 0}}}},
-				{Key: "unmatched", Value: m{"$sum": m{"$cond": a{"$matched", 0, 1}}}},
-				{Key: "typeChanged", Value: m{"$sum": m{"$cond": a{"$typeChanged", 1, 0}}}},
-				{Key: "nullOn", Value: m{"$sum": m{"$cond": a{"$nullOn", 1, 0}}}},
-				{Key: "arrayOn", Value: m{"$sum": m{"$cond": a{"$arrayOn", 1, 0}}}},
-				{Key: "idMismatch", Value: m{"$sum": m{"$cond": a{"$idMismatch", 1, 0}}}},
-			}}},
-			// Duplicates with no target are discarded by $merge, so only
-			// those that match one count.
-			"duplicates": a{
-				m{"$match": m{"nullOn": false, "arrayOn": false, "matched": true}},
-				m{"$group": m{"_id": "$key", "n": m{"$sum": 1}}},
-				m{"$match": m{"n": m{"$gt": 1}}},
-				m{"$group": m{"_id": nil, "n": m{"$sum": "$n"}}},
-			},
-			"samples": a{
-				m{"$match": m{"diff": true}},
-				m{"$sort": m{"typeChanged": -1}},
-				m{"$limit": MaxMergeSamples},
-				m{"$project": m{"_id": 0, "key": 1, "diffs": 1}},
-			},
-		}},
 	)
+}
+
+func discardFacets() bson.M {
+	type m = bson.M
+	type a = bson.A
+	counts := bson.D{
+		{Key: "_id", Value: nil},
+		{Key: "diff", Value: m{"$sum": m{"$cond": a{"$diff", 1, 0}}}},
+		{Key: "unmatched", Value: m{"$sum": m{"$cond": a{"$matched", 0, 1}}}},
+		{Key: "typeChanged", Value: m{"$sum": m{"$cond": a{"$typeChanged", 1, 0}}}},
+		{Key: "nullOn", Value: m{"$sum": m{"$cond": a{"$nullOn", 1, 0}}}},
+		{Key: "arrayOn", Value: m{"$sum": m{"$cond": a{"$arrayOn", 1, 0}}}},
+		{Key: "idMismatch", Value: m{"$sum": m{"$cond": a{"$idMismatch", 1, 0}}}},
+	}
+	validKey := m{"nullOn": false, "arrayOn": false, "matched": true}
+	perKey := m{"_id": "$key", "n": m{"$sum": 1}}
+	totals := m{"_id": nil, "matched": m{"$sum": "$n"}}
+	return m{"$facet": m{
+		"counts": a{m{"$group": counts}},
+		"duplicates": a{
+			m{"$match": validKey},
+			m{"$group": perKey},
+			m{"$match": m{"n": m{"$gt": 1}}},
+			m{"$group": totals},
+		},
+		"samples": a{
+			m{"$match": m{"diff": true}},
+			m{"$sort": m{"typeChanged": -1}},
+			m{"$limit": MaxMergeSamples},
+			m{"$project": m{"_id": 0, "key": 1, "diffs": 1}},
+		},
+	}}
 }
 
 // nestedTypeStages compare the BSON types inside the top-level fields whose

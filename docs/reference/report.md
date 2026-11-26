@@ -257,15 +257,16 @@ conversion check shows the keys instead of the `_id`s.
 | `migrations[].checked`    | integer, optional | Batched data migrations, plan only: the documents of the first batch, the only one plan runs. |
 | `migrations[].batches`    | integer, optional | Batched data migrations, apply only: the batches that committed, each in a transaction of its own; all of them when the row is `applied`. |
 | `migrations[].indexes`    | array, optional  | Index migrations only: one item per step that ran, in file order (see below). Absent for other kinds and for `skipped` rows. |
-| `migrations[].diffCountBefore`  | integer, optional | Merge migrations only: the documents `$merge` would change, counted before it ran. Absent for other kinds and for `skipped` rows. |
+| `migrations[].diffCountBefore`  | integer, optional | Merge migrations only: matched output documents that differ from their target, counted before the write. Absent for other kinds and for `skipped` rows. |
 | `migrations[].diffCountAfter`   | integer, optional | Merge migrations, apply only: the documents that still differed after `$merge` ran. 0 once the merge settled. Absent in plan. |
-| `migrations[].unmatchedCount`   | integer, optional | Merge migrations only: the output documents with no match in the target, which `$merge` discards. |
-| `migrations[].typeChangedCount` | integer, optional | Merge migrations only: the documents where `$merge` would change the BSON type of an existing, non-null field, or of a value nested in it, or drop a non-null nested field. Above 0 fails the migration. |
-| `migrations[].duplicateOnCount` | integer, optional | Merge migrations only: the output documents whose `on` fields equal another output document's and match a target document. Above 0 fails the migration before anything is written. |
-| `migrations[].nullOnCount`      | integer, optional | Merge migrations only: the output documents with a null or missing `on` field. Above 0 fails the migration before anything is written. |
-| `migrations[].arrayOnCount`     | integer, optional | Merge migrations only: the output documents with an array as an `on` field, which `$merge` rejects. Above 0 fails the migration before anything is written. |
-| `migrations[].idMismatchCount`  | integer, optional | Merge migrations only, when `on` isn't `_id`: the matched output documents whose `_id` differs from the target's. Above 0 fails the migration before anything is written. |
+| `migrations[].unmatchedCount`   | integer, optional | Merge migrations only: output documents with no match in discard steps. Absent on insert-only rows. |
+| `migrations[].typeChangedCount` | integer, optional | Merge migrations only: the documents where `$merge` would change the BSON type of an existing, non-null field, or of a value nested in it, or drop a non-null nested field. |
+| `migrations[].duplicateOnCount` | integer, optional | Merge migrations only: the output documents whose `on` fields equal another output document's and match a target document. |
+| `migrations[].nullOnCount`      | integer, optional | Merge migrations only: the output documents with a null or missing `on` field. |
+| `migrations[].arrayOnCount`     | integer, optional | Merge migrations only: the output documents with an array as an `on` field, which `$merge` rejects. |
+| `migrations[].idMismatchCount`  | integer, optional | Matched output documents whose `_id` differs from the target's. For insert steps this includes an equal lookup key with a different BSON representation. For discard steps this check applies when the `on` fields omit `_id`. |
 | `migrations[].collationOnlyMatchCount` | integer, optional | Merge migrations only, when the unique index `$merge` matches the `on` fields through has a non-simple collation, such as a case-insensitive one: the output documents with no exact match in the target, so also in `unmatchedCount`, that match one through that collation. What MongoDB does with them depends on its version: see [collations](../writing-migrations.md#collations). Absent otherwise. |
+| `migrations[].insertSteps` | array, optional | [Per-target observations](#catalog-insert-observations) for reached `whenNotMatched: "insert"` steps. |
 | `migrations[].samples`    | array, optional  | Merge migrations only: up to five documents per step that differed before the merge (see below). Absent when none differed. |
 | `appliedButMissing`       | array            | Migrations with a `Finished` changelog entry and no file, e.g. after a revert, in id order. Not empty means the run failed before running anything. |
 | `appliedButMissing[].id`  | string           | The migration id.                                                                                            |
@@ -279,6 +280,12 @@ conversion check shows the keys instead of the `_id`s.
 | `totals.skipped`          | integer          | Rows with status `skipped`.                                                                                  |
 | `totals.durationMs`       | integer          | How long the whole run took, in milliseconds.                                                                |
 | `error`                   | string, optional | Why the run failed, without the server's message unless `--sample-values` is set (see [values in errors](#values-in-errors)). Absent when it succeeded. |
+
+The merge validation counts (`typeChangedCount`, `duplicateOnCount`,
+`nullOnCount`, `arrayOnCount` and `idMismatchCount`) sum the reached steps'
+preflight observations. A positive count prevents that step's write. Earlier
+steps may already have written. A violation first seen after a write appears
+in `migrations[].error` and leaves the preflight counts unchanged.
 
 ### Data steps
 
@@ -334,6 +341,23 @@ Each item of `migrations[].indexes` is one step of an index migration. A
     { "action": "absent", "collection": "items", "name": "stale_1" }
   ]
 }
+```
+
+### Catalog insert observations
+
+Each `insertSteps` item identifies a reached insert step by its zero-based
+`step` and target collection `into`. `targetExistsBefore` is the observed
+existence of that target. `pendingBefore` and `pendingAfter` count missing
+target IDs. `diffCountBefore` and `diffCountAfter` count differing matches
+for that same target. A measured zero or `false` appears explicitly. An
+unavailable observation is absent, including after-counts in plan or after
+a failed write. After a final recheck the row totals use each step's latest
+completed after-count once. The table lists the counts per insert target.
+
+For example, a plan with one missing ID in an empty target includes:
+
+```json
+{ "insertSteps": [{ "step": 0, "into": "catalog", "targetExistsBefore": true, "pendingBefore": 1, "diffCountBefore": 0 }] }
 ```
 
 ### Merge samples

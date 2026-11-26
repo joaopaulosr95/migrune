@@ -1,0 +1,48 @@
+{
+  "id": "2026-11-01-006-insert-selection",
+  "description": "Test catalog inserts",
+  "steps": [
+    {
+      "collection": "legacyCatalog",
+      "operation": "aggregate",
+      "pipeline": [
+        {
+          "$sample": {
+            "size": 1
+          }
+        },
+        {
+          "$lookup": {
+            "from": "items",
+            "pipeline": [
+              {
+                "$match": {
+                  "$sampleRate": 0.2
+                }
+              },
+              {
+                "$set": {
+                  "_id": {
+                    "$createObjectId": {}
+                  }
+                }
+              },
+              {
+                "$sample": { "size": 1 }
+              }
+            ],
+            "as": "rows"
+          }
+        },
+        { "$match": { "$expr": { "$eq": ["$_id", { "$createObjectId": {} }] } } },
+        {
+          "$merge": {
+            "into": "catalog",
+            "whenMatched": "merge",
+            "whenNotMatched": "insert"
+          }
+        }
+      ]
+    }
+  ]
+}

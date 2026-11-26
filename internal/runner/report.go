@@ -102,11 +102,24 @@ type Row struct {
 	// MergeCounts are set for merge migrations only, summed over the steps
 	// that ran.
 	MergeCounts
+	// InsertSteps holds the measurements obtained for each reached insert step.
+	InsertSteps []InsertStep `json:"insertSteps,omitempty"`
 	// Samples are a few documents that differed from their target before
 	// the merge, those with a type change first: their on fields, and the
 	// names, types and nested paths of the fields that differ, with their
 	// values only with sample values on.
 	Samples []MergeSample `json:"samples,omitempty"`
+}
+
+// InsertStep records what the comparisons saw. A nil count was never measured.
+type InsertStep struct {
+	Step               int    `json:"step" bson:"step"`
+	Into               string `json:"into" bson:"into"`
+	TargetExistsBefore *bool  `json:"targetExistsBefore,omitempty" bson:"targetExistsBefore,omitempty"`
+	PendingBefore      *int64 `json:"pendingBefore,omitempty" bson:"pendingBefore,omitempty"`
+	PendingAfter       *int64 `json:"pendingAfter,omitempty" bson:"pendingAfter,omitempty"`
+	DiffCountBefore    *int64 `json:"diffCountBefore,omitempty" bson:"diffCountBefore,omitempty"`
+	DiffCountAfter     *int64 `json:"diffCountAfter,omitempty" bson:"diffCountAfter,omitempty"`
 }
 
 // MergeCounts are the counts of a merge migration: of one step in
@@ -121,7 +134,7 @@ type Row struct {
 // fields are equal to another's and match a target document. NullOnCount
 // counts the output documents with a null or missing on field, ArrayOnCount
 // those with an array as an on field, and IDMismatchCount those whose _id
-// differs from their target's while the on fields don't include _id. Any of
+// would change the stored ID (including an insert step's BSON encoding). Any of
 // these four above 0 fails the migration.
 type MergeCounts struct {
 	DiffCountBefore  *int64 `json:"diffCountBefore,omitempty" bson:"diffCountBefore,omitempty"`

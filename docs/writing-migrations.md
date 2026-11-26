@@ -450,10 +450,9 @@ Each step has `collection` (the collection the pipeline reads),
 
 - `$merge` is the only one (schema) and the last stage (`merge-last`).
 - `$merge` takes `into` (a collection in the same database), optionally `on`
-  (a field or an array of fields; default `_id`), and exactly
-  `"whenMatched": "merge"` and `"whenNotMatched": "discard"` (schema).
-  Merge migrations update existing documents; they never insert or replace
-  them.
+  (default `_id`), and both actions. `whenMatched` is `"merge"`. Choose
+  `"discard"` to update only existing matches, or `"insert"` to create
+  [missing catalog entries](#catalog-upserts) keyed by `_id`.
 - No `$out` stage (schema): it replaces the whole collection and loses
   concurrent writes. No `$out` or `$merge` in `$lookup.pipeline`,
   `$unionWith.pipeline` or `$facet`, at any depth (`nested-out-merge`).
@@ -480,6 +479,39 @@ pending index migrations before the merge would create. When such an index
 gives a collation that plan can't compare with the collection's, which lists
 every default, plan logs a warning that apply may fail. A file can hold
 several aggregate steps, run in order.
+
+### Catalog upserts
+
+Use `whenNotMatched: "insert"` to copy a catalog while preserving its BSON
+IDs. For example, this pipeline copies two fields from `legacyCatalog`
+into `catalog`:
+
+```json
+[
+  { "$project": { "_id": 1, "label": 1 } },
+  { "$merge": { "into": "catalog", "on": "_id", "whenMatched": "merge", "whenNotMatched": "insert" } }
+]
+```
+
+Emit one row per stable `_id`. A missing, null, array, regex or undefined ID
+fails preflight. Document-valued IDs must also be valid stored MongoDB IDs.
+For example, catalog preflight checks the `$id` payload of an embedded DBRef.
+It rejects `{"_id":{"r":{"$ref":"items","$id":{"$bad":1}}}}` on every
+supported version, even on servers that accept it in a native `$merge`.
+On a match, the emitted `_id` must preserve the stored BSON representation.
+For example, `Decimal128("1.0")` matches `Decimal128("1.00")` by numeric
+value, but the different encoding fails preflight.
+Literal top-level output names must be nonempty and cannot contain a dot or
+begin with `$`. A dotted input expression such as `"$details.label"` can still
+supply an ordinary output field. When selecting one of several source rows,
+order ties deterministically.
+
+A missing ID receives the complete output document. An existing match keeps
+its other top-level fields. Project only catalog-owned fields, since an update
+between plan and apply can turn a planned insert into a matched update.
+Objects and arrays follow the [field replacement rules](#shape-the-output).
+Removing a source row leaves its target row in place. To refresh after
+`Finished`, retain the original file and add a migration with a new ID.
 
 ### Shape the output
 
@@ -517,20 +549,31 @@ has limits: see [collations](#collations).
 | Count              | What it counts                                                                 | Effect                                       |
 | ------------------ | ------------------------------------------------------------------------------ | -------------------------------------------- |
 | `diffCountBefore`  | Matched documents with at least one output field missing from the target, or of another value or type | Reported, with up to five samples per step, type changes first: field names and types, and values only with `--sample-values` |
-| `unmatchedCount`   | Output documents with no target document; `$merge` discards them               | Above 0 logs a warning: the `on` fields are probably wrong |
-| `typeChangedCount` | Matched documents where an output field changes the BSON type of an existing, non-null target field, or of a value nested in it, or drops a non-null nested field | Above 0 fails the migration, in plan and apply, before anything is written |
-| `duplicateOnCount` | Output documents whose `on` fields equal another output document's and match a target document. Duplicates with no target are left out: `$merge` discards them | Above 0 fails the migration, in plan and apply, before anything is written |
-| `nullOnCount`      | Output documents with an `on` field that is null or missing: `$merge` would match them with a target document whose field is null or missing, if there is one | Above 0 fails the migration, in plan and apply, before anything is written |
-| `arrayOnCount`     | Output documents with an `on` field that is an array, matched or not: `$merge` rejects them (error 51185), part way through | Above 0 fails the migration, in plan and apply, before anything is written |
-| `idMismatchCount`  | When the `on` fields don't include `_id`: matched documents whose output `_id` differs from the target's. `$merge` can't change an `_id`, and would fail part way through. Leave `_id` out of the output with `{"$project": {"_id": 0, …}}` | Above 0 fails the migration, in plan and apply, before anything is written |
+| `unmatchedCount`   | Output documents a `discard` step would skip               | Above 0 logs a warning: the `on` fields are probably wrong |
+| `typeChangedCount` | Matched documents where an output field changes the BSON type of an existing, non-null target field, or of a value nested in it, or drops a non-null nested field | Above 0 fails validation |
+| `duplicateOnCount` | Output documents whose `on` fields equal another output document's and match a target document. An insert step reports duplicates of a missing ID as a separate error | Above 0 fails validation |
+| `nullOnCount`      | Output documents with an `on` field that is null or missing: `$merge` would match them with a target document whose field is null or missing, if there is one | Above 0 fails validation |
+| `arrayOnCount`     | Output documents with an `on` field that is an array, matched or not: `$merge` rejects them (error 51185), part way through | Above 0 fails validation |
+| `idMismatchCount`  | Matched documents whose emitted `_id` would change the target's immutable ID. Insert steps require its exact BSON representation. For a discard step on other fields, omit `_id` from the projection | Above 0 fails validation |
 | `collationOnlyMatchCount` | Only when the unique index on the `on` fields has a non-simple collation: output documents with no exact match, so in `unmatchedCount` too, that match a target through that collation (see [collations](#collations)) | Above 0 logs a warning saying what the server's version does with them |
 | `diffCountAfter`   | Apply only: documents that still differ after `$merge`                          | Above 0 fails the migration: it didn't settle |
 
 A field missing or null in the target takes any type and counts only as a
 diff. The reverse, a non-null field the output sets to null, is a type
-change. plan stops after the first comparison and writes nothing; apply then
-runs the full pipeline and compares again. The counts are summed over the
-steps that ran.
+change. Plan stops after preflight. Apply validates the step before writing,
+runs the full pipeline, and compares again. For an insert step, both missing
+IDs and differing matches must reach zero. In a file containing an insert
+step, the comparison after the last write and fresh comparisons of every
+earlier step enforce each step's preflight rules again. An insert step also
+enforces them immediately after its own write. A duplicate match or invalid
+output can first appear during these checks, even with zero differences.
+The error identifies the step and earlier writes survive. Each insert comparison
+validates IDs, counts duplicates and measures differences from one pipeline
+evaluation. After an insert comparison following a write, the runner checks
+that the primary source and each named `$unionWith` source still exist.
+Application writers can change the data between preflight, the
+write and verification. See the
+[per-target report](reference/report.md#catalog-insert-observations).
 
 Nested values are compared with MongoDB's `$eq` plus their BSON size, since
 aggregation can't compare bytes, and `$eq` compares numbers by value whatever
@@ -580,9 +623,9 @@ the merge would write, since plan aborts them:
   differs at /steps/0 {"_id":{"$oid":"…"}}: ownerName: missing -> string
 ```
 
-A merge that fails on `typeChangedCount`, `duplicateOnCount`, `nullOnCount`,
-`arrayOnCount` or `idMismatchCount` writes nothing for that step. One that was interrupted, or failed while `$merge` ran, can be
-half done: that is safe as long as the running code copes with old and new
+A failed preflight prevents that step's write. A failed comparison after the
+write leaves the target changes in place. A step interrupted or rejected
+during `$merge` can be half done: that is safe as long as the running code copes with old and new
 data, which every migration must ensure anyway, and running it again
 completes it, if it converges. One that failed on `diffCountAfter` doesn't
 converge: it already wrote, and running it again would write again. Fix the
@@ -597,8 +640,8 @@ reads. The comparison runs the same pipeline with the simple collation, so
 that strings compare byte by byte, and can't also run it with the
 collection's. When the collection or the target's unique index has a
 non-simple collation, such as a case-insensitive one, the counts can miss
-what `$merge` does. plan and apply then log one warning for each step,
-covering both cases below, and carry on.
+what `$merge` does. Discard steps warn and continue as described below.
+Insert steps require simple collation on the primary source and target.
 
 **The collection the step reads has a non-simple default collation.** Every
 expression that compares strings, in any stage, compares under it when

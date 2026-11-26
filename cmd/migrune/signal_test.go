@@ -373,8 +373,10 @@ func TestSIGTERMDuringMerge(t *testing.T) {
 	if len(rep.Migrations) != 1 || rep.Migrations[0].Kind != "merge" || rep.Migrations[0].Status != runner.RowInterrupted {
 		t.Errorf("report %+v, want the merge migration interrupted", rep)
 	}
-	if !strings.Contains(stderr.String(), "migration interrupted") || !strings.Contains(stderr.String(), "aggregate in progress cancelled") {
-		t.Error("no interruption or cancellation in the logs")
+	for _, message := range []string{"aggregate in progress cancelled", "merge migration interrupted", "fresh digest", "firstApply for --init"} {
+		if !strings.Contains(stderr.String(), message) {
+			t.Errorf("missing %q in interruption logs", message)
+		}
 	}
 	if n := count(t, ctx, db.Collection(runner.ChangelogCollection), bson.D{}); n != 0 {
 		t.Errorf("%d changelog entries, want none: the migration must stay pending", n)

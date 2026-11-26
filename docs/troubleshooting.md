@@ -85,9 +85,9 @@ for the roles each command needs.
 
 ## A migration errored
 
-apply stops at the first migration that fails: it records it as `Errored` in
-the changelog, reports it as `errored` and the ones after it as `skipped`, and
-exits 1. The migrations before it stay applied.
+apply stops at the first failed migration, reports it as `errored`, marks later
+migrations `skipped` and exits 1. For an ordinary step failure, it attempts
+to record `Errored` in the changelog. The migrations before it stay applied.
 
 An `Errored` migration is still pending (only a `Finished` entry marks a
 migration as applied) and its file isn't locked, so you **fix it in place,
@@ -116,15 +116,12 @@ under the same id**, and run again.
    - Data: nothing; the transaction aborted.
    - Index: the steps before the failed one stay done. Running them again
      does nothing.
-   - Merge: the steps before the failed one stay done. A step that failed on
-     `typeChangedCount`, `duplicateOnCount`, `nullOnCount`, `arrayOnCount` or
-     `idMismatchCount` wrote nothing. One that failed
-     while `$merge` ran may have written part of its documents; once fixed,
-     the next run compares again and completes it. One that failed on
-     `diffCountAfter` wrote everything and doesn't converge: running it again
-     writes again, so fix the pipeline (see
-     [shape the output](writing-migrations.md#shape-the-output)) and check
-     the data it wrote.
+   - Merge steps that reached `$merge` can leave committed documents, even when
+     the aggregate errors or the later `Finished` write fails. A preflight
+     failure leaves that step’s target untouched. A post-write or final check
+     can find outstanding work on a step that already wrote. Inspect the target
+     and the changelog before correcting the cause. For conflicting steps,
+     check which one owns the differing field.
 
 3. **Fix the file and run again**, keeping its name and `id`. For example,
    make a step idempotent by filtering on the target state:
@@ -138,7 +135,12 @@ under the same id**, and run again.
 
    Then lint, plan and apply as usual. In CI that means a new commit and a new
    pipeline, so the plan digest covers the fixed file. The old `Errored` entry
-   stays as a record; the new `Finished` entry marks the migration applied.
+   stays as a record and the new `Finished` entry marks the migration applied.
+   Replan in the same namespace after a failed or uncertain merge. Follow the
+   fresh plan’s `firstApply` when choosing `--init`. A failed completion write
+   can leave an empty changelog even when every target row is present. A
+   recorded `Errored` entry makes `firstApply` false. If the completion entry
+   committed, the file drops out of the pending set.
 
 If the migration shouldn't run at all, delete its file instead: a migration
 with only `Errored` entries isn't applied.
@@ -213,13 +215,15 @@ On the first SIGINT or SIGTERM (Ctrl+C, a cancelled job, a pod eviction),
 migrune stops gracefully and exits 130 or 143:
 
 - no new migration starts;
-- the migration in progress is reported as `interrupted` and the rest as
-  `skipped`. A data migration's transaction is aborted (a batched one's
-  earlier batches stay committed, and the error says how many); an index
-  build is left to finish on the server; a merge's aggregate is cancelled;
-- no changelog entry is written, so the migration stays pending; but a
-  data migration whose commit was already sent lets it finish, for up to 30
-  seconds, and is reported as `applied` if it committed;
+- a migration interrupted before its completion commit is reported as
+  `interrupted` and stays pending. The remaining migrations are `skipped`.
+  A data transaction is aborted, earlier batches stay committed, an index
+  build is left to finish on the server, and migrune requests cancellation
+  of an active merge aggregate. Writes the merge already made survive;
+- if the completion commit has already started, migrune gives it up to 30
+  seconds. This includes the transaction that records a verified merge as
+  `Finished`. A confirmed commit is reported as `applied`; a fresh plan
+  skips a file with a committed `Finished` entry;
 - plan writes no digest, so a partial plan can't be approved;
 - the lock is released if this runner still owns it, within 5 seconds;
 - the report is still printed.
@@ -228,9 +232,9 @@ A second signal exits at once with the first signal's code; every step above is 
 cut short. SIGKILL can't be caught: the server aborts the open transaction on
 its own, and the lock expires.
 
-Nothing needs fixing: run plan and apply again. The next run's identical
-`createIndex` waits for a build still in progress or does nothing, and a
-half-done merge is finished.
+Run plan again. An identical `createIndex` waits for a build still in progress
+or finds the finished index. For a merge, inspect surviving writes and review
+the fresh plan before retrying as described under [a migration errored](#a-migration-errored).
 
 ## The lock is held
 
@@ -519,7 +523,7 @@ again, so read the plan before applying.
 
 ## A merge warns about a collation
 
-plan and apply log a warning for each merge step that reads a collection with
+plan and apply log a warning for each discard step that reads a collection with
 a non-simple default collation, such as a case-insensitive one; when the
 target's unique index on the `on` fields has it too, the same warning lists
 what the comparison can't check through it. The run

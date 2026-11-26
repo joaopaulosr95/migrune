@@ -15,71 +15,79 @@ import (
 // ending in $merge, which MongoDB doesn't allow in a transaction, so the steps
 // run one by one, in file order, outside one.
 //
-// For each step whose on fields aren't only _id, the target must first have
-// the unique index $merge matches through, with the pipeline's collation
-// (checkMergeIndex); without one, the step fails before anything is written.
-// A non-simple collation on the source, and so on that index, logs a warning
-// about what the comparison can't check (warnCollation).
-// Then the pipeline runs without its $merge stage, followed by a comparison
-// with the target collection: compareMerge says what it counts. Unmatched
-// output documents are a warning; null, array or duplicate on fields, an _id
-// mismatch or a type change fail the step. plan stops there and writes
-// nothing. apply then runs the whole pipeline and compares again: any
-// document still differing (diffCountAfter) fails the migration, since a
-// settled merge changes nothing. Only apply can find a merge that doesn't
-// settle, such as one computing a field from its own value, and only after
-// writing.
-//
-// With apply, the Finished entry is written after every step succeeded, in a
-// fenced transaction of its own; a failure is recorded as
-// Errored, unless the run was interrupted, which cancels the
-// aggregate in progress. Either way, the counts and samples go into row.
+// Plan compares each step against the current database. Apply writes and
+// checks each step immediately. If any step inserts, it also checks the
+// earlier steps against the final state before recording Finished.
 func (r *Run) runMerge(m migration.Migration, apply bool, log *slog.Logger, row *Row) error {
 	if err := r.lock.SetCurrent(r.ctx, m.ID); err != nil {
 		return r.lockErr(err)
 	}
 	results := make([]StepResult, len(m.Steps))
+	// Assemble the row once, including partial observations on any failure.
+	// A terminal recheck replaces a step's after-counts in results.
+	defer func() {
+		for _, res := range results {
+			row.add(res.MergeCounts)
+			if res.Insert != nil {
+				row.InsertSteps = append(row.InsertSteps, *res.Insert)
+			}
+		}
+	}()
+	hasInsert := false
 	for i, s := range m.Steps {
-		res, err := r.runMergeStep(i, s, apply, log.With("step", i, "collection", s.Collection), row)
-		row.add(res.MergeCounts)
+		terminal := hasInsert && i == len(m.Steps)-1
+		res, err := r.runMergeStep(i, s, apply, terminal, log.With("step", i, "collection", s.Collection), row)
+		results[i] = res
 		if err != nil {
 			return r.stepFailed(m, i, s, err, apply)
 		}
-		results[i] = res
+		hasInsert = hasInsert || res.Insert != nil
 	}
 	if !apply {
 		return nil
+	}
+	if hasInsert {
+		for i, s := range m.Steps[:len(m.Steps)-1] {
+			pre, target, _ := splitMerge(s) // the immediate check already parsed it
+			if err := r.verifyMerge(s, pre, target, &results[i], true, log.With("step", i, "collection", s.Collection)); err != nil {
+				return r.stepFailed(m, i, s, err, apply)
+			}
+		}
 	}
 	return r.writeFinishedAlone(m, results)
 }
 
 // runMergeStep compares, and with apply merges and compares again, one step.
-func (r *Run) runMergeStep(i int, s migration.Step, apply bool, log *slog.Logger, row *Row) (StepResult, error) {
+func (r *Run) runMergeStep(i int, s migration.Step, apply, terminal bool, log *slog.Logger, row *Row) (StepResult, error) {
 	res := StepResult{Collection: s.Collection, Operation: s.Operation}
 	pre, target, err := splitMerge(s)
 	if err != nil {
 		return res, err
 	}
-	interrupted := func(err error) error {
-		if rerr := r.Err(); rerr != nil {
-			return rerr
+	if target.Insert {
+		res.Insert = &InsertStep{Step: i, Into: target.Into}
+	}
+	index, err := r.prepareMerge(s, target, res.Insert, apply, log)
+	if res.Insert != nil && res.Insert.TargetExistsBefore != nil {
+		msg := "insert target is present"
+		if !*res.Insert.TargetExistsBefore {
+			msg = "insert target is absent; the first insert can create it"
 		}
-		return err
+		log.Info(msg, "into", target.Into, "targetExistsBefore", *res.Insert.TargetExistsBefore)
 	}
-	collation, err := r.defaultCollation(s.Collection)
 	if err != nil {
-		return res, interrupted(fmt.Errorf("read the default collation of %s: %w", s.Collection, err))
+		return res, err
 	}
-	index, err := r.checkMergeIndex(s.Collection, collation, target, apply, log)
-	if err != nil {
-		return res, interrupted(err)
-	}
-	warnCollation(log, s.Collection, collation, target, index)
 	before, err := r.compareMerge(s.Collection, pre, target, log)
 	if err != nil {
 		return res, fmt.Errorf("compare with %s: %w", target.Into, err)
 	}
 	res.MergeCounts = before.counts()
+	if res.Insert != nil {
+		res.UnmatchedCount = nil
+		res.Insert.PendingBefore = &before.Unmatched
+		res.Insert.DiffCountBefore = &before.Diff
+	}
 	if index.Collation != "" {
 		n, err := r.collationOnlyMatches(s.Collection, pre, target, index, log)
 		if err != nil {
@@ -92,39 +100,16 @@ func (r *Run) runMergeStep(i int, s migration.Step, apply bool, log *slog.Logger
 		row.Samples = append(row.Samples, sm)
 		log.Info("merge sample: a document that differs from its target", sampleAttrs(sm)...)
 	}
-	log.Info("merge comparison", "into", target.Into, "on", strings.Join(target.On, ","),
-		"diffCount", before.Diff, "unmatchedCount", before.Unmatched, "typeChangedCount", before.TypeChanged,
-		"duplicateOnCount", before.DuplicateOn, "nullOnCount", before.NullOn, "arrayOnCount", before.ArrayOn,
-		"idMismatchCount", before.IDMismatch)
-	if before.Unmatched > 0 {
-		log.Warn("output documents have no match in the target: $merge discards them; check the on fields",
-			"into", target.Into, "on", strings.Join(target.On, ","), "unmatchedCount", before.Unmatched)
+	if target.Insert {
+		log.Info("insert comparison", "into", target.Into, "pendingBefore", before.Unmatched, "diffCountBefore", before.Diff)
+	} else {
+		log.Info("merge comparison", "into", target.Into, "on", strings.Join(target.On, ","),
+			"diffCount", before.Diff, "unmatchedCount", before.Unmatched, "typeChangedCount", before.TypeChanged,
+			"duplicateOnCount", before.DuplicateOn, "nullOnCount", before.NullOn, "arrayOnCount", before.ArrayOn,
+			"idMismatchCount", before.IDMismatch)
 	}
-	on := strings.Join(target.On, ",")
-	if before.NullOn > 0 {
-		return res, fmt.Errorf("nullOnCount is %d: that many output documents have a null or missing on field (%s): "+
-			"$merge would match them with a target whose field is null or missing, or with none; "+
-			"output only documents with every on field set", before.NullOn, on)
-	}
-	if before.ArrayOn > 0 {
-		return res, fmt.Errorf("arrayOnCount is %d: that many output documents have an array as an on field (%s): "+
-			"$merge would fail on them part way through (error 51185); output one value per on field", before.ArrayOn, on)
-	}
-	if before.IDMismatch > 0 {
-		return res, fmt.Errorf("idMismatchCount is %d: that many output documents have an _id other than the _id of the document "+
-			"they match in %s on %s: $merge can't change an _id and would fail part way through; "+
-			"leave _id out of the output ({\"$project\": {\"_id\": 0, ...}})",
-			before.IDMismatch, target.Into, on)
-	}
-	if before.TypeChanged > 0 {
-		return res, fmt.Errorf("typeChangedCount is %d: the merge would change the BSON type of existing fields in %s, "+
-			"or drop nested ones (type missing); neither is allowed in place: write the new type or shape to a new field instead",
-			before.TypeChanged, target.Into)
-	}
-	if before.DuplicateOn > 0 {
-		return res, fmt.Errorf("duplicateOnCount is %d: that many output documents share their on fields (%s) with another, "+
-			"so $merge would write the same document in %s more than once and the last write would win; "+
-			"make the pipeline output one document per on value", before.DuplicateOn, on, target.Into)
+	if err := before.validate(target, log); err != nil {
+		return res, err
 	}
 	if !apply {
 		return res, nil
@@ -138,22 +123,116 @@ func (r *Run) runMergeStep(i int, s migration.Step, apply bool, log *slog.Logger
 		return res, fmt.Errorf("merge into %s: %w", target.Into, err)
 	}
 	log.Info("merge done", "into", target.Into)
+	err = r.verifyMerge(s, pre, target, &res, terminal, log)
+	return res, err
+}
+
+func (r *Run) prepareMerge(s migration.Step, target mergeTarget, obs *InsertStep, apply bool, log *slog.Logger) (mergeIndex, error) {
+	if target.Insert {
+		return mergeIndex{}, r.checkInsertCollections(s, target, obs)
+	}
+	collation, err := r.defaultCollation(s.Collection)
+	if err != nil {
+		return mergeIndex{}, fmt.Errorf("read the default collation of %s: %w", s.Collection, err)
+	}
+	index, err := r.checkMergeIndex(s.Collection, collation, target, apply, log)
+	if err == nil {
+		warnCollation(log, s.Collection, collation, target, index)
+	}
+	return index, err
+}
+
+func (before mergeComparison) validate(target mergeTarget, log *slog.Logger) error {
+	if before.Unmatched > 0 && !target.Insert {
+		log.Warn("output documents have no match in the target: $merge discards them; check the on fields",
+			"into", target.Into, "on", strings.Join(target.On, ","), "unmatchedCount", before.Unmatched)
+	}
+	if before.InvalidFieldName > 0 {
+		return fmt.Errorf("invalidFieldNameCount is %d: output documents for %s have an empty top-level name or one containing a dot or starting with $", before.InvalidFieldName, target.Into)
+	}
+	if before.InvalidID > 0 {
+		return fmt.Errorf("invalidIDCount is %d: output documents for %s have an invalid _id (regex, undefined or an invalid field inside a document-valued _id)", before.InvalidID, target.Into)
+	}
+	if before.DuplicateMissing > 0 {
+		return fmt.Errorf("duplicateMissingIDCount is %d: that many output documents share a missing _id in %s; output one document per _id", before.DuplicateMissing, target.Into)
+	}
+	on := strings.Join(target.On, ",")
+	if before.NullOn > 0 {
+		return fmt.Errorf("nullOnCount is %d: that many output documents have a null or missing on field (%s): "+
+			"$merge would match them with a target whose field is null or missing, or with none; "+
+			"output only documents with every on field set", before.NullOn, on)
+	}
+	if before.ArrayOn > 0 {
+		return fmt.Errorf("arrayOnCount is %d: that many output documents have an array as an on field (%s): "+
+			"$merge would fail on them part way through (error 51185); output one value per on field", before.ArrayOn, on)
+	}
+	if before.IDMismatch > 0 {
+		if target.Insert {
+			return fmt.Errorf("idMismatchCount is %d: an emitted _id matches a document in %s but has a different BSON representation; emit the stored _id exactly", before.IDMismatch, target.Into)
+		}
+		return fmt.Errorf("idMismatchCount is %d: that many output documents have an _id other than the _id of the document "+
+			"they match in %s on %s: $merge can't change an _id and would fail part way through; "+
+			"leave _id out of the output ({\"$project\": {\"_id\": 0, ...}})",
+			before.IDMismatch, target.Into, on)
+	}
+	if before.TypeChanged > 0 {
+		return fmt.Errorf("typeChangedCount is %d: the merge would change the BSON type of existing fields in %s, "+
+			"or drop nested ones (type missing); neither is allowed in place: write the new type or shape to a new field instead",
+			before.TypeChanged, target.Into)
+	}
+	if before.DuplicateOn > 0 {
+		return fmt.Errorf("duplicateOnCount is %d: that many output documents share their on fields (%s) with another, "+
+			"so $merge would write the same document in %s more than once and the last write would win; "+
+			"make the pipeline output one document per on value", before.DuplicateOn, on, target.Into)
+	}
+	return nil
+}
+
+func (r *Run) verifyMerge(s migration.Step, pre []bson.Raw, target mergeTarget, res *StepResult, terminal bool, log *slog.Logger) error {
+	// Re-read metadata as well: a dropped source must not look like a
+	// converged, empty projection.
+	if target.Insert || terminal {
+		if _, err := r.prepareMerge(s, target, nil, true, log); err != nil {
+			return err
+		}
+	}
 	after, err := r.compareMerge(s.Collection, pre, target, log)
 	if err != nil {
-		return res, fmt.Errorf("compare with %s after the merge: %w", target.Into, err)
+		return fmt.Errorf("compare with %s after the merge: %w", target.Into, err)
+	}
+	if target.Insert {
+		// A source dropped during the comparison can look like an empty stream.
+		if err := r.checkInsertSources(s, target); err != nil {
+			return err
+		}
 	}
 	res.DiffCountAfter = &after.Diff
-	log.Info("merge comparison after the merge", "into", target.Into, "diffCountAfter", after.Diff)
+	if target.Insert {
+		res.Insert.PendingAfter = &after.Unmatched
+		res.Insert.DiffCountAfter = &after.Diff
+		log.Info("insert comparison after the merge", "into", target.Into, "pendingAfter", after.Unmatched, "diffCountAfter", after.Diff)
+	} else {
+		log.Info("merge comparison after the merge", "into", target.Into, "diffCountAfter", after.Diff)
+	}
+	if target.Insert || terminal {
+		if err := after.validate(target, log); err != nil {
+			return err
+		}
+	}
+	if target.Insert && after.Unmatched > 0 {
+		return fmt.Errorf("pendingAfter is %d: that many output documents still have no target in %s after the merge", after.Unmatched, target.Into)
+	}
 	if after.Diff > 0 {
-		return res, fmt.Errorf("diffCountAfter is %d: documents in %s still differ from the output after the merge, "+
+		return fmt.Errorf("diffCountAfter is %d: documents in %s still differ from the output after the merge, "+
 			"so it didn't settle and running it again would change them again", after.Diff, target.Into)
 	}
-	return res, nil
+	return nil
 }
 
 // mergeTarget is what a step's $merge stage writes to.
 type mergeTarget struct {
-	Into string
+	Into   string
+	Insert bool
 	// On are the fields matching output documents with target documents.
 	On []string
 }
@@ -171,6 +250,8 @@ func splitMerge(s migration.Step) ([]bson.Raw, mergeTarget, error) {
 		return nil, t, errors.New("the $merge stage must be the last stage of the pipeline")
 	}
 	t.Into, _ = stage.Lookup("into").StringValueOK()
+	mode, _ := stage.Lookup("whenNotMatched").StringValueOK()
+	t.Insert = mode == "insert"
 	on, err := stage.LookupErr("on")
 	switch {
 	case err != nil:

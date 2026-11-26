@@ -1,0 +1,12 @@
+Database: app
+
+MIGRATION               KIND   STATUS   DURATION  ERROR
+2026-11-25-001-catalog  merge  errored  0s        /steps/2 (aggregate on source): merge into catalogB: document validation failure
+  merge: diffCountBefore 20, diffCountAfter 0, unmatchedCount 3, typeChangedCount 0, duplicateOnCount 0, nullOnCount 0, arrayOnCount 0, idMismatchCount 0
+  /steps/1 insert into catalogA (target present), pending inserts before 0, differing matches before 20, pending inserts after 0, differing matches after 0
+  /steps/2 insert into catalogB (target absent, the first insert can create it), pending inserts before 2, differing matches before 0
+2026-11-25-002-skipped  merge  skipped  0s
+
+Total: 2 migrations: 0 applied, 1 errored, 0 interrupted, 1 skipped in 0s
+
+Error: /steps/2 (aggregate on source): merge into catalogB: document validation failure

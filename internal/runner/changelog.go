@@ -203,6 +203,7 @@ type StepResult struct {
 	// set, as in the file.
 	Set         bson.Raw `bson:"set,omitempty"`
 	MergeCounts `bson:",inline"`
+	Insert      *InsertStep `bson:"insert,omitempty"`
 }
 
 // StepError is one error of an Errored entry. Step is the index of the failed
