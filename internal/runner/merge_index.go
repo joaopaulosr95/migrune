@@ -138,6 +138,10 @@ func (r *Run) checkInsertCollections(s migration.Step, target mergeTarget, obs *
 			return fmt.Errorf("insert target %s needs a unique simple-collation _id index", target.Into)
 		}
 	}
+	return r.checkInsertSources(s, target)
+}
+
+func (r *Run) checkInsertSources(s migration.Step, target mergeTarget) error {
 	seen := map[string]bool{}
 	for _, source := range s.StreamSources("") {
 		if source.Name == target.Into {

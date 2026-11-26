@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/joaopaulosr95/migrune/internal/migration"
 )
 
@@ -16,7 +18,7 @@ import (
 // files the schema rejects; a file that isn't JSON at all is left to
 // migration.LoadFile.
 func checkFile(path, stem string, raw []byte) []Finding {
-	c := checker{path: path}
+	c := checker{path: path, raw: raw}
 	if i := bytes.IndexByte(raw, '\r'); i >= 0 {
 		c.add(RuleLineEndings, fmt.Sprintf("line %d ends with a carriage return (CRLF): %s", bytes.Count(raw[:i], []byte("\n"))+1, checksumAdvice))
 	}
@@ -86,6 +88,8 @@ const checksumAdvice = "the checksum covers the file's bytes, so a checkout or a
 
 type checker struct {
 	path     string
+	raw      []byte
+	ordered  bson.Raw
 	findings []Finding
 }
 
@@ -162,10 +166,13 @@ var serverJSOperators = []string{"$where", "$function", "$accumulator"}
 
 // walkOperators skips literal operands. Query comparisons take BSON data,
 // while comparisons below $expr take aggregation expressions.
-func walkOperators(ptr string, v any, parent string, query, catalog bool, visit func(ptr, operator, variable string)) {
+func (c *checker) walkOperators(ptr string, v any, parent string, query, catalog bool, visit func(ptr, operator, variable string)) {
 	switch x := v.(type) {
 	case map[string]any:
 		for _, k := range sortedKeys(x) {
+			if query && parent == "$all" && k != "$elemMatch" {
+				continue
+			}
 			kp := ptr + "/" + migration.PointerToken(k)
 			visit(kp, k, "")
 			if catalog && (k == "$literal" || k == "$const") {
@@ -184,17 +191,47 @@ func walkOperators(ptr string, v any, parent string, query, catalog bool, visit 
 			}
 			isQuery := catalog && (query && k != "$expr" || k == "$match" ||
 				parent == "$geoNear" && k == "query" || parent == "$graphLookup" && k == "restrictSearchWithMatch")
-			walkOperators(kp, x[k], k, isQuery, catalog, visit)
+			c.walkOperators(kp, x[k], k, isQuery, catalog, visit)
 		}
 	case []any:
+		if query && parent == "$all" && !c.allUsesElemMatch(ptr, x) {
+			return
+		}
 		for i, e := range x {
-			walkOperators(ptr+"/"+strconv.Itoa(i), e, parent, query, catalog, visit)
+			c.walkOperators(ptr+"/"+strconv.Itoa(i), e, parent, query, catalog, visit)
 		}
 	case string:
 		if !query {
 			visit(ptr, "", x)
 		}
 	}
+}
+
+// MongoDB selects the predicate form of $all only when the first operand's
+// first key is $elemMatch. Only a multi-key operand needs the file's BSON order.
+func (c *checker) allUsesElemMatch(ptr string, operands []any) bool {
+	if len(operands) == 0 {
+		return false
+	}
+	doc, _ := operands[0].(map[string]any)
+	if _, ok := doc["$elemMatch"]; !ok {
+		return false
+	}
+	if len(doc) == 1 {
+		return true
+	}
+	if c.raw != nil {
+		// Files with invalid Extended JSON still receive the other lint checks.
+		_ = bson.UnmarshalExtJSON(c.raw, false, &c.ordered)
+		c.raw = nil
+	}
+	tokens := strings.Split(strings.TrimPrefix(ptr, "/")+"/0", "/")
+	for i, token := range tokens {
+		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+	}
+	operand, _ := c.ordered.Lookup(tokens...).DocumentOK()
+	first, err := operand.IndexErr(0)
+	return err == nil && first.Key() == "$elemMatch"
 }
 
 func queryLiteral(value any) bool {
@@ -212,7 +249,7 @@ func queryLiteral(value any) bool {
 
 // In a merge step, volatile also checks $function and $accumulator.
 func (c *checker) serverJS(ptr string, v any, merge, catalog bool) {
-	walkOperators(ptr, v, "", false, catalog, func(kp, k, _ string) {
+	c.walkOperators(ptr, v, "", false, catalog, func(kp, k, _ string) {
 		if slices.Contains(serverJSOperators, k) && (k == "$where" || !merge) {
 			c.add(RuleServerJS, kp+": "+k+" runs JavaScript on the server: migrune can't check what it does, "+
 				"it is slow, often disabled, and deprecated from MongoDB 8.0; use aggregation operators instead")
@@ -245,7 +282,7 @@ var volatileVariables = []string{"$$NOW", "$$CLUSTER_TIME"}
 // variables whose value changes from one run to the next: a merge computed
 // from them never settles, and plan can't tell.
 func (c *checker) volatile(ptr string, v any, insert bool) {
-	walkOperators(ptr, v, "", false, insert, func(kp, k, value string) {
+	c.walkOperators(ptr, v, "", false, insert, func(kp, k, value string) {
 		reason := volatileOperators[k]
 		if insert && (k == "$sample" || k == "$sampleRate" || k == "$createObjectId") {
 			reason = "can change the output identities on each run"

@@ -2,6 +2,7 @@ package lint
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -49,6 +50,29 @@ func cutMessage(s string) (head, msg string, ok bool) {
 		return s, "", false
 	}
 	return strings.Join(parts[:3], ": "), parts[3], true
+}
+
+func TestWalkAllElemMatch(t *testing.T) {
+	for _, tc := range []struct {
+		query         string
+		wantPredicate bool
+	}{
+		{`{"a/b~":{"$all":[{"$elemMatch":{"qty":{"$gt":1}}}]}}`, true},
+		{`{"a/b~":{"$all":[{"$elemMatch":{"qty":{"$gt":1}},"ignored":{"$sample":1}}]}}`, true},
+		{`{"a/b~":{"$all":[{"tag":1,"$elemMatch":{"qty":{"$gt":1}}}]}}`, false},
+	} {
+		var query map[string]any
+		if err := json.Unmarshal([]byte(tc.query), &query); err != nil {
+			t.Fatal(err)
+		}
+		c := checker{raw: []byte(tc.query)}
+		var paths []string
+		c.walkOperators("", query, "$match", true, true, func(path, _, _ string) { paths = append(paths, path) })
+		if slices.Contains(paths, "/a~1b~0/$all/0/$elemMatch/qty/$gt") != tc.wantPredicate ||
+			slices.Contains(paths, "/a~1b~0/$all/0/ignored") {
+			t.Errorf("%s: unexpected operator traversal: %v", tc.query, paths)
+		}
+	}
 }
 
 func TestRules(t *testing.T) {

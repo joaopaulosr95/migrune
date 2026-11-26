@@ -569,7 +569,9 @@ enforces them immediately after its own write. A duplicate match or invalid
 output can first appear during these checks, even with zero differences.
 The error identifies the step and earlier writes survive. Each insert comparison
 validates IDs, counts duplicates and measures differences from one pipeline
-evaluation. Application writers can change the data between preflight, the
+evaluation. After an insert comparison following a write, the runner checks
+that the primary source and each named `$unionWith` source still exist.
+Application writers can change the data between preflight, the
 write and verification. See the
 [per-target report](reference/report.md#catalog-insert-observations).
 

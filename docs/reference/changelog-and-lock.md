@@ -57,9 +57,10 @@ and the empty collection if it was missing.
 - **`Finished`**: written when the migration succeeds. For a data migration,
   inside its transaction, together with its data changes, so the entry and
   the data commit or abort together; for a batched one, inside its last
-  batch's transaction. For index and merge migrations, right
-  after the last step; if the run dies between the two, the next run repeats
-  the steps, which is harmless.
+  batch's transaction. For index and merge migrations, the runner records
+  completion after the last step. If it stops before recording `Finished`,
+  the pending migration restarts at its first step. For a merge,
+  [inspect the target and review a fresh plan before retrying](../troubleshooting.md#a-migration-errored).
 - **`Errored`**: written after the migration failed, in a transaction of
   its own, fenced like a data migration's (see [fence](#fence)): a runner
   that lost its lock writes no `Errored` entry, and its report row says the

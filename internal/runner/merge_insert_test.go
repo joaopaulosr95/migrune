@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -615,9 +616,19 @@ func TestCatalogIDMismatchSampleOrder(t *testing.T) {
 		t.Fatalf("unexpected comparison %+v", c)
 	}
 	fields := c.Samples[0].Fields
-	if len(fields) != 3 || fields[0].Field != "label" || fields[1].Field != "_id" || fields[2].Field != "price" ||
-		!strings.Contains(string(fields[1].Before), "1.00") || !strings.Contains(string(fields[1].After), "1.0") {
-		t.Fatalf("wrong field order or ID representations: %+v", fields)
+	if len(fields) != 3 || fields[0].Field != "label" || fields[1].Field != "_id" || fields[2].Field != "price" {
+		t.Fatalf("wrong field order: %+v", fields)
+	}
+	for _, tc := range []struct {
+		value json.RawMessage
+		want  string
+	}{{fields[1].Before, "1.00"}, {fields[1].After, "1.0"}} {
+		var decimal struct {
+			Number string `json:"$numberDecimal"`
+		}
+		if err := json.Unmarshal(tc.value, &decimal); err != nil || decimal.Number != tc.want {
+			t.Errorf("sampled decimal %s, want %s: %v", tc.value, tc.want, err)
+		}
 	}
 }
 
@@ -660,5 +671,79 @@ func TestCatalogVerificationWithConcurrentScopedIDChange(t *testing.T) {
 	row := runCatalog(t, ctx, client.Database(writer.Name()), ModeApply, logger, 0, step)
 	if !changed.Load() || !strings.Contains(row.Error, "duplicateOnCount is 2") {
 		t.Fatalf("writer ran %v, verification error %q", changed.Load(), row.Error)
+	}
+}
+
+func TestCatalogLargeSampleValues(t *testing.T) {
+	ctx := testCtx(t)
+	r := startRun(t, ctx, Options{})
+	defer r.Close()
+	insert(t, ctx, r.db.Collection("legacy"), bson.D{{Key: "_id", Value: 1},
+		{Key: "label", Value: strings.Repeat("a", 9<<20)}, {Key: "newField", Value: nil}})
+	insert(t, ctx, r.db.Collection("catalog"), bson.D{{Key: "_id", Value: 1},
+		{Key: "label", Value: strings.Repeat("b", 9<<20)}})
+	for _, values := range []bool{false, true} {
+		r.sampleValues = values
+		c, err := r.compareMerge("legacy", nil, mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
+		if err != nil {
+			t.Fatalf("sampleValues=%t: %v", values, err)
+		}
+		if c.Diff != 1 || c.Unmatched != 0 || c.TypeChanged != 0 || len(c.Samples) != 1 || len(c.Samples[0].Fields) != 2 {
+			t.Fatalf("sampleValues=%t: unexpected counts or samples: %+v", values, c)
+		}
+		label, added := c.Samples[0].Fields[0], c.Samples[0].Fields[1]
+		if label.Field != "label" || label.BeforeType != "string" || label.AfterType != "string" ||
+			added.Field != "newField" || added.BeforeType != "missing" || added.AfterType != "null" || added.Before != nil {
+			t.Fatalf("wrong sample metadata: %+v", c.Samples)
+		}
+		if !values {
+			if label.Before != nil || label.After != nil || added.After != nil || label.Truncated {
+				t.Fatalf("values present without opt-in: %+v", c.Samples)
+			}
+			continue
+		}
+		var before, after string
+		if !label.Truncated || json.Unmarshal(label.Before, &before) != nil || json.Unmarshal(label.After, &after) != nil ||
+			before != "\""+strings.Repeat("b", MaxSampleValueChars-1)+"…" ||
+			after != "\""+strings.Repeat("a", MaxSampleValueChars-1)+"…" || string(added.After) != "null" {
+			t.Fatalf("wrong sample values: %+v", c.Samples)
+		}
+	}
+}
+
+func TestCatalogSourceDroppedDuringVerification(t *testing.T) {
+	for _, dropped := range []string{"legacy", "extra"} {
+		t.Run(dropped, func(t *testing.T) {
+			ctx, writer := testCtx(t), testDB(t)
+			for i, name := range []string{"legacy", "extra"} {
+				insert(t, ctx, writer.Collection(name), bson.D{{Key: "_id", Value: i}})
+			}
+			var wrote, didDrop atomic.Bool
+			log := slog.New(slog.NewJSONHandler(onCatalogWrite(func() { wrote.Store(true) }), nil))
+			monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+				if !wrote.Load() || e.CommandName != "aggregate" {
+					return
+				}
+				coll, _ := e.Command.Lookup("aggregate").StringValueOK()
+				if coll == "legacy" && didDrop.CompareAndSwap(false, true) {
+					if err := writer.Collection(dropped).Drop(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}}
+			client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv("MIGRUNE_TEST_URI")).SetMonitor(monitor))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Disconnect(ctx)
+			step := catalogStep(t, "legacy", "catalog", "insert", `{"$unionWith":"extra"}`)
+			row := runCatalog(t, ctx, client.Database(writer.Name()), ModeApply, log, 0, step)
+			if !didDrop.Load() || !strings.Contains(row.Error, "insert source "+dropped+" does not exist") {
+				t.Fatalf("drop ran %t, error %q", didDrop.Load(), row.Error)
+			}
+			if n := countDocs(t, ctx, writer.Collection("catalog"), bson.D{}); n != 2 {
+				t.Fatalf("expected both completed writes, got %d", n)
+			}
+		})
 	}
 }

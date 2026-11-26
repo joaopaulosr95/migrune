@@ -49,17 +49,25 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 				group = row.Group
 			}
 			var id, targetID bson.RawValue
-			var err error
 			if row.ReadIDs {
-				id, err = readComparisonID(ctx, cur)
+				source, err := readComparisonDocument(ctx, cur)
 				if err != nil {
 					return err
 				}
+				id = source.Lookup("_id")
 				row.Sample.Key = []bson.RawValue{id}
 				if row.Matched {
-					targetID, err = readComparisonID(ctx, cur)
+					target, err := readComparisonDocument(ctx, cur)
 					if err != nil {
 						return err
+					}
+					targetID = target.Lookup("_id")
+					if r.sampleValues {
+						for i := range row.Sample.Diffs {
+							f := &row.Sample.Diffs[i]
+							f.Before = target.Lookup(f.Field)
+							f.After = source.Lookup(f.Field)
+						}
 					}
 				}
 			}
@@ -121,25 +129,23 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 	return out, err
 }
 
-// Each ID travels as its own {_id: value} document: two legal IDs together
-// may exceed the 16 MiB result limit. Decode owns the bytes across cursor batches.
-func readComparisonID(ctx context.Context, cur *mongo.Cursor) (bson.RawValue, error) {
+// Source and target travel separately so a pair of legal documents fits in the
+// cursor. Decode owns the BSON across batches, including while reading the pair.
+func readComparisonDocument(ctx context.Context, cur *mongo.Cursor) (bson.Raw, error) {
 	if !cur.Next(ctx) {
 		if err := cur.Err(); err != nil {
-			return bson.RawValue{}, err
+			return nil, err
 		}
-		return bson.RawValue{}, errors.New("insert comparison ended before its ID")
+		return nil, errors.New("insert comparison ended before its ID")
 	}
-	var doc struct {
-		ID bson.RawValue `bson:"_id"`
-	}
+	var doc bson.Raw
 	if err := cur.Decode(&doc); err != nil {
-		return bson.RawValue{}, err
+		return nil, err
 	}
-	if doc.ID.Type == 0 {
-		return bson.RawValue{}, errors.New("insert comparison returned a missing ID record")
+	if doc.Lookup("_id").Type == 0 {
+		return nil, errors.New("insert comparison returned a missing ID record")
 	}
-	return doc.ID, nil
+	return doc, nil
 }
 
 // insertComparisonStages keeps MongoDB's native identity groups and bounded
@@ -148,9 +154,21 @@ func insertComparisonStages(sampleValues bool) []any {
 	type m = bson.M
 	order := bson.D{{Key: "identity", Value: 1}}
 	var pipeline []any
-	if !sampleValues {
-		pipeline = append(pipeline, m{"$unset": bson.A{"diffs.before", "diffs.after"}})
+	var source, target any = m{"_id": "$identity.id"}, m{"_id": "$targetID"}
+	if sampleValues {
+		// Keep only fields that differ. Each side is a subset of one original
+		// document and can travel with its own _id without exceeding 16 MiB.
+		sampleFields := func(side string) m {
+			value := "$$d." + side
+			present := m{"$filter": m{"input": "$diffs", "as": "d", "cond": m{"$ne": bson.A{m{"$type": value}, "missing"}}}}
+			fields := m{"$map": m{"input": present, "as": "d", "in": m{"k": "$$d.field", "v": value}}}
+			return m{"$cond": bson.A{"$diff", m{"$arrayToObject": fields}, "$$REMOVE"}}
+		}
+		pipeline = append(pipeline, m{"$set": m{"after": sampleFields("after"), "before": sampleFields("before")}})
+		source = m{"$cond": bson.A{"$sample", m{"$mergeObjects": bson.A{source, "$after"}}, source}}
+		target = m{"$cond": bson.A{"$sample", m{"$mergeObjects": bson.A{target, "$before"}}, target}}
 	}
+	pipeline = append(pipeline, m{"$unset": bson.A{"diffs.before", "diffs.after"}})
 	// Return at most five ordinary samples and five type changes. Both
 	// running counts use the same sort as the native identity groups.
 	runningCount := func(flag any) m {
@@ -192,8 +210,8 @@ func insertComparisonStages(sampleValues bool) []any {
 			bson.A{"metrics", "source", "target"}, bson.A{"metrics", "source"}}}, bson.A{"metrics"}}}}},
 		m{"$unwind": "$parts"},
 		m{"$replaceWith": m{"$switch": m{"branches": bson.A{
-			m{"case": m{"$eq": bson.A{"$parts", "source"}}, "then": m{"_id": "$identity.id"}},
-			m{"case": m{"$eq": bson.A{"$parts", "target"}}, "then": m{"_id": "$targetID"}},
+			m{"case": m{"$eq": bson.A{"$parts", "source"}}, "then": source},
+			m{"case": m{"$eq": bson.A{"$parts", "target"}}, "then": target},
 		}, "default": metrics}}},
 	)
 }

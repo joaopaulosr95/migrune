@@ -200,6 +200,12 @@ func (r *Run) verifyMerge(s migration.Step, pre []bson.Raw, target mergeTarget, 
 	if err != nil {
 		return fmt.Errorf("compare with %s after the merge: %w", target.Into, err)
 	}
+	if target.Insert {
+		// A source dropped during the comparison can look like an empty stream.
+		if err := r.checkInsertSources(s, target); err != nil {
+			return err
+		}
+	}
 	res.DiffCountAfter = &after.Diff
 	if target.Insert {
 		res.Insert.PendingAfter = &after.Unmatched
