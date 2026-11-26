@@ -13,18 +13,22 @@ import (
 )
 
 // compareInsertRows consumes one source evaluation for the counts, identity
-// checks and samples. MongoDB ranks the wrapped keys using its own BSON equality.
-// Sorting by the same key keeps each group together across cursor batches.
+// checks and samples. Rows with the same aggregation rank arrive together,
+// including when the group spans cursor batches.
 func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log *slog.Logger, opts *options.AggregateOptionsBuilder) (mergeComparison, error) {
 	pipeline = append(pipeline, insertComparisonStages(r.sampleValues)...)
 	var out mergeComparison
-	var group, matched, missing, extraDiff int64
-	finishGroup := func() {
-		if matched+missing > 1 {
-			out.DuplicateOn += matched
-			out.DuplicateMissing += missing
+	var rank, extraDiff int64
+	type counts struct{ matched, missing int64 }
+	countsByPointerKey := make(map[string]counts)
+	finishRank := func() {
+		for _, c := range countsByPointerKey {
+			if c.matched+c.missing > 1 {
+				out.DuplicateOn += c.matched
+				out.DuplicateMissing += c.missing
+			}
 		}
-		matched, missing = 0, 0
+		clear(countsByPointerKey)
 	}
 	var typeSamples, otherSamples []MergeSample
 	err := r.aggregate(coll, pipeline, log, func(ctx context.Context, cur *mongo.Cursor) error {
@@ -32,6 +36,7 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 			var row struct {
 				Sample      comparisonSample `bson:",inline"`
 				Group       int64
+				HasPeer     bool
 				ReadIDs     bool
 				Matched     bool
 				Diff        bool
@@ -44,9 +49,9 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 			if err := cur.Decode(&row); err != nil {
 				return err
 			}
-			if group != row.Group {
-				finishGroup()
-				group = row.Group
+			if rank != row.Group {
+				finishRank()
+				rank = row.Group
 			}
 			var id, targetID bson.RawValue
 			if row.ReadIDs {
@@ -72,27 +77,38 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 				}
 			}
 			mismatch := row.ReadIDs && row.Matched && !id.Equal(targetID)
+			valid := true
 			switch {
 			case row.NullOn || row.ArrayOn:
-				// Counted in the totals and excluded from duplicate groups.
+				valid = false // Already counted in the totals.
 			case id.Type == bson.TypeRegex || id.Type == bson.TypeUndefined ||
 				(id.Type == bson.TypeEmbeddedDocument && !validStoredIDDocument(id.Document(), idDocument)):
 				out.InvalidID++
-			case row.Matched:
-				matched++
-				if mismatch {
-					out.IDMismatch++
-					// MongoDB can compare equal even when the immutable BSON differs.
-					if !row.Diff {
-						extraDiff++
-						if len(otherSamples) < MaxMergeSamples {
-							row.Sample.Diffs = []comparisonField{{Field: "_id", Before: targetID, After: id,
-								BeforeType: row.IDType, AfterType: row.IDType}}
-						}
+				valid = false
+			case mismatch:
+				out.IDMismatch++
+				// MongoDB can compare equal even when the immutable BSON differs.
+				if !row.Diff {
+					extraDiff++
+					if len(otherSamples) < MaxMergeSamples {
+						row.Sample.Diffs = []comparisonField{{Field: "_id", Before: targetID, After: id,
+							BeforeType: row.IDType, AfterType: row.IDType}}
 					}
 				}
-			default:
-				missing++
+			}
+			if row.HasPeer && valid {
+				var pointers strings.Builder
+				if err := appendDBPointers(&pointers, id); err != nil {
+					return err
+				}
+				key := pointers.String()
+				c := countsByPointerKey[key]
+				if row.Matched {
+					c.matched++
+				} else {
+					c.missing++
+				}
+				countsByPointerKey[key] = c
 			}
 			if row.Totals != nil {
 				out.Diff, out.TypeChanged = row.Totals.Diff, row.Totals.TypeChanged
@@ -122,11 +138,33 @@ func (r *Run) compareInsertRows(coll string, pipeline []any, t mergeTarget, log 
 		}
 		return cur.Err()
 	}, opts)
-	finishGroup()
+	finishRank()
 	out.Diff += extraDiff
 	samples := append(typeSamples, otherSamples...)
 	out.Samples = samples[:min(len(samples), MaxMergeSamples)]
 	return out, err
+}
+
+// Within an aggregation rank, DBPointers can differ in namespace bytes. Their
+// BSON encodings are length-prefixed, so concatenation in document order also
+// distinguishes multiple nested pointers. Leave other values to MongoDB's
+// comparator, including numeric aliases and the BSON comparison of code scopes.
+func appendDBPointers(key *strings.Builder, id bson.RawValue) error {
+	switch id.Type {
+	case bson.TypeDBPointer:
+		key.Write(id.Value)
+	case bson.TypeEmbeddedDocument, bson.TypeArray:
+		values, err := bson.Raw(id.Value).Values()
+		if err != nil {
+			return err
+		}
+		for _, v := range values {
+			if err := appendDBPointers(key, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Source and target travel separately so a pair of legal documents fits in the
@@ -188,7 +226,8 @@ func insertComparisonStages(sampleValues bool) []any {
 	}}
 	totals := m{"diff": "$diffNumber", "typeChanged": "$typeNumber", "unmatched": "$unmatched",
 		"nullOn": "$nulls", "arrayOn": "$arrays", "invalidFieldName": "$invalidNames"}
-	metrics := m{"group": "$group", "idType": "$idType", "matched": "$matched", "diff": "$diff",
+	peer := m{"$or": bson.A{m{"$eq": bson.A{"$previous", "$identity"}}, m{"$eq": bson.A{"$next", "$identity"}}}}
+	metrics := m{"group": "$group", "hasPeer": "$hasPeer", "idType": "$idType", "matched": "$matched", "diff": "$diff",
 		"typeChanged": "$typeChanged", "nullOn": "$nullOn", "arrayOn": "$arrayOn", "readIDs": "$readIDs",
 		"diffs":  m{"$cond": bson.A{"$sample", "$diffs", "$$REMOVE"}},
 		"totals": m{"$cond": bson.A{"$last", totals, "$$REMOVE"}}}
@@ -200,12 +239,12 @@ func insertComparisonStages(sampleValues bool) []any {
 			"unmatched": runningCount(m{"$not": bson.A{"$matched"}}), "nulls": runningCount("$nullOn"),
 			"arrays": runningCount("$arrayOn"), "invalidNames": runningCount("$invalidFieldName"),
 		}}},
-		m{"$set": m{"last": m{"$eq": bson.A{"$next", nil}}, "sample": sample, "readIDs": m{"$or": bson.A{sample, raw}}}},
+		m{"$set": m{"last": m{"$eq": bson.A{"$next", nil}}, "sample": sample, "hasPeer": peer,
+			"readIDs": m{"$or": bson.A{sample, raw, m{"$and": bson.A{peer, m{"$eq": bson.A{"$idType", "dbPointer"}}}}}}}},
 		// Only exceptional IDs, duplicate groups, bounded samples and the final
 		// running totals cross the wire. Empty output has zero totals.
-		m{"$match": m{"$expr": m{"$or": bson.A{"$last", "$readIDs",
-			m{"$eq": bson.A{"$previous", "$identity"}}, m{"$eq": bson.A{"$next", "$identity"}}}}}},
-		m{"$sort": order},
+		m{"$match": m{"$expr": m{"$or": bson.A{"$last", "$readIDs", "$hasPeer"}}}},
+		m{"$sort": m{"group": 1}},
 		m{"$set": m{"parts": m{"$cond": bson.A{"$readIDs", m{"$cond": bson.A{"$matched",
 			bson.A{"metrics", "source", "target"}, bson.A{"metrics", "source"}}}, bson.A{"metrics"}}}}},
 		m{"$unwind": "$parts"},

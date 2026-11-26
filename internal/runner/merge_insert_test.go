@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -745,5 +746,69 @@ func TestCatalogSourceDroppedDuringVerification(t *testing.T) {
 				t.Fatalf("expected both completed writes, got %d", n)
 			}
 		})
+	}
+}
+
+func TestCatalogDBPointerDuplicateCounts(t *testing.T) {
+	aa := bson.DBPointer{DB: "aa", Pointer: bson.NewObjectID()}
+	bb := bson.DBPointer{DB: "bb", Pointer: aa.Pointer}
+	other := bson.DBPointer{DB: aa.DB, Pointer: bson.NewObjectID()}
+	for _, tc := range []struct {
+		name string
+		id   func(bson.DBPointer) any
+	}{
+		{"scalar", func(p bson.DBPointer) any { return p }},
+		{"nested array", func(p bson.DBPointer) any { return bson.D{{Key: "keys", Value: bson.A{aa, p}}} }},
+		{"code scope", func(p bson.DBPointer) any {
+			return bson.CodeWithScope{Code: "x", Scope: bson.D{{Key: "x", Value: p}}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := testCtx(t)
+			run := startRun(t, ctx, Options{})
+			defer run.Close()
+			for i, p := range []bson.DBPointer{aa, bb, other, aa} {
+				insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "_id", Value: i}, {Key: "key", Value: tc.id(p)}})
+			}
+			check := func(want mergeComparison) {
+				t.Helper()
+				got, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$project":{"_id":"$key"}}`)},
+					mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("comparison = %+v, want %+v", got, want)
+				}
+			}
+			check(mergeComparison{Unmatched: 4, DuplicateMissing: 2})
+			catalog := run.db.Collection("catalog")
+			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(bb)}})
+			check(mergeComparison{Unmatched: 3, DuplicateMissing: 2})
+			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(aa)}})
+			check(mergeComparison{Unmatched: 1, DuplicateOn: 2})
+		})
+	}
+}
+
+func TestCatalogDBPointerWithNumericAliases(t *testing.T) {
+	ctx := testCtx(t)
+	run := startRun(t, ctx, Options{})
+	defer run.Close()
+	oid := bson.NewObjectID()
+	for i, row := range []struct {
+		namespace string
+		number    any
+	}{{"aa", int32(1)}, {"bb", int32(1)}, {"aa", int64(1)}} {
+		id := bson.D{{Key: "ref", Value: bson.DBPointer{DB: row.namespace, Pointer: oid}}, {Key: "n", Value: row.number}}
+		insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "_id", Value: i}, {Key: "key", Value: id}})
+	}
+	got, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$project":{"_id":"$key"}}`)},
+		mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Unmatched != 3 || got.DuplicateMissing != 2 || got.DuplicateOn != 0 {
+		t.Fatalf("expected only the numeric aliases to collide, got %+v", got)
 	}
 }
