@@ -494,7 +494,11 @@ into `catalog`:
 ```
 
 Emit one row per stable `_id`. A missing, null, array, regex or undefined ID
-fails preflight. Document-valued IDs must also be valid stored MongoDB IDs.
+fails preflight. A legacy BSON DBPointer ID is identified by both its full
+namespace and its ObjectId. Two pointers to the same ObjectId in different
+namespaces can be inserted independently.
+
+Document-valued IDs must also be valid stored MongoDB IDs.
 For example, catalog preflight checks the `$id` payload of an embedded DBRef.
 It rejects `{"_id":{"r":{"$ref":"items","$id":{"$bad":1}}}}` on every
 supported version, even on servers that accept it in a native `$merge`.

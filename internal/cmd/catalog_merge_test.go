@@ -242,3 +242,74 @@ func TestCatalogMergeRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestCatalogDBPointerIDs(t *testing.T) {
+	uri, db := testTarget(t)
+	dir, digest := catalogFiles(t)
+	ctx := t.Context()
+	oid := bson.NewObjectID()
+	ids := []bson.DBPointer{{DB: "aa", Pointer: oid}, {DB: "bb", Pointer: oid}}
+	for _, id := range ids {
+		if _, err := db.Collection("legacyCatalog").InsertOne(ctx, bson.M{"_id": id, "label": id.DB}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := planJSON(t, uri, db, "--dir", dir, "--digest-out", digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCatalogCounts(t, plan, false, 2, 0, false)
+	applied, err := catalogApply(t, uri, db, dir, digest, "--init")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCatalogCounts(t, applied, false, 2, 0, true)
+	catalog := db.Collection("catalog")
+	if n, err := catalog.CountDocuments(ctx, bson.D{}); err != nil || n != 2 {
+		t.Fatalf("catalog size %d, error %v", n, err)
+	}
+	for _, id := range ids {
+		var doc struct {
+			ID    bson.DBPointer `bson:"_id"`
+			Label string
+		}
+		if err := catalog.FindOne(ctx, bson.M{"_id": id}).Decode(&doc); err != nil || doc.ID != id || doc.Label != id.DB {
+			t.Fatalf("lookup for %v returned %+v, error %v", id, doc, err)
+		}
+	}
+	if es := entries(t, db); len(es) != 1 || es[0].MigrationID != catalogBackfill || es[0].Status != runner.StatusFinished {
+		t.Fatalf("unexpected history: %+v", es)
+	}
+	observed, err := planJSON(t, uri, db, "--dir", dir, "--namespace", "observer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCatalogCounts(t, observed, true, 0, 0, false)
+	if n := observed.Migrations[0].DuplicateOnCount; n == nil || *n != 0 {
+		t.Fatalf("observer duplicateOnCount = %v, want a measured zero", n)
+	}
+
+	// A sample must keep the full DBPointer key alongside its field values.
+	if _, err := db.Collection("legacyCatalog").UpdateByID(ctx, ids[0], bson.M{"$set": bson.M{"label": "updated"}}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := planJSON(t, uri, db, "--dir", dir, "--namespace", "observer", "--sample-values")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCatalogCounts(t, changed, true, 0, 1, false)
+	samples := changed.Migrations[0].Samples
+	if len(samples) != 1 || len(samples[0].Fields) != 1 {
+		t.Fatalf("expected one changed field in one sample, got %+v", samples)
+	}
+	var key struct {
+		ID bson.DBPointer `bson:"_id"`
+	}
+	if err := bson.UnmarshalExtJSON(samples[0].Key, false, &key); err != nil || key.ID != ids[0] {
+		t.Fatalf("sample key %s, want %v, error %v", samples[0].Key, ids[0], err)
+	}
+	f := samples[0].Fields[0]
+	if f.Field != "label" || string(f.Before) != `"aa"` || string(f.After) != `"updated"` {
+		t.Fatalf("unexpected sampled change: %+v", f)
+	}
+}

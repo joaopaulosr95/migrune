@@ -168,8 +168,10 @@ as ordinary collections distinct from the target. A `$lookup` may read the targe
 The primary source and an existing target must use simple collation. An existing
 target must be an ordinary, uncapped collection with a unique `_id` identity.
 Plan reports the target name and whether it exists. Apply may create it on the
-first insert. See [catalog upserts](../writing-migrations.md#catalog-upserts)
-for the output requirements and an example.
+first insert. Plan and post-write verification match target documents using
+MongoDB's native `_id` equality, including during a collection scan.
+See [catalog upserts](../writing-migrations.md#catalog-upserts)
+for BSON identity rules, including legacy DBPointers, and an example pipeline.
 
 `$merge` must be the last stage. `$out` is not allowed anywhere, and neither
 `$out` nor `$merge` may appear in a nested pipeline (`$lookup.pipeline`,

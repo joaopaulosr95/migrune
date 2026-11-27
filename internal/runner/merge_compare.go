@@ -186,15 +186,10 @@ func (r *Run) mergeSample(s comparisonSample, t mergeTarget) MergeSample {
 func comparisonStages(t mergeTarget, depth int) []any {
 	type m = bson.M
 	type a = bson.A
-	let := bson.D{}
-	match := a{}
 	key := a{}
 	nullOn := a{}
 	arrayOn := a{}
-	for i, f := range t.On {
-		v := fmt.Sprintf("k%d", i)
-		let = append(let, bson.E{Key: v, Value: "$o." + f})
-		match = append(match, m{"$eq": a{"$" + f, "$$" + v}})
+	for _, f := range t.On {
 		key = append(key, "$o."+f)
 		nullOn = append(nullOn, m{"$in": a{m{"$type": "$o." + f}, a{"missing", "null"}}})
 		arrayOn = append(arrayOn, m{"$isArray": "$o." + f})
@@ -298,17 +293,35 @@ func comparisonStages(t mergeTarget, depth int) []any {
 			"in": m{"$or": a{m{"$eq": a{"$$field.k", ""}}, m{"$regexMatch": m{"input": "$$field.k", "regex": `^\$|\.`}}}},
 		}}}}
 	}
+	wrapped := m{"o": "$$ROOT"}
+	lookup := m{"from": t.Into, "as": "t"}
+	limit := m{"$limit": 1}
+	if t.Insert {
+		// A field join uses native _id equality even during a collection scan.
+		// Aggregation $eq can conflate same-length DBPointer namespaces.
+		// A local array supplies its elements as candidates. For unusable keys
+		// supply one empty array, which cannot itself be a stored _id.
+		wrapped["lookupID"] = m{"$cond": a{
+			m{"$in": a{m{"$type": "$_id"}, a{"array", "regex", "undefined", "missing"}}},
+			m{"$literal": a{a{}}}, "$_id",
+		}}
+		lookup["localField"] = "lookupID"
+		lookup["foreignField"] = "_id"
+		lookup["pipeline"] = a{limit}
+	} else {
+		let := bson.D{}
+		match := a{}
+		for i, f := range t.On {
+			v := fmt.Sprintf("k%d", i)
+			let = append(let, bson.E{Key: v, Value: "$o." + f})
+			match = append(match, m{"$eq": a{"$" + f, "$$" + v}})
+		}
+		lookup["let"] = let
+		lookup["pipeline"] = a{m{"$match": m{"$expr": m{"$and": match}}}, limit}
+	}
 	stages := []any{
-		m{"$replaceWith": m{"o": "$$ROOT"}},
-		m{"$lookup": bson.D{
-			{Key: "from", Value: t.Into},
-			{Key: "let", Value: let},
-			{Key: "pipeline", Value: a{
-				m{"$match": m{"$expr": m{"$and": match}}},
-				m{"$limit": 1},
-			}},
-			{Key: "as", Value: "t"},
-		}},
+		m{"$replaceWith": wrapped},
+		m{"$lookup": lookup},
 		m{"$project": project},
 		m{"$set": m{"fs": fields}},
 		m{"$unset": a{"o", "ta"}},

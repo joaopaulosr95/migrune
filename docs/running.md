@@ -268,8 +268,12 @@ primary, while holding the migration lock:
   runs the pipeline three times, once before the write, once with `$merge`, and
   once after the write. After the last write in a file
   containing an insert step, apply also [rechecks every earlier step](writing-migrations.md#how-the-comparison-works).
-  For insert steps MongoDB sorts the output by identity. The runner streams the
-  comparison results, counting one group of matching IDs at a time.
+  For insert steps MongoDB sorts the output by identity. The runner streams
+  one sort rank at a time. Distinct DBPointers can share a rank, for example
+  when they have the same ObjectId and different namespaces of the same length.
+  Within that rank the runner keeps matched and missing counts for each
+  distinct sequence of DBPointer bytes in an `_id`. Peak client memory depends
+  on the number and combined byte size of those keys in the largest rank.
 - **Index migrations**: plan reads the indexes, counts the documents a new
   or lowered TTL would delete, and checks a `collModIndex` that sets `unique`
   for duplicates. apply builds each index with
