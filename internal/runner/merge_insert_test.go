@@ -770,22 +770,27 @@ func TestCatalogDBPointerDuplicateCounts(t *testing.T) {
 			for i, p := range []bson.DBPointer{aa, bb, other, aa} {
 				insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "_id", Value: i}, {Key: "key", Value: tc.id(p)}})
 			}
+			// The view exposes an unindexed field as _id, so every supported
+			// version also exercises the comparison with a scanned target.
+			catalogCommand(t, ctx, run.db, `{"create":"scanned","viewOn":"catalog","pipeline":[{"$project":{"_id":"$key"}}]}`)
 			check := func(want mergeComparison) {
 				t.Helper()
-				got, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$project":{"_id":"$key"}}`)},
-					mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !reflect.DeepEqual(got, want) {
-					t.Errorf("comparison = %+v, want %+v", got, want)
+				for _, name := range []string{"catalog", "scanned"} {
+					got, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$project":{"_id":"$key"}}`)},
+						mergeTarget{Into: name, On: []string{"_id"}, Insert: true}, discard())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(got, want) {
+						t.Errorf("%s comparison = %+v, want %+v", name, got, want)
+					}
 				}
 			}
 			check(mergeComparison{Unmatched: 4, DuplicateMissing: 2})
 			catalog := run.db.Collection("catalog")
-			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(bb)}})
+			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(bb)}, {Key: "key", Value: tc.id(bb)}})
 			check(mergeComparison{Unmatched: 3, DuplicateMissing: 2})
-			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(aa)}})
+			insert(t, ctx, catalog, bson.D{{Key: "_id", Value: tc.id(aa)}, {Key: "key", Value: tc.id(aa)}})
 			check(mergeComparison{Unmatched: 1, DuplicateOn: 2})
 		})
 	}
@@ -810,5 +815,91 @@ func TestCatalogDBPointerWithNumericAliases(t *testing.T) {
 	}
 	if got.Unmatched != 3 || got.DuplicateMissing != 2 || got.DuplicateOn != 0 {
 		t.Fatalf("expected only the numeric aliases to collide, got %+v", got)
+	}
+}
+
+func TestCatalogDBPointerTargetScan(t *testing.T) {
+	ctx, db := testCtx(t), testDB(t)
+	if strings.HasPrefix(serverVersion(t, ctx, db), "7.") {
+		t.Skip("setQuerySettings requires MongoDB 8.0 or later")
+	}
+	oid := bson.NewObjectID()
+	for _, name := range []string{"aa", "bb"} {
+		id := bson.DBPointer{DB: name, Pointer: oid}
+		insert(t, ctx, db.Collection("legacy"), bson.D{{Key: "_id", Value: id}, {Key: "label", Value: name}})
+	}
+
+	// Hint the exact aggregate about to verify the native write. BSON maps in
+	// the generated pipeline need not serialize in the same order twice.
+	var afterWrite, hintApplied atomic.Bool
+	log := slog.New(slog.NewJSONHandler(onCatalogWrite(func() { afterWrite.Store(true) }), nil))
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		coll, _ := e.Command.Lookup("aggregate").StringValueOK()
+		if e.CommandName != "aggregate" || coll != "legacy" || !afterWrite.CompareAndSwap(true, false) {
+			return
+		}
+		shape := bson.D{
+			{Key: "aggregate", Value: coll},
+			{Key: "pipeline", Value: e.Command.Lookup("pipeline")},
+			{Key: "collation", Value: e.Command.Lookup("collation")},
+			{Key: "$db", Value: db.Name()},
+		}
+		settings := bson.M{"indexHints": bson.M{
+			"ns": bson.M{"db": db.Name(), "coll": "catalog"}, "allowedIndexes": bson.A{bson.M{"$natural": 1}},
+		}}
+		admin := db.Client().Database("admin")
+		var result struct {
+			QueryShapeHash string `bson:"queryShapeHash"`
+		}
+		if err := admin.RunCommand(ctx, bson.D{{Key: "setQuerySettings", Value: shape}, {Key: "settings", Value: settings}}).Decode(&result); err != nil {
+			t.Fatal(err)
+		}
+		hintApplied.Store(true)
+		t.Cleanup(func() {
+			if err := admin.RunCommand(ctx, bson.D{{Key: "removeQuerySettings", Value: result.QueryShapeHash}}).Err(); err != nil {
+				t.Error(err)
+			}
+		})
+	}}
+	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv("MIGRUNE_TEST_URI")).SetMonitor(monitor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+	step := catalogStep(t, "legacy", "catalog", "insert")
+	row := runCatalog(t, ctx, client.Database(db.Name()), ModeApply, log, -1, step)
+	if !hintApplied.Load() {
+		t.Fatal("post-write comparison never received the scan hint")
+	}
+	checkCatalogStep(t, row, 0, "catalog", false, 2, 0, 0, 0)
+	for _, name := range []string{"aa", "bb"} {
+		id := bson.DBPointer{DB: name, Pointer: oid}
+		if n := countDocs(t, ctx, db.Collection("catalog"), bson.M{"_id": id, "label": name}); n != 1 {
+			t.Errorf("catalog rows for DBPointer %q = %d, want 1", name, n)
+		}
+	}
+}
+
+func TestCatalogInvalidLookupIDs(t *testing.T) {
+	ctx := testCtx(t)
+	run := startRun(t, ctx, Options{})
+	defer run.Close()
+	for _, id := range []any{nil, 1, "keeper"} {
+		insert(t, ctx, run.db.Collection("catalog"), bson.D{{Key: "_id", Value: id}})
+	}
+	for i, output := range []string{
+		`{}`, `{"_id":null}`, `{"_id":[1]}`,
+		`{"_id":{"$regularExpression":{"pattern":"^keep","options":""}}}`, `{"_id":{"$undefined":true}}`,
+	} {
+		insert(t, ctx, run.db.Collection("legacy"), bson.D{{Key: "_id", Value: i}, {Key: "out", Value: catalogBSON(t, output)}})
+	}
+	got, err := run.compareMerge("legacy", []bson.Raw{catalogBSON(t, `{"$replaceWith":"$out"}`)},
+		mergeTarget{Into: "catalog", On: []string{"_id"}, Insert: true}, discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mergeComparison{Unmatched: 4, NullOn: 2, ArrayOn: 1, InvalidID: 2}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("comparison = %+v, want %+v", got, want)
 	}
 }
